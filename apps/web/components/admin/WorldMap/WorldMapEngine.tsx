@@ -103,9 +103,27 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     if (!node || !transformComponentRef.current) return;
     
     selectNode(nodeId);
+    const targetScale = 0.5;
+    
+    const instance = transformComponentRef.current.instance;
+    const wrapper = instance.wrapperComponent;
+    if (!wrapper) return;
 
-    // Use built-in zoomToElement which handles bounding boxes automatically
-    transformComponentRef.current.zoomToElement(`node-${nodeId}`, 2, 500, 'easeOut');
+    // Use getBoundingClientRect for absolute precision of the visible map area
+    const rect = wrapper.getBoundingClientRect();
+    const viewportWidth = rect.width;
+    const viewportHeight = rect.height;
+
+    // The map content is 16384x16384. (0,0) in grid is at 8192, 8192 in pixels.
+    const targetX = (node.x * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
+    const targetY = (node.y * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
+
+    // Math: center_of_screen = (content_point * scale) + translation
+    // Therefore: translation = center_of_screen - (content_point * scale)
+    const x = (viewportWidth / 2) - (targetX * targetScale);
+    const y = (viewportHeight / 2) - (targetY * targetScale);
+
+    transformComponentRef.current.setTransform(x, y, targetScale, 500, 'easeOut');
   };
 
   const fetchSupportData = async () => {
@@ -237,6 +255,44 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     if (path && nodeFormData) {
       setNodeFormData({ ...nodeFormData, icon_url: path });
       fetchIconGallery();
+    }
+  };
+
+  const onAddStockItem = async (itemId: string) => {
+    if (!selectedNodeId) return;
+    const { error } = await supabase.from('shop_exclusives').insert({ shop_id: selectedNodeId, item_id: itemId });
+    if (error) alert('Failed to add item: ' + error.message);
+    else loadStockedItems(selectedNodeId);
+  };
+
+  const onRemoveStockItem = async (exclusiveId: string) => {
+    const { error } = await supabase.from('shop_exclusives').delete().eq('id', exclusiveId);
+    if (error) alert('Failed to remove item: ' + error.message);
+    else if (selectedNodeId) loadStockedItems(selectedNodeId);
+  };
+
+  const handleUploadNodeMusic = async (file: File) => {
+    if (!file || !nodeFormData) return;
+    setUploadingNodeMusic(true);
+    try {
+      const path = `music/nodes/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const { error } = await supabase.storage.from('game-assets').upload(path, file, { upsert: true });
+      if (error) throw error;
+      const { data } = supabase.storage.from('game-assets').getPublicUrl(path);
+      const trackName = file.name.replace(/\.[^/.]+$/, '');
+      const { data: track, error: insertErr } = await supabase.from('game_music').insert({
+        name: trackName,
+        file_url: data.publicUrl,
+        category: 'world',
+      }).select('id').single();
+      if (insertErr) throw insertErr;
+      await fetchSupportData();
+      setNodeFormData({ ...nodeFormData, music_id: track.id });
+      if (nodeMusicInputRef.current) nodeMusicInputRef.current.value = '';
+    } catch (e: any) {
+      alert('Upload failed: ' + (e?.message || e));
+    } finally {
+      setUploadingNodeMusic(false);
     }
   };
 
@@ -414,7 +470,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                 dropTargetRef.current.style.setProperty('--zoom-scale', p.state.scale.toString());
               }
             }}
-            centerOnInit 
             limitToBounds={false} 
             wheel={{ step: 0.2 }} 
             panning={{ disabled: !isSpacePressed && selectedTool !== 'select' }}
@@ -452,7 +507,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                   <div 
                     key={node.id} 
                     id={`node-${node.id}`} 
-                    onClick={(e) => { e.stopPropagation(); goToNode(node.id); }} 
+                    onClick={(e) => { e.stopPropagation(); selectNode(node.id); }} 
                     onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); selectNode(node.id); handleEditNodeProperties(node.id); }}
                     style={{ 
                       position: 'absolute', 

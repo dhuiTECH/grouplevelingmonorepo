@@ -83,9 +83,8 @@ export default function MapTab({ shopItems }: { shopItems: any[] }) {
   const [musicTracks, setMusicTracks] = useState<any[]>([]);
   const [editingMapId, setEditingMapId] = useState<string | null>(null);
 
-        loadWorldMapNodes();
-        loadMapsAndSafehouse();
   useEffect(() => {
+    loadMapsAndSafehouse();
     const fetchInitialData = async () => {
         loadEncounters();
         loadMusicTracks();
@@ -152,12 +151,6 @@ export default function MapTab({ shopItems }: { shopItems: any[] }) {
       setSafehousePosition(null);
       setSpawnMapId(null);
     }
-  };
-
-  const loadWorldMapNodes = async () => {
-    const { data, error } = await supabase.from('world_map_nodes').select('*');
-    if (error) console.error('Error fetching nodes:', error);
-    else setWorldMapNodes(data || []);
   };
 
   const loadEncounters = async () => {
@@ -596,7 +589,6 @@ export default function MapTab({ shopItems }: { shopItems: any[] }) {
         }
         setSavingNode(false);
         setShowNodeModal(false);
-        loadWorldMapNodes();
     };
 
     const onAddStockItem = async (itemId: string) => {
@@ -621,7 +613,6 @@ export default function MapTab({ shopItems }: { shopItems: any[] }) {
             alert('Failed to move node: ' + error.message);
             return;
         }
-        loadWorldMapNodes();
     };
 
   const handleSaveMapMusic = async (mapId: string, musicId: string | null) => {
@@ -643,7 +634,6 @@ export default function MapTab({ shopItems }: { shopItems: any[] }) {
         
         <div className="w-full h-full rounded-2xl overflow-hidden border border-gray-800">
             <WorldMapEngine />
-      )}
         </div>
     </section>
   );
