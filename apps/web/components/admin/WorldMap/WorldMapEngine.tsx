@@ -11,7 +11,7 @@ import NodeEditModal, { NodeFormData } from '../NodeEditModal';
 import { supabase } from '@/lib/supabase';
 
 const WORLD_SIZE = 128000; 
-const TILE_SIZE = 64;
+const TILE_SIZE = 32;
 
 interface WorldMapEngineProps {
   shopItems?: any[];
