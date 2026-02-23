@@ -1656,7 +1656,7 @@ export default function AdminDashboard() {
 // Keep the rest of the file logic (state, effects, handlers) as they are used by the new components
 
 
-<style jsx>{`
+<style>{`
   /* Mobile scrollbar hide */
   .scrollbar-hide {
     -ms-overflow-style: none;

@@ -267,7 +267,7 @@ export default function MiniBattleSimulator({
         )}
       </div>
 
-      <style jsx>{`
+      <style>{`
         @keyframes mini-battle-sprite {
           from { background-position: -${currentStart * (monsterFrameWidth || 64)}px 0px; }
           to { background-position: -${(currentEnd + 1) * (monsterFrameWidth || 64)}px 0px; }

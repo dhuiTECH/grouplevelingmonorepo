@@ -613,7 +613,7 @@ export default function ItemPositionerPage() {
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .slider-red::-webkit-slider-thumb {
           appearance: none;
           height: 20px;

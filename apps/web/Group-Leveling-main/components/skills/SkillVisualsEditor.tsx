@@ -12,18 +12,19 @@ interface Props {
 export default function SkillVisualsEditor({ skillId, skillName, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentFrame, setCurrentFrame] = useState(0);
 
   // VISUAL CONFIG
   const [config, setConfig] = useState({
     sprite_url: '',
     sfx_url: '',
-    frame_count: 6,
-    frame_width: 64,
-    frame_height: 64,
+    frame_count: 25,
+    frame_width: 200,
+    frame_height: 200,
     offset_x: 0,
     offset_y: 0,
     preview_scale: 1,
-    duration_ms: 800,
+    duration_ms: 1300,
     vfx_type: 'impact' // 'projectile', 'melee', 'impact', 'beam', 'aoe'
   });
 
@@ -79,6 +80,30 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
     };
     fetchAnim();
   }, [skillId]);
+
+  // JS-DRIVEN ANIMATION LOOP
+  useEffect(() => {
+    if (!isPlaying) {
+      setCurrentFrame(0);
+      return;
+    }
+
+    const frameDuration = config.duration_ms / config.frame_count;
+    let frame = 0;
+    
+    const interval = setInterval(() => {
+      frame++;
+      if (frame >= config.frame_count) {
+        clearInterval(interval);
+        setIsPlaying(false);
+        setCurrentFrame(0);
+      } else {
+        setCurrentFrame(frame);
+      }
+    }, frameDuration);
+
+    return () => clearInterval(interval);
+  }, [isPlaying, config.duration_ms, config.frame_count]);
 
   // 2. UPLOAD HANDLER (Handles both Images and Audio)
   const handleUpload = async (file: File, type: 'sprite' | 'sfx') => {

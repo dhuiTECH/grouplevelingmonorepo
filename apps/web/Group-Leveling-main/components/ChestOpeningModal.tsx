@@ -82,7 +82,7 @@ export default function ChestOpeningModal({ isOpen, chestType, onAnimationComple
       />
 
       {/* 4. KEYFRAMES FOR RUMBLE */}
-      <style jsx>{`
+      <style>{`
         @keyframes rumble {
           0% { transform: translate(0, 0) rotate(0deg); }
           25% { transform: translate(-2px, 2px) rotate(-2deg); }
