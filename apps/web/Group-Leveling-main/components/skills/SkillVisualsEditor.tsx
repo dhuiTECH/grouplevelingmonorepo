@@ -11,7 +11,7 @@ interface Props {
 
 export default function SkillVisualsEditor({ skillId, skillName, onClose }: Props) {
   const [loading, setLoading] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
   const [currentFrame, setCurrentFrame] = useState(0);
 
   // VISUAL CONFIG
@@ -81,53 +81,41 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
     fetchAnim();
   }, [skillId]);
 
-  // JS-DRIVEN ANIMATION LOOP
+  // JS-DRIVEN ANIMATION LOOP (Consistent with MobsTab approach)
   useEffect(() => {
-    if (!isPlaying) {
+    if (!isPlaying || !config.sprite_url) {
       setCurrentFrame(0);
       return;
     }
 
-    const frameDuration = config.duration_ms / config.frame_count;
-    let frame = 0;
+    const totalFrames = Math.max(1, Number(config.frame_count) || 1);
+    const duration = Math.max(10, Number(config.duration_ms) || 1000);
+    const frameDuration = duration / totalFrames;
     
     const interval = setInterval(() => {
-      frame++;
-      if (frame >= config.frame_count) {
-        clearInterval(interval);
-        setIsPlaying(false);
-        setCurrentFrame(0);
-      } else {
-        setCurrentFrame(frame);
-      }
+      setCurrentFrame(prev => (prev + 1) % totalFrames);
     }, frameDuration);
 
     return () => clearInterval(interval);
-  }, [isPlaying, config.duration_ms, config.frame_count]);
+  }, [isPlaying, config.sprite_url, config.duration_ms, config.frame_count]);
 
-  // JS-DRIVEN ANIMATION LOOP
+  // JS-DRIVEN ANIMATION LOOP (Consistent with MobsTab approach)
   useEffect(() => {
-    if (!isPlaying) {
+    if (!isPlaying || !config.sprite_url) {
       setCurrentFrame(0);
       return;
     }
 
-    const frameDuration = config.duration_ms / config.frame_count;
-    let frame = 0;
+    const totalFrames = Math.max(1, Number(config.frame_count) || 1);
+    const duration = Math.max(10, Number(config.duration_ms) || 1000);
+    const frameDuration = duration / totalFrames;
     
     const interval = setInterval(() => {
-      frame++;
-      if (frame >= config.frame_count) {
-        clearInterval(interval);
-        setIsPlaying(false);
-        setCurrentFrame(0);
-      } else {
-        setCurrentFrame(frame);
-      }
+      setCurrentFrame(prev => (prev + 1) % totalFrames);
     }, frameDuration);
 
     return () => clearInterval(interval);
-  }, [isPlaying, config.duration_ms, config.frame_count]);
+  }, [isPlaying, config.sprite_url, config.duration_ms, config.frame_count]);
 
   // 2. UPLOAD HANDLER (Handles both Images and Audio)
   const handleUpload = async (file: File, type: 'sprite' | 'sfx') => {
