@@ -912,7 +912,7 @@ export const WorldMapScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#cbd5e1' }, // Light Grey background for map edges
+  container: { flex: 1, backgroundColor: '#1a1c14' }, // Dark greenish black background for map edges
 
   // MAP LAYERS
   mapLayer: { position: 'absolute', width: width, height: height, zIndex: 0 },

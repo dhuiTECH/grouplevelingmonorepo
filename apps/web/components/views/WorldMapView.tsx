@@ -124,7 +124,7 @@ export default function WorldMapView({ user, setUser, setActiveTab }: WorldMapVi
 
   return (
     <div
-      className="relative w-full overflow-hidden bg-slate-800 flex items-center justify-center"
+      className="relative w-full overflow-hidden bg-[#1a1c14] flex items-center justify-center"
       style={{ minHeight: `calc(100dvh - ${HEADER_NAV_OFFSET}px)` }}
     >
       {/* Map + grid wrapper: 9:16 full-stretch */}

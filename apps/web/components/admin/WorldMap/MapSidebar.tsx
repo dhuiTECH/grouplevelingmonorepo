@@ -18,7 +18,7 @@ interface MapSidebarProps {
 }
 
 export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }) => {
-  const { nodes, selectedNodeId, updateNode, removeNode, customTiles, addCustomTile, selectedTileId, selectTile, setTool, selectedTool, activeNodeType, exportMap, updateCustomTile } = useMapStore();
+  const { nodes, selectedNodeId, updateNode, removeNode, customTiles, addCustomTile, removeCustomTile, selectedTileId, selectTile, setTool, selectedTool, activeNodeType, exportMap, updateCustomTile } = useMapStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedNode = nodes.find(n => n.id === selectedNodeId);
   const selectedTile = customTiles.find(t => t.id === selectedTileId);
@@ -127,10 +127,18 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
           ) : (
             <div className="grid grid-cols-4 gap-2">
               {customTiles.map(tile => (
-                <button key={tile.id} onClick={() => selectTile(selectedTileId === tile.id ? null : tile.id)} className={`relative aspect-square bg-slate-950 border rounded overflow-hidden group ${selectedTileId === tile.id ? 'border-green-500 ring-1 ring-green-500/50' : 'border-slate-700 hover:border-slate-500'}`} title={tile.name}>
-                  <img src={tile.url} className="w-full h-full object-cover image-pixelated" alt={tile.name} />
-                  {selectedTileId === tile.id && <div className="absolute inset-0 bg-green-500/20 pointer-events-none" />}
-                </button>
+                <div key={tile.id} className="relative group">
+                  <button onClick={() => selectTile(selectedTileId === tile.id ? null : tile.id)} className={`w-full aspect-square bg-slate-950 border rounded overflow-hidden ${selectedTileId === tile.id ? 'border-green-500 ring-1 ring-green-500/50' : 'border-slate-700 hover:border-slate-500'}`} title={tile.name}>
+                    <img src={tile.url} className="w-full h-full object-cover image-pixelated" alt={tile.name} />
+                    {selectedTileId === tile.id && <div className="absolute inset-0 bg-green-500/20 pointer-events-none" />}
+                  </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); removeCustomTile(tile.id); }} 
+                    className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-red-500"
+                  >
+                    <XCircle size={12} />
+                  </button>
+                </div>
               ))}
             </div>
           )}

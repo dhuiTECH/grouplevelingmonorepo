@@ -74,6 +74,7 @@ interface NodeEditModalProps {
   onRemoveStockItem: (exclusiveId: string) => void;
   iconGalleryUrls?: string[];
   onIconSelect?: (url: string) => void;
+  onDeleteIcon?: (url: string) => void;
   uploadingIcon?: boolean;
   onUploadIcon?: (file: File) => void;
   iconInputRef?: React.RefObject<HTMLInputElement | null>;
@@ -113,6 +114,7 @@ export default function NodeEditModal({
   onRemoveStockItem,
   iconGalleryUrls = [],
   onIconSelect,
+  onDeleteIcon,
   uploadingIcon = false,
   onUploadIcon,
   iconInputRef,
@@ -250,14 +252,22 @@ export default function NodeEditModal({
                       {iconGalleryUrls.length > 0 && onIconSelect && (
                         <div className="mt-2 flex flex-wrap gap-1 p-2 bg-black/40 rounded border border-gray-800 max-h-32 overflow-y-auto">
                           {iconGalleryUrls.map((url) => (
-                            <button
-                              key={url}
-                              type="button"
-                              onClick={() => onIconSelect(url)}
-                              className="w-8 h-8 rounded border border-cyan-700/50 overflow-hidden hover:border-cyan-400"
-                            >
-                              <img src={url} alt="" className="w-full h-full object-cover" />
-                            </button>
+                            <div key={url} className="relative group">
+                              <button
+                                type="button"
+                                onClick={() => onIconSelect?.(url)}
+                                className="w-8 h-8 rounded border border-cyan-700/50 overflow-hidden hover:border-cyan-400"
+                              >
+                                <img src={url} alt="" className="w-full h-full object-cover" />
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); onDeleteIcon?.(url); }}
+                                className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-red-500 shadow-lg"
+                              >
+                                <XCircle size={10} />
+                              </button>
+                            </div>
                           ))}
                         </div>
                       )}

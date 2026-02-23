@@ -10,7 +10,7 @@ import { generateAsset } from '@/lib/services/mapGeminiService';
 import NodeEditModal, { NodeFormData } from '../NodeEditModal';
 import { supabase } from '@/lib/supabase';
 
-const WORLD_SIZE = 16000; 
+const WORLD_SIZE = 128000; 
 const TILE_SIZE = 64;
 
 interface WorldMapEngineProps {
@@ -91,33 +91,35 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   // No auto-centering on every node change - it was annoying the user.
   // We rely on TransformWrapper's centerOnInit for the initial view.
 
+  useEffect(() => {
+    // Initialize zoom scale for CSS
+    if (dropTargetRef.current) {
+      dropTargetRef.current.style.setProperty('--zoom-scale', '0.5');
+    }
+  }, []);
+
   const goToNode = (nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);
-    if (!node || !transformComponentRef.current) return;
+    if (!node || !transformComponentRef.current || !dropTargetRef.current) return;
     
     selectNode(nodeId);
-    const targetScale = 0.5;
+    const targetScale = 0.5; // Good overview zoom
 
-    const instance = transformComponentRef.current.instance;
-    const wrapper = instance.wrapperComponent;
-    if (!wrapper) return;
+    // 1. Get viewport dimensions accurately from the wrapper ref
+    const viewportWidth = dropTargetRef.current.clientWidth;
+    const viewportHeight = dropTargetRef.current.clientHeight;
 
-    // Use getBoundingClientRect for the most accurate viewport size
-    const rect = wrapper.getBoundingClientRect();
-    const viewportWidth = rect.width;
-    const viewportHeight = rect.height;
-
-    // Node center in absolute world pixels
-    // Origin (0,0) grid is exactly at WORLD_SIZE / 2
+    // 2. Calculate target world pixels
+    // Origin is at WORLD_SIZE / 2
     const targetWorldX = (node.x * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
     const targetWorldY = (node.y * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
 
-    // Translation Math for react-zoom-pan-pinch:
-    // Translation = (Viewport Center) - (Content Target * Scale)
-    const newX = (viewportWidth / 2) - (targetWorldX * targetScale);
-    const newY = (viewportHeight / 2) - (targetWorldY * targetScale);
+    // 3. Math: viewport_center = (world_pixel * scale) + translation
+    // translation = viewport_center - (world_pixel * scale)
+    const x = (viewportWidth / 2) - (targetWorldX * targetScale);
+    const y = (viewportHeight / 2) - (targetWorldY * targetScale);
 
-    transformComponentRef.current.setTransform(newX, newY, targetScale, 500, 'easeOut');
+    transformComponentRef.current.setTransform(x, y, targetScale, 600, 'easeOut');
   };
 
   const fetchSupportData = async () => {
@@ -249,6 +251,26 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     if (path && nodeFormData) {
       setNodeFormData({ ...nodeFormData, icon_url: path });
       fetchIconGallery();
+    }
+  };
+
+  const handleDeleteIcon = async (url: string) => {
+    if (!confirm('Are you sure you want to delete this icon from the library?')) return;
+    try {
+      // Extract path from Supabase URL: .../public/game-assets/nodes/icons/file.png
+      // We need just "nodes/icons/file.png"
+      const pathPart = url.split('/game-assets/')[1]?.split('?')[0];
+      if (!pathPart) throw new Error('Invalid icon URL');
+
+      const { error } = await supabase.storage.from('game-assets').remove([pathPart]);
+      if (error) throw error;
+
+      fetchIconGallery();
+      if (nodeFormData?.icon_url === url) {
+        setNodeFormData({ ...nodeFormData, icon_url: '/default-node.png' });
+      }
+    } catch (e: any) {
+      alert('Delete failed: ' + e.message);
     }
   };
 
@@ -452,11 +474,11 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         </div>
 
         {/* Viewport */}
-        <div className={`flex-1 bg-[#1a1c14] relative overflow-hidden ${isSpacePressed ? 'cursor-grabbing' : 'cursor-crosshair'}`} ref={dropTargetRef}>
+        <div className={`flex-1 bg-[#6b705c] relative overflow-hidden ${isSpacePressed ? 'cursor-grabbing' : 'cursor-crosshair'}`} ref={dropTargetRef}>
           <TransformWrapper 
             ref={transformComponentRef} 
-            initialScale={0.5} 
-            minScale={0.005} 
+            initialScale={1.0} 
+            minScale={0.1} 
             maxScale={10} 
             centerOnInit
             onTransformed={(p) => {
@@ -482,19 +504,19 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
               >
                 <MapCanvas width={WORLD_SIZE} height={WORLD_SIZE} scale={1} />
                 
-                {/* High-Visibility Grid Overlay */}
+                {/* High-Visibility Black Grid Overlay */}
                 <div 
                   className="absolute inset-0 pointer-events-none"
                   style={{
                     zIndex: 50,
                     backgroundImage: `
-                      linear-gradient(to right, rgba(0,0,0,0.8) calc(3px / var(--zoom-scale, 1)), transparent calc(3px / var(--zoom-scale, 1))),
-                      linear-gradient(to bottom, rgba(0,0,0,0.8) calc(3px / var(--zoom-scale, 1)), transparent calc(3px / var(--zoom-scale, 1))),
-                      linear-gradient(to right, rgba(255,255,255,0.15) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1))),
-                      linear-gradient(to bottom, rgba(255,255,255,0.15) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1)))
+                      linear-gradient(to right, rgba(0,0,0,0.2) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1))),
+                      linear-gradient(to bottom, rgba(0,0,0,0.2) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1))),
+                      linear-gradient(to right, rgba(0,0,0,0.5) calc(2px / var(--zoom-scale, 1)), transparent calc(2px / var(--zoom-scale, 1))),
+                      linear-gradient(to bottom, rgba(0,0,0,0.5) calc(2px / var(--zoom-scale, 1)), transparent calc(2px / var(--zoom-scale, 1)))
                     `,
-                    backgroundSize: `${TILE_SIZE * 5}px ${TILE_SIZE * 5}px, ${TILE_SIZE * 5}px ${TILE_SIZE * 5}px, ${TILE_SIZE}px ${TILE_SIZE}px, ${TILE_SIZE}px ${TILE_SIZE}px`,
-                    backgroundPosition: 'center center'
+                    backgroundSize: `${TILE_SIZE}px ${TILE_SIZE}px, ${TILE_SIZE}px ${TILE_SIZE}px, ${TILE_SIZE * 10}px ${TILE_SIZE * 10}px, ${TILE_SIZE * 10}px ${TILE_SIZE * 10}px`,
+                    backgroundPosition: '0 0'
                   }}
                 />
                 
@@ -554,6 +576,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           musicTracks={musicTracks}
           iconGalleryUrls={iconGalleryUrls}
           onIconSelect={(url) => setNodeFormData({ ...nodeFormData, icon_url: url })}
+          onDeleteIcon={handleDeleteIcon}
           uploadingIcon={uploadingIcon}
           onUploadIcon={handleUploadIcon}
           iconInputRef={nodeIconInputRef}

@@ -30,6 +30,7 @@ export interface VisionTile {
 
 const GRID_RADIUS = 2; // 5x5 grid: from -2 to +2 around player
 const CHUNK_SIZE = 16;
+const MOVE_COST = 100;
 export const DEFAULT_LAND_COLOR = '#6b705c'; // Greenish-brown
 
 function buildVisionGrid(
@@ -223,9 +224,8 @@ export function useExploration(
       else if (direction === 'W') newX = wx - 1;
 
       const stepsBanked = user.steps_banked ?? 0;
-      const cost = 100;
-      if (stepsBanked < cost) return;
-      const newSteps = stepsBanked - cost;
+      if (stepsBanked < MOVE_COST) return;
+      const newSteps = stepsBanked - MOVE_COST;
 
       await updatePosition(newX, newY, newSteps);
       refreshVision(newX, newY);

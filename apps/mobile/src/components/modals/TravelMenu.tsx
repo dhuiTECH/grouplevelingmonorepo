@@ -73,10 +73,9 @@ export const TravelMenu: React.FC<TravelMenuProps> = ({
 
   const calculateTravelCost = (targetX: number, targetY: number) => {
     if (!user) return 0;
-    const dx = targetX - (user.world_x || 0);
-    const dy = targetY - (user.world_y || 0);
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    return Math.round(distance * 100);
+    const dx = Math.abs(targetX - (user.world_x || 0));
+    const dy = Math.abs(targetY - (user.world_y || 0));
+    return (dx + dy) * 100;
   };
 
   const handleTravel = async (location: any) => {

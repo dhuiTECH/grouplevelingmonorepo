@@ -57,6 +57,7 @@ interface MapState {
   selectTile: (id: string | null) => void;
   setTool: (tool: ToolType, nodeType?: NodeType | null) => void;
   addCustomTile: (tile: CustomTile) => void;
+  removeCustomTile: (id: string) => void;
   updateCustomTile: (id: string, updates: Partial<CustomTile>) => void;
   setSpawnPoint: (x: number, y: number) => void;
   addTile: (tile: Tile) => void;
@@ -177,6 +178,11 @@ export const useMapStore = create<MapState>((set, get) => ({
 
   addCustomTile: (tile) => set((state) => ({
     customTiles: [...state.customTiles, tile]
+  })),
+
+  removeCustomTile: (id) => set((state) => ({
+    customTiles: state.customTiles.filter(t => t.id !== id),
+    selectedTileId: state.selectedTileId === id ? null : state.selectedTileId
   })),
 
   updateCustomTile: (id, updates) => set((state) => ({
