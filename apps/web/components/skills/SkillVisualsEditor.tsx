@@ -33,7 +33,6 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
   const [dragOverSfx, setDragOverSfx] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const animRef = useRef<number | null>(null);
 
   const getFileName = (url: string) => {
     if (!url) return '';
@@ -82,12 +81,30 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
     fetchAnim();
   }, [skillId]);
 
-  // Cleanup on unmount
+  // JS-DRIVEN ANIMATION LOOP (Effect-Driven approach)
   useEffect(() => {
-    return () => {
-      if (animRef.current) window.cancelAnimationFrame(animRef.current);
-    };
-  }, []);
+    if (!isPlaying) {
+      setCurrentFrame(0);
+      return;
+    }
+
+    const frames = Math.max(1, Number(config.frame_count) || 1);
+    const duration = Math.max(10, Number(config.duration_ms) || 1000);
+    const frameDur = duration / frames;
+
+    const interval = setInterval(() => {
+      setCurrentFrame(prev => {
+        if (prev + 1 >= frames) {
+          clearInterval(interval);
+          setIsPlaying(false);
+          return 0;
+        }
+        return prev + 1;
+      });
+    }, frameDur);
+
+    return () => clearInterval(interval);
+  }, [isPlaying, config.frame_count, config.duration_ms]);
 
   // 2. UPLOAD HANDLER (Handles both Images and Audio)
   const handleUpload = async (file: File, type: 'sprite' | 'sfx') => {
@@ -176,46 +193,21 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
 
   // 4. PREVIEW PLAY
   const playPreview = () => {
-    // 1. Reset existing animation
-    if (animRef.current) {
-      window.cancelAnimationFrame(animRef.current);
-      animRef.current = null;
-    }
+    // 1. Reset state
     setIsPlaying(false);
     setCurrentFrame(0);
     
-    // 2. Audio
+    // 2. Audio playback (instant to bypass browser blocks)
     if (audioRef.current && config.sfx_url) {
       audioRef.current.src = config.sfx_url;
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(error => console.warn("Audio playback prevented:", error));
     }
 
-    // 3. Start Animation
+    // 3. Start Animation Effect (slight delay ensures state registers the false -> true flip)
     setTimeout(() => {
       setIsPlaying(true);
-      const frames = Math.max(1, Number(config.frame_count) || 1);
-      const duration = Math.max(10, Number(config.duration_ms) || 1000);
-      
-      let start: number | null = null;
-      
-      const step = (timestamp: number) => {
-        if (!start) start = timestamp;
-        const progress = timestamp - start;
-        const frameIndex = Math.floor((progress / duration) * frames);
-        
-        if (frameIndex >= frames) {
-          setIsPlaying(false);
-          setCurrentFrame(0);
-          animRef.current = null;
-        } else {
-          setCurrentFrame(frameIndex);
-          animRef.current = window.requestAnimationFrame(step);
-        }
-      };
-      
-      animRef.current = window.requestAnimationFrame(step);
-    }, 10);
+    }, 20);
   };
 
   return (
