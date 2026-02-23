@@ -105,6 +105,30 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
     return () => clearInterval(interval);
   }, [isPlaying, config.duration_ms, config.frame_count]);
 
+  // JS-DRIVEN ANIMATION LOOP
+  useEffect(() => {
+    if (!isPlaying) {
+      setCurrentFrame(0);
+      return;
+    }
+
+    const frameDuration = config.duration_ms / config.frame_count;
+    let frame = 0;
+    
+    const interval = setInterval(() => {
+      frame++;
+      if (frame >= config.frame_count) {
+        clearInterval(interval);
+        setIsPlaying(false);
+        setCurrentFrame(0);
+      } else {
+        setCurrentFrame(frame);
+      }
+    }, frameDuration);
+
+    return () => clearInterval(interval);
+  }, [isPlaying, config.duration_ms, config.frame_count]);
+
   // 2. UPLOAD HANDLER (Handles both Images and Audio)
   const handleUpload = async (file: File, type: 'sprite' | 'sfx') => {
     if (!file) return;
