@@ -16,29 +16,14 @@ export async function POST(request: NextRequest) {
   const file = formData.get('screenshot') as File
   const fallbackHunterId = formData.get('hunterId') as string | null
 
-  // Determine user ID - prefer cookie auth, fallback to hunterId from request
-  let userId: string | null = null
-  
-  if (user && !error) {
-    userId = user.id
-    console.log("Authenticated via cookie, User ID:", userId)
-  } else if (fallbackHunterId) {
-    // Verify the fallback hunter ID exists in the database
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('id')
-      .eq('id', fallbackHunterId)
-      .single()
-    
-    if (profile) {
-      userId = fallbackHunterId
-      console.log("Authenticated via fallback hunterId:", userId)
-    }
-  }
-
-  if (!userId) {
+  // Determine user ID - only allow authenticated users
+  if (!user || error) {
+    console.log("❌ Authentication failed:", error?.message)
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
   }
+  
+  const userId = user.id
+  console.log("Authenticated via cookie, User ID:", userId)
 
   try {
 

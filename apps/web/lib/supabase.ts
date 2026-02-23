@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { createServerClient as createSupabaseServerClient } from '@supabase/ssr'
 
-// Use actual environment variables with empty string fallbacks to avoid crashes
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+// Use actual environment variables with fallback values to prevent build-time crashes
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key'
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-key'
 
 // 1. Client-side Client: Used for general data fetching (respects RLS)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -18,8 +18,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // 2. Admin Client: STRICTLY for server-side operations (bypasses RLS)
 // This is what you should use in your /api/admin/shop route
 export const supabaseAdmin = createClient(
-  supabaseUrl || 'dummy-url',
-  supabaseServiceKey || 'dummy-key',
+  supabaseUrl,
+  supabaseServiceKey,
   {
     auth: {
       autoRefreshToken: false,
