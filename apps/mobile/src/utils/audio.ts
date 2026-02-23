@@ -21,12 +21,35 @@ const SOUND_FILES: Record<string, any> = {
   activation: require('../../assets/sounds/activation.mp3'),
   tap: require('../../assets/sounds/tap.mp3'),
   swipe: require('../../assets/sounds/swipe.mp3'),
+  nyxGreeting: require('../../assets/shop/nyx1.mp3'),
+  nyxPurchase: require('../../assets/shop/nyx2.mp3'),
 };
+
+let activeVoiceSound: Audio.Sound | null = null;
 
 export type SoundKey = keyof typeof SOUND_FILES;
 
+export const stopActiveVoice = async () => {
+  if (activeVoiceSound) {
+    try {
+      await activeVoiceSound.stopAsync();
+      await activeVoiceSound.unloadAsync();
+    } catch (error) {
+      console.log('[Hunter Audio] Error stopping voice:', error);
+    }
+    activeVoiceSound = null;
+  }
+};
+
 export const playHunterSound = async (soundKey: SoundKey, force: boolean = false) => {
   if (!force && getMuted()) return;
+  
+  // If it's a voice sound, stop any currently playing voice first
+  const isVoice = soundKey === 'nyxGreeting' || soundKey === 'nyxPurchase';
+  if (isVoice) {
+    await stopActiveVoice();
+  }
+
   try {
     await Audio.setAudioModeAsync({
       playsInSilentModeIOS: false,
@@ -43,10 +66,17 @@ export const playHunterSound = async (soundKey: SoundKey, force: boolean = false
       { shouldPlay: true }
     );
     
+    if (isVoice) {
+      activeVoiceSound = sound;
+    }
+
     // Unload from memory once finished to keep the system fast
     sound.setOnPlaybackStatusUpdate((status) => {
       if (status.isLoaded && status.didJustFinish) {
         sound.unloadAsync();
+        if (isVoice && activeVoiceSound === sound) {
+          activeVoiceSound = null;
+        }
       }
     });
   } catch (error) {

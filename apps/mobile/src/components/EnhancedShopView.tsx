@@ -20,6 +20,7 @@ import GachaScreen from './GachaScreen';
 import { User, ShopItem } from '@/types/user';
 import { api } from '@/api/shop';
 import { RANK_COLORS, RARITY_COLORS } from '@/constants/gameConstants';
+import { playHunterSound, stopActiveVoice } from '@/utils/audio';
 import { XIcon } from './icons/XIcon';
 import { SystemPanelBackground } from './shop/SystemPanelBackground';
 import Svg, { Path } from 'react-native-svg';
@@ -281,6 +282,21 @@ export default function EnhancedShopView({
         if (tutorialMainTab === 'gacha') setCurrentTab('GACHA');
     }
   }, [tutorialMainTab]);
+
+  useEffect(() => {
+    if (currentTab === 'MAGIC' && !npcOverride) {
+      playHunterSound('nyxGreeting');
+    } else {
+      stopActiveVoice();
+    }
+  }, [currentTab]);
+
+  // Stop voice on unmount
+  useEffect(() => {
+    return () => {
+      stopActiveVoice();
+    };
+  }, []);
 
   const currentTheme = TAB_THEMES[currentTab];
 
@@ -589,6 +605,7 @@ export default function EnhancedShopView({
                         image: ASSETS.nyxHappy,
                         text: "Thank you for your purchase, you should buy more!"
                       });
+                      playHunterSound('nyxPurchase');
                       setTimeout(() => setNpcOverride(null), 5000);
                     } else if (currentTab === 'HUNTER') {
                       setNpcOverride({
