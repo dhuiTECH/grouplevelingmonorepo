@@ -11,8 +11,9 @@ interface Props {
 
 export default function SkillVisualsEditor({ skillId, skillName, onClose }: Props) {
   const [loading, setLoading] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [currentFrame, setCurrentFrame] = useState(0);
+  const [playKey, setPlayKey] = useState(0);
 
   // VISUAL CONFIG
   const [config, setConfig] = useState({
@@ -81,7 +82,7 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
     fetchAnim();
   }, [skillId]);
 
-  // JS-DRIVEN ANIMATION LOOP (Consistent with MobsTab approach)
+  // JS-DRIVEN ANIMATION LOOP (One-shot approach)
   useEffect(() => {
     if (!isPlaying || !config.sprite_url) {
       setCurrentFrame(0);
@@ -92,14 +93,26 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
     const duration = Math.max(10, Number(config.duration_ms) || 1000);
     const frameDuration = duration / totalFrames;
     
+    let localFrame = 0;
+    setCurrentFrame(0);
+
     const interval = setInterval(() => {
-      setCurrentFrame(prev => (prev + 1) % totalFrames);
+      localFrame++;
+      
+      if (localFrame >= totalFrames) {
+        clearInterval(interval);
+        setIsPlaying(false);
+        setCurrentFrame(0);
+        return;
+      }
+      
+      setCurrentFrame(localFrame);
     }, frameDuration);
 
     return () => clearInterval(interval);
-  }, [isPlaying, config.sprite_url, config.duration_ms, config.frame_count]);
+  }, [isPlaying, playKey, config.duration_ms, config.frame_count]);
 
-  // JS-DRIVEN ANIMATION LOOP (Consistent with MobsTab approach)
+  // JS-DRIVEN ANIMATION LOOP (One-shot approach)
   useEffect(() => {
     if (!isPlaying || !config.sprite_url) {
       setCurrentFrame(0);
@@ -110,12 +123,24 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
     const duration = Math.max(10, Number(config.duration_ms) || 1000);
     const frameDuration = duration / totalFrames;
     
+    let localFrame = 0;
+    setCurrentFrame(0);
+
     const interval = setInterval(() => {
-      setCurrentFrame(prev => (prev + 1) % totalFrames);
+      localFrame++;
+      
+      if (localFrame >= totalFrames) {
+        clearInterval(interval);
+        setIsPlaying(false);
+        setCurrentFrame(0);
+        return;
+      }
+      
+      setCurrentFrame(localFrame);
     }, frameDuration);
 
     return () => clearInterval(interval);
-  }, [isPlaying, config.sprite_url, config.duration_ms, config.frame_count]);
+  }, [isPlaying, playKey, config.duration_ms, config.frame_count]);
 
   // 2. UPLOAD HANDLER (Handles both Images and Audio)
   const handleUpload = async (file: File, type: 'sprite' | 'sfx') => {
@@ -204,8 +229,8 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
 
   // 4. PREVIEW PLAY
   const playPreview = () => {
-    // Reset to start and play audio
-    setCurrentFrame(0);
+    // Force reset animation loop via playKey
+    setPlayKey(prev => prev + 1);
     setIsPlaying(true);
     
     // Audio playback (instant to bypass browser blocks)
@@ -398,6 +423,7 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
           {/* THE ANIMATION BOX */}
            <div className="relative group">
              <div 
+               key={playKey}
                id="preview-box"
                style={{
                  width: `${Number(config.frame_width) || 200}px`,
@@ -425,14 +451,8 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
            </div>
            
            <div className="mt-8 flex gap-4">
-             <button 
-               onClick={() => setIsPlaying(!isPlaying)} 
-               className={`px-4 py-2 rounded-full font-bold flex items-center gap-2 border ${isPlaying ? 'bg-gray-800 text-gray-400 border-gray-700' : 'bg-green-600 text-white border-green-500'}`}
-             >
-               {isPlaying ? 'Pause' : 'Play'}
-             </button>
              <button onClick={playPreview} className="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-2 rounded-full font-bold flex items-center gap-2">
-               <Play size={16} fill="white" /> Test SFX + Reset
+               <Play size={16} fill="white" /> Test Animation + Audio
              </button>
            </div>
 

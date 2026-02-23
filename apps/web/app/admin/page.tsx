@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { User, Clock, Trophy, LogOut, Plus, Sword, Users, Settings, Edit, Edit2, Trash2, Coins, Loader2, Sparkles, Map, CheckCircle, XCircle, Zap, Check, BookOpen, Search, X, PawPrint, Music2, ScrollText } from 'lucide-react';
+import { User, Clock, Trophy, LogOut, Plus, Sword, Users, Settings, Edit, Edit2, Trash2, Coins, Loader2, Sparkles, Map, CheckCircle, XCircle, Zap, Check, BookOpen, Search, X, PawPrint, Music2, ScrollText, Globe } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
@@ -24,6 +24,19 @@ import MobsTab from '@/components/admin/MobsTab';
 import PetsTab from '@/components/admin/PetsTab';
 import AvatarBuilderTab from '@/components/admin/AvatarBuilderTab';
 import MusicTab from '@/components/admin/MusicTab';
+import dynamic from 'next/dynamic';
+
+const WorldMapEngine = dynamic(
+  () => import('@/components/admin/WorldMap/WorldMapEngine').then(mod => mod.WorldMapEngine),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="flex-1 min-h-[500px] bg-black flex items-center justify-center">
+        <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+      </div>
+    )
+  }
+);
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -942,7 +955,7 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-gray-100 font-mono relative overflow-hidden">
+    <div className="min-h-screen flex flex-col bg-black text-gray-100 font-mono relative overflow-hidden">
       <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
         <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-red-900 via-transparent to-transparent animate-pulse" />
       </div>
@@ -1000,12 +1013,13 @@ export default function AdminDashboard() {
           <AdminNavItem id="pets" icon={PawPrint} label="Pets" active={activeTab === 'pets'} onClick={setActiveTab} />
           <AdminNavItem id="music" icon={Music2} label="Music" active={activeTab === 'music'} onClick={setActiveTab} />
           <AdminNavItem id="map" icon={Map} label="World Map" active={activeTab === 'map'} onClick={setActiveTab} />
+          <AdminNavItem id="map_generator" icon={Globe} label="Map Gen" active={activeTab === 'map_generator'} onClick={setActiveTab} />
             </div>
           </div>
         </div>
       </nav>
 
-      <main className="p-3 md:p-4 max-w-6xl mx-auto relative z-10">
+      <main className={`relative z-10 flex-1 ${activeTab === 'map_generator' ? 'w-full h-full' : 'p-3 md:p-4 max-w-6xl mx-auto'}`}>
 
         {/* Tab Content */}
         {activeTab === 'approvals' && (
@@ -1643,6 +1657,10 @@ export default function AdminDashboard() {
 
         {activeTab === 'map' && (
           <MapTab shopItems={shopItems} />
+        )}
+
+        {activeTab === 'map_generator' && (
+          <WorldMapEngine />
         )}
 
       </main>
