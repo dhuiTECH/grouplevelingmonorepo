@@ -719,7 +719,7 @@ export default function App() {
                      <div>
                         <label className="text-[10px] uppercase font-bold text-gray-400 tracking-wider mb-1 block">Batch Quantity</label>
                         <div className="flex bg-surface border border-border rounded-sm">
-                           {[1, 2, 3, 4].map((num) => (
+                           {[1, 2, 4, 8].map((num) => (
                            <button
                               key={num}
                               type="button"
