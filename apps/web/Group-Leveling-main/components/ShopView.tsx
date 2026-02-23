@@ -523,7 +523,7 @@ export default function ShopView({ user, shopItems, setUser, handleBuyItem, isLo
       {/* --- NEW GACHA REVEAL MODAL --- */}
       {summonResult && (
           <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-300">
-              <style jsx global>{`
+              <style>{`
                 @keyframes monarch-pulse-gold {
                   0% { box-shadow: 0 0 20px rgba(234, 179, 8, 0.4), inset 0 0 10px rgba(234, 179, 8, 0.2); border-color: #eab308; }
                   50% { box-shadow: 0 0 45px rgba(234, 179, 8, 0.7), inset 0 0 20px rgba(234, 179, 8, 0.4); border-color: #fbbf24; }

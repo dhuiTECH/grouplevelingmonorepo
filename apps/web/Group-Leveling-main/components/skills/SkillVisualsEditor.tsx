@@ -422,13 +422,6 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
 
            {/* Hidden Audio Player */}
            <audio ref={audioRef} />
-
-           <style jsx>{`
-             @keyframes play-sprite {
-               from { background-position: ${config.offset_x}px ${config.offset_y}px; }
-               to { background-position: calc(-${config.frame_count * config.frame_width}px + ${config.offset_x}px) ${config.offset_y}px; }
-             }
-           `}</style>
         </div>
       </div>
     </div>

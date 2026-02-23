@@ -82,7 +82,7 @@ export default function GachaScreen({ onSummon, isSummoning, coins, gems }: Gach
 
   return (
     <div className="flex flex-col h-full bg-[#0d0d12] text-white overflow-hidden rounded-[2rem] border border-white/5 shadow-2xl relative font-sans">
-      <style jsx global>{`
+      <style>{`
         /* --- SOVEREIGN GOLD GLOW SYSTEM --- */
         @keyframes monarch-pulse-gold {
           0%, 100% { 
