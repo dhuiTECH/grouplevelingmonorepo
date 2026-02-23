@@ -88,7 +88,7 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
       return;
     }
 
-    const frameDuration = config.duration_ms / config.frame_count;
+    const frameDuration = Math.max(10, config.duration_ms / (Math.max(1, config.frame_count)));
     let frame = 0;
     
     const interval = setInterval(() => {
@@ -194,15 +194,21 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
   const playPreview = () => {
     setIsPlaying(false);
     setCurrentFrame(0);
+    
+    // Play sound synchronously to avoid browser autoplay restrictions
+    if (audioRef.current && config.sfx_url) {
+      audioRef.current.currentTime = 0;
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          console.warn("Audio playback error:", error);
+        });
+      }
+    }
+
     // Force reflow to restart animation
     setTimeout(() => {
       setIsPlaying(true);
-      // Play Sound
-      if (audioRef.current) {
-        audioRef.current.src = config.sfx_url;
-        audioRef.current.currentTime = 0;
-        audioRef.current.play();
-      }
     }, 10);
   };
 
@@ -345,7 +351,20 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
                   <CheckCircle size={10} className="flex-shrink-0" /> 
                   <span className="truncate" title={getFileName(config.sfx_url)}>{getFileName(config.sfx_url)}</span>
                 </div>
-                <button onClick={() => audioRef.current?.play()} className="text-[9px] text-cyan-500 hover:underline uppercase flex-shrink-0 ml-2">Test</button>
+                <button 
+                  onClick={() => {
+                    if (audioRef.current && config.sfx_url) {
+                      audioRef.current.currentTime = 0;
+                      const playPromise = audioRef.current.play();
+                      if (playPromise !== undefined) {
+                        playPromise.catch(e => console.warn('Audio play error:', e));
+                      }
+                    }
+                  }} 
+                  className="text-[9px] text-cyan-500 hover:underline uppercase flex-shrink-0 ml-2"
+                >
+                  Test
+                </button>
               </div>
             )}
           </div>
@@ -418,7 +437,7 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
            </div>
 
            {/* Hidden Audio Player */}
-           <audio ref={audioRef} />
+           <audio ref={audioRef} src={config.sfx_url || undefined} />
         </div>
       </div>
     </div>
