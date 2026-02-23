@@ -11,9 +11,8 @@ interface Props {
 
 export default function SkillVisualsEditor({ skillId, skillName, onClose }: Props) {
   const [loading, setLoading] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
   const [currentFrame, setCurrentFrame] = useState(0);
-  const [playKey, setPlayKey] = useState(0);
 
   // VISUAL CONFIG
   const [config, setConfig] = useState({
@@ -84,7 +83,7 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
 
   // JS-DRIVEN ANIMATION LOOP (Consistent with MobsTab approach)
   useEffect(() => {
-    if (!isPlaying) {
+    if (!isPlaying || !config.sprite_url) {
       setCurrentFrame(0);
       return;
     }
@@ -93,24 +92,12 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
     const duration = Math.max(10, Number(config.duration_ms) || 1000);
     const frameDuration = duration / totalFrames;
     
-    let localFrame = 0;
-    setCurrentFrame(0);
-
     const interval = setInterval(() => {
-      localFrame++;
-      
-      if (localFrame >= totalFrames) {
-        clearInterval(interval);
-        setIsPlaying(false);
-        setCurrentFrame(0);
-        return;
-      }
-      
-      setCurrentFrame(localFrame);
+      setCurrentFrame(prev => (prev + 1) % totalFrames);
     }, frameDuration);
 
     return () => clearInterval(interval);
-  }, [isPlaying, playKey, config.duration_ms, config.frame_count]);
+  }, [isPlaying, config.sprite_url, config.duration_ms, config.frame_count]);
 
   // 2. UPLOAD HANDLER (Handles both Images and Audio)
   const handleUpload = async (file: File, type: 'sprite' | 'sfx') => {
@@ -199,8 +186,8 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
 
   // 4. PREVIEW PLAY
   const playPreview = () => {
-    // Force reset animation loop via playKey
-    setPlayKey(prev => prev + 1);
+    // Reset to start and play audio
+    setCurrentFrame(0);
     setIsPlaying(true);
     
     // Audio playback (instant to bypass browser blocks)
@@ -407,13 +394,12 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
           {/* THE ANIMATION BOX */}
            <div className="relative group">
              <div 
-               key={playKey}
                id="preview-box"
                style={{
                  width: `${Number(config.frame_width) || 200}px`,
                  height: `${Number(config.frame_height) || 200}px`,
                  transform: `scale(${Number(config.preview_scale) || 1})`,
-                 backgroundImage: config.sprite_url ? `url("${config.sprite_url}")` : 'none',
+                 backgroundImage: config.sprite_url ? `url(${config.sprite_url})` : 'none',
                  backgroundSize: `${(Number(config.frame_count) || 1) * (Number(config.frame_width) || 200)}px ${Number(config.frame_height) || 200}px`,
                  backgroundPosition: `${-(Number(currentFrame) * (Number(config.frame_width) || 200)) + (Number(config.offset_x) || 0)}px ${Number(config.offset_y) || 0}px`,
                  backgroundRepeat: 'no-repeat',
@@ -435,8 +421,14 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
            </div>
 
            <div className="mt-8 flex gap-4">
+             <button 
+               onClick={() => setIsPlaying(!isPlaying)} 
+               className={`px-4 py-2 rounded-full font-bold flex items-center gap-2 border ${isPlaying ? 'bg-gray-800 text-gray-400 border-gray-700' : 'bg-green-600 text-white border-green-500'}`}
+             >
+               {isPlaying ? 'Pause' : 'Play'}
+             </button>
              <button onClick={playPreview} className="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-2 rounded-full font-bold flex items-center gap-2">
-               <Play size={16} fill="white" /> Test Animation + Audio
+               <Play size={16} fill="white" /> Test SFX + Reset
              </button>
            </div>
 
