@@ -38,12 +38,13 @@ export default function AnimatedEquip({
         width: isResponsive ? '100%' : frameWidth,
         height: isResponsive ? '100%' : frameHeight,
         backgroundImage: `url(${src})`,
-        // Use percentages for background-position to support scaling
-        backgroundPosition: totalFrames > 1 ? `${(currentFrame / (totalFrames - 1)) * 100}% 0%` : '0% 0%',
+        // Use pixel-based positioning for crisp frame-by-frame jumps
+        backgroundPosition: `-${currentFrame * 100}% 0%`,
         // Scale the background-size so one frame fills 100% of the div
         backgroundSize: `${totalFrames * 100}% 100%`,
         backgroundRepeat: 'no-repeat',
         imageRendering: 'pixelated',
+        transition: 'none',
       }} 
     />
   );

@@ -43,6 +43,7 @@ export default function MiniBattleSimulator({
   const [isAttacking, setIsAttacking] = useState(false);
   const [isPlayingIntro, setIsPlayingIntro] = useState(false);
   const [spawnReplayKey, setSpawnReplayKey] = useState(0);
+  const [currentFrame, setCurrentFrame] = useState(0);
 
   // Logic Breakdown:
   // 1. INTRO (Spawn): Plays StartFrame -> EndFrame once.
@@ -54,26 +55,56 @@ export default function MiniBattleSimulator({
   // Determine effective range based on state
   let currentStart = 0;
   let currentEnd = 0;
-  let loopMode = 'infinite';
+  let isLooping = true;
 
   if (isPlayingIntro) {
     // Show Full Intro (0 -> 16)
     currentStart = monsterStartFrame || 0;
     currentEnd = monsterEndFrame || monsterFrameCount - 1;
-    loopMode = '1 forwards';
+    isLooping = false;
   } else if (hasIdleLoop) {
     // Show Loop (10 -> 16)
     currentStart = monsterIdleLoopRange![0];
     currentEnd = monsterIdleLoopRange![1];
-    loopMode = 'infinite';
+    isLooping = true;
   } else {
     // Default: Loop everything if no specific ranges are set
     currentStart = monsterStartFrame || 0;
     currentEnd = monsterEndFrame || monsterFrameCount - 1;
-    loopMode = 'infinite';
+    isLooping = true;
   }
 
   const currentFrameCount = Math.max(1, (currentEnd - currentStart) + 1);
+
+  // JS ANIMATION LOOP
+  React.useEffect(() => {
+    if (!monsterIsSpritesheet || monsterFrameCount <= 1) {
+        setCurrentFrame(0);
+        return;
+    }
+
+    const frameDuration = (monsterAnimationSpeed || 800) / currentFrameCount;
+    let localFrame = 0;
+    setCurrentFrame(currentStart);
+
+    const interval = setInterval(() => {
+        localFrame++;
+        
+        if (localFrame >= currentFrameCount) {
+            if (isLooping) {
+                localFrame = 0;
+            } else {
+                clearInterval(interval);
+                setIsPlayingIntro(false);
+                return;
+            }
+        }
+        
+        setCurrentFrame(currentStart + localFrame);
+    }, frameDuration);
+
+    return () => clearInterval(interval);
+  }, [monsterIsSpritesheet, monsterFrameCount, monsterAnimationSpeed, currentStart, currentEnd, isLooping, spawnReplayKey]);
 
   const runTest = () => {
     if (!testSkillId) {
@@ -268,10 +299,6 @@ export default function MiniBattleSimulator({
       </div>
 
       <style jsx>{`
-        @keyframes mini-battle-sprite {
-          from { background-position: -${currentStart * (monsterFrameWidth || 64)}px 0px; }
-          to { background-position: -${(currentEnd + 1) * (monsterFrameWidth || 64)}px 0px; }
-        }
         .custom-scrollbar::-webkit-scrollbar {
           width: 4px;
         }
