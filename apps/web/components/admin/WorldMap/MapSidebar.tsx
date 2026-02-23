@@ -2,7 +2,7 @@
 import React, { useRef } from 'react';
 import { useMapStore, NodeType } from '@/lib/store/mapStore';
 import { v4 as uuidv4 } from 'uuid';
-import { Target, Map as MapIcon, User, Sword, Box, Trash2, Save, Upload, Image as ImageIcon, Plus, Eraser, MousePointer2, Settings, Maximize } from 'lucide-react';
+import { Target, Map as MapIcon, User, Sword, Box, Trash2, Save, Upload, Image as ImageIcon, Plus, Eraser, MousePointer2, Settings, Maximize, XCircle } from 'lucide-react';
 
 const DRAGGABLE_NODES: { type: NodeType; label: string; icon: React.ReactNode }[] = [
   { type: 'spawn', label: 'Spawn Point', icon: <Target size={16} className="text-blue-400" /> },
