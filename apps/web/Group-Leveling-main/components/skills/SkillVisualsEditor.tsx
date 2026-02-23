@@ -204,17 +204,16 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
 
   // 4. PREVIEW PLAY
   const playPreview = () => {
-    setIsPlaying(false);
-    // Force reflow to restart animation
-    setTimeout(() => {
-      setIsPlaying(true);
-      // Play Sound
-      if (audioRef.current) {
-        audioRef.current.src = config.sfx_url;
-        audioRef.current.currentTime = 0;
-        audioRef.current.play();
-      }
-    }, 10);
+    // Reset to start and play audio
+    setCurrentFrame(0);
+    setIsPlaying(true);
+    
+    // Audio playback (instant to bypass browser blocks)
+    if (audioRef.current && config.sfx_url) {
+      audioRef.current.src = config.sfx_url;
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(error => console.warn("Audio playback prevented:", error));
+    }
   };
 
   return (
@@ -396,26 +395,25 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
         <div className="w-1/2 bg-black relative flex flex-col items-center justify-center border-l border-gray-800">
            <div className="absolute top-4 right-4 text-[10px] text-gray-600 font-mono">LIVE RENDER ENGINE</div>
            
-           {/* THE ANIMATION BOX */}
+          {/* THE ANIMATION BOX */}
            <div className="relative group">
              <div 
                id="preview-box"
                style={{
-                 width: config.frame_width,
-                 height: config.frame_height,
-                 transform: `scale(${config.preview_scale})`,
+                 width: `${Number(config.frame_width) || 200}px`,
+                 height: `${Number(config.frame_height) || 200}px`,
+                 transform: `scale(${Number(config.preview_scale) || 1})`,
                  backgroundImage: config.sprite_url ? `url(${config.sprite_url})` : 'none',
-                 backgroundSize: `${config.frame_count * 100}% 100%`, // Assumes horizontal strip
-                 backgroundPosition: `${config.offset_x}px ${config.offset_y}px`, // Apply Static Offset
+                 backgroundSize: `${(Number(config.frame_count) || 1) * (Number(config.frame_width) || 200)}px ${Number(config.frame_height) || 200}px`,
+                 backgroundPosition: `${-(Number(currentFrame) * (Number(config.frame_width) || 200)) + (Number(config.offset_x) || 0)}px ${Number(config.offset_y) || 0}px`,
                  backgroundRepeat: 'no-repeat',
                  imageRendering: 'pixelated',
-                 // Play once (steps(N)) then stop
-                 animation: isPlaying 
-                   ? `play-sprite ${config.duration_ms}ms steps(${config.frame_count}) forwards` 
-                   : 'none'
+                 transition: 'none',
+                 display: 'flex',
+                 alignItems: 'center',
+                 justifyContent: 'center'
                }} 
-               onAnimationEnd={() => setIsPlaying(false)}
-               className="border border-cyan-500/30 bg-gray-900/20 flex items-center justify-center text-[10px] text-gray-700 text-center px-2 shadow-[0_0_20px_rgba(6,182,212,0.1)] transition-transform"
+               className="border border-cyan-500/30 bg-gray-900/20 text-[10px] text-gray-700 text-center px-2 shadow-[0_0_20px_rgba(6,182,212,0.1)]"
              >
                {!config.sprite_url && "No Sprite Sheet Uploaded"}
              </div>
@@ -427,8 +425,14 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
            </div>
            
            <div className="mt-8 flex gap-4">
+             <button 
+               onClick={() => setIsPlaying(!isPlaying)} 
+               className={`px-4 py-2 rounded-full font-bold flex items-center gap-2 border ${isPlaying ? 'bg-gray-800 text-gray-400 border-gray-700' : 'bg-green-600 text-white border-green-500'}`}
+             >
+               {isPlaying ? 'Pause' : 'Play'}
+             </button>
              <button onClick={playPreview} className="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-2 rounded-full font-bold flex items-center gap-2">
-               <Play size={16} fill="white" /> Test Animation + Audio
+               <Play size={16} fill="white" /> Test SFX + Reset
              </button>
            </div>
 
