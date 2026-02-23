@@ -100,10 +100,12 @@ export const generateAsset = async ({
         systemContext += `\n[TYPE: VFX SPRITESHEET]\n`;
         systemContext += `Create a '${skillType.toUpperCase()}' effect sequence (${frames} frames, ${layout}). `;
         systemContext += `Pure energy/effect only. No character body.\n`;
+        systemContext += `STRICT CENTERING: Each frame in the sequence must be perfectly centered within its cell. There should be no horizontal or vertical drift. The core of the effect should remain at the center of the frame throughout the animation.\n`;
     } else {
         const layout = frames > 25 ? "6x6 Grid" : frames > 16 ? "5x5 Grid" : frames > 8 ? "4x4 Grid" : "Horizontal Strip";
         systemContext += `\n[TYPE: CHARACTER ANIMATION SHEET]\n`;
         systemContext += `Create a sequential animation: ${frames} frames, ${layout}. `;
+        systemContext += `STRICT CENTERING: Each animation frame must be perfectly centered within its cell. Avoid any drift or shifting to the edges unless it is part of the animation movement.\n`;
         if (baseBodyImage) {
              systemContext += `CRITICAL: Maintain the exact spatial alignment with the Base Body across ALL frames. The item must move exactly as the body moves in the template. Do NOT render the body parts.\n`;
         }
