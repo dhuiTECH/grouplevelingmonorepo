@@ -100,26 +100,36 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
   const goToNode = (nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);
-    if (!node || !transformComponentRef.current || !dropTargetRef.current) return;
+    if (!node || !transformComponentRef.current) return;
     
     selectNode(nodeId);
-    const targetScale = 0.5; // Good overview zoom
+    
+    // Lock the scale to 1 for now to completely rule out scaling offset bugs
+    const targetScale = 1; 
 
-    // 1. Get viewport dimensions accurately from the wrapper ref
-    const viewportWidth = dropTargetRef.current.clientWidth;
-    const viewportHeight = dropTargetRef.current.clientHeight;
+    // 1. Get viewport size, with an absolute fallback just in case the ref is 0 during a fast render
+    const container = dropTargetRef.current;
+    const viewportWidth = container?.clientWidth || window.innerWidth || 1000;
+    const viewportHeight = container?.clientHeight || window.innerHeight || 800;
 
-    // 2. Calculate target world pixels
-    // Origin is at WORLD_SIZE / 2
-    const targetWorldX = (node.x * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
-    const targetWorldY = (node.y * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
+    // 2. Brutal type coercion. If the database gives us a string or garbage, force it to an integer.
+    const gridX = parseInt(String(node.x), 10) || 0;
+    const gridY = parseInt(String(node.y), 10) || 0;
 
-    // 3. Math: viewport_center = (world_pixel * scale) + translation
-    // translation = viewport_center - (world_pixel * scale)
-    const x = (viewportWidth / 2) - (targetWorldX * targetScale);
-    const y = (viewportHeight / 2) - (targetWorldY * targetScale);
+    // 3. Find the exact pixel center of the node on the 128,000 canvas
+    const targetX = (gridX * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
+    const targetY = (gridY * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
 
-    transformComponentRef.current.setTransform(x, y, targetScale, 600, 'easeOut');
+    // 4. Calculate camera offset
+    const finalX = (viewportWidth / 2) - (targetX * targetScale);
+    const finalY = (viewportHeight / 2) - (targetY * targetScale);
+
+    // DEBUG: If you go to Narnia again, look at your browser console (F12). 
+    // This will tell you EXACTLY which number is breaking.
+    console.log(`[ZOOM DEBUG] NodeCoords: ${gridX},${gridY} | Viewport: ${viewportWidth}x${viewportHeight} | TargetPx: ${targetX},${targetY} | CameraMove: X:${finalX} Y:${finalY}`);
+
+    // 5. Force the library to move
+    transformComponentRef.current.setTransform(finalX, finalY, targetScale, 400, 'easeOut');
   };
 
   const fetchSupportData = async () => {
