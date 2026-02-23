@@ -12,6 +12,7 @@ interface Props {
 export default function SkillVisualsEditor({ skillId, skillName, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentFrame, setCurrentFrame] = useState(0);
 
   // VISUAL CONFIG
   const [config, setConfig] = useState({
@@ -79,6 +80,30 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
     };
     fetchAnim();
   }, [skillId]);
+
+  // JS-DRIVEN ANIMATION LOOP
+  useEffect(() => {
+    if (!isPlaying) {
+      setCurrentFrame(0);
+      return;
+    }
+
+    const frameDuration = config.duration_ms / config.frame_count;
+    let frame = 0;
+    
+    const interval = setInterval(() => {
+      frame++;
+      if (frame >= config.frame_count) {
+        clearInterval(interval);
+        setIsPlaying(false);
+        setCurrentFrame(0);
+      } else {
+        setCurrentFrame(frame);
+      }
+    }, frameDuration);
+
+    return () => clearInterval(interval);
+  }, [isPlaying, config.duration_ms, config.frame_count]);
 
   // 2. UPLOAD HANDLER (Handles both Images and Audio)
   const handleUpload = async (file: File, type: 'sprite' | 'sfx') => {
@@ -168,6 +193,7 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
   // 4. PREVIEW PLAY
   const playPreview = () => {
     setIsPlaying(false);
+    setCurrentFrame(0);
     // Force reflow to restart animation
     setTimeout(() => {
       setIsPlaying(true);
@@ -359,27 +385,23 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
         <div className="w-1/2 bg-black relative flex flex-col items-center justify-center border-l border-gray-800">
            <div className="absolute top-4 right-4 text-[10px] text-gray-600 font-mono">LIVE RENDER ENGINE</div>
            
-           {/* THE ANIMATION BOX */}
-           <div className="relative group">
-             <div 
-               id="preview-box"
-               style={{
-                 width: config.frame_width,
-                 height: config.frame_height,
-                 transform: `scale(${config.preview_scale})`,
-                 backgroundImage: config.sprite_url ? `url(${config.sprite_url})` : 'none',
-                 backgroundSize: `${config.frame_count * 100}% 100%`, // Assumes horizontal strip
-                 backgroundPosition: `${config.offset_x}px ${config.offset_y}px`, // Apply Static Offset
-                 backgroundRepeat: 'no-repeat',
-                 imageRendering: 'pixelated',
-                 // Play once (steps(N)) then stop
-                 animation: isPlaying 
-                   ? `play-sprite ${config.duration_ms}ms steps(${config.frame_count}) forwards` 
-                   : 'none'
-               }} 
-               onAnimationEnd={() => setIsPlaying(false)}
-               className="border border-cyan-500/30 bg-gray-900/20 flex items-center justify-center text-[10px] text-gray-700 text-center px-2 shadow-[0_0_20px_rgba(6,182,212,0.1)] transition-transform"
-             >
+          {/* THE ANIMATION BOX */}
+          <div className="relative group">
+            <div 
+              id="preview-box"
+              style={{
+                width: config.frame_width,
+                height: config.frame_height,
+                transform: `scale(${config.preview_scale})`,
+                backgroundImage: config.sprite_url ? `url("${config.sprite_url}")` : 'none',
+                backgroundSize: `${config.frame_width * config.frame_count}px ${config.frame_height}px`,
+                backgroundPosition: `${-(currentFrame * config.frame_width) + config.offset_x}px ${config.offset_y}px`,
+                backgroundRepeat: 'no-repeat',
+                imageRendering: 'pixelated',
+                transition: 'none',
+              }} 
+              className="border border-cyan-500/30 bg-gray-900/20 flex items-center justify-center text-[10px] text-gray-700 text-center px-2 shadow-[0_0_20px_rgba(6,182,212,0.1)]"
+            >
                {!config.sprite_url && "No Sprite Sheet Uploaded"}
              </div>
              {config.sprite_url && (
@@ -388,7 +410,7 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
                </div>
              )}
            </div>
-           
+
            <div className="mt-8 flex gap-4">
              <button onClick={playPreview} className="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-2 rounded-full font-bold flex items-center gap-2">
                <Play size={16} fill="white" /> Test Animation + Audio
@@ -397,13 +419,6 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
 
            {/* Hidden Audio Player */}
            <audio ref={audioRef} />
-
-           <style jsx>{`
-             @keyframes play-sprite {
-               from { background-position: ${config.offset_x}px ${config.offset_y}px; }
-               to { background-position: calc(-${config.frame_count * config.frame_width}px + ${config.offset_x}px) ${config.offset_y}px; }
-             }
-           `}</style>
         </div>
       </div>
     </div>
