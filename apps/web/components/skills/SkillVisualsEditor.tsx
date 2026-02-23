@@ -18,13 +18,13 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
   const [config, setConfig] = useState({
     sprite_url: '',
     sfx_url: '',
-    frame_count: 6,
-    frame_width: 64,
-    frame_height: 64,
+    frame_count: 25,
+    frame_width: 200,
+    frame_height: 200,
     offset_x: 0,
     offset_y: 0,
     preview_scale: 1,
-    duration_ms: 800,
+    duration_ms: 1300,
     vfx_type: 'impact' // 'projectile', 'melee', 'impact', 'beam', 'aoe'
   });
 
@@ -66,13 +66,13 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
         setConfig({
           sprite_url: data.sprite_url || '',
           sfx_url: data.sfx_url || '',
-          frame_count: data.frame_count ?? 6,
-          frame_width: data.frame_width ?? data.frame_size ?? 64,
-          frame_height: data.frame_height ?? data.frame_size ?? 64,
+          frame_count: data.frame_count ?? 25,
+          frame_width: data.frame_width ?? data.frame_size ?? 200,
+          frame_height: data.frame_height ?? data.frame_size ?? 200,
           offset_x: data.offset_x ?? 0,
           offset_y: data.offset_y ?? 0,
           preview_scale: data.preview_scale ?? 1,
-          duration_ms: data.duration_ms ?? 800,
+          duration_ms: data.duration_ms ?? 1300,
           vfx_type: data.vfx_type || 'impact'
         });
       }
