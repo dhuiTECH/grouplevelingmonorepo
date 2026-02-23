@@ -1,0 +1,141 @@
+"use client";
+
+import { useState } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+
+export default function SignupForm() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  const referralCode = searchParams.get('ref');
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (authError) throw authError;
+
+      if (authData.user) {
+        const startingCoins = referralCode ? 1000 : 100;
+        const startingGems = referralCode ? 2 : 0;
+        
+        const newReferralCode = `HUNT-${username.substring(0, 3).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`;
+
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: authData.user.id,
+            hunter_name: username,
+            email: email,
+            level: 1,
+            hunter_rank: 'E',
+            coins: startingCoins,
+            gems: startingGems,
+            referral_used: referralCode,
+            referral_code: newReferralCode,
+            avatar: '/NoobMan.png',
+            onboarding_completed: true,
+            status: 'pending'
+          });
+
+        if (profileError) throw profileError;
+
+        router.push('/'); 
+      }
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSignup} className="relative z-10 w-full max-w-md bg-[#0f0e13] border border-[#A78BFA]/30 p-8 rounded-2xl shadow-2xl backdrop-blur-sm">
+      
+      <div className="text-center mb-8">
+        <h1 className="text-3xl font-black text-white uppercase tracking-widest font-[Orbitron] mb-2 drop-shadow-[0_0_10px_rgba(167,139,250,0.5)]">
+          Hunter Registration
+        </h1>
+        <p className="text-[10px] uppercase tracking-[0.4em] text-blue-400 opacity-60">Initialize Awakening Sequence</p>
+      </div>
+
+      {referralCode && (
+        <div className="mb-6 p-3 bg-[#22d3ee]/10 border border-[#22d3ee]/30 rounded-lg flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="bg-[#22d3ee] text-black font-bold px-2 py-0.5 rounded text-[10px] uppercase tracking-tighter">
+            Code Applied
+          </div>
+          <div className="text-xs text-[#22d3ee]">
+            <span className="font-bold">{referralCode}</span> detected.
+            <br />
+            <span className="text-[10px] text-gray-400 uppercase tracking-wider">Starter Pack: 1000 Gold + 2 Gems included.</span>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-5">
+        <div>
+          <label className="text-[10px] text-gray-500 uppercase tracking-[0.2em] mb-1.5 block ml-1 text-left">Hunter Name</label>
+          <input 
+            type="text" 
+            required
+            placeholder="e.g. Sung Jin-Woo"
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white focus:border-[#A78BFA] focus:ring-1 focus:ring-[#A78BFA]/30 outline-none transition-all placeholder:text-gray-700"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] text-gray-500 uppercase tracking-[0.2em] mb-1.5 block ml-1 text-left">Email Address</label>
+          <input 
+            type="email" 
+            required
+            placeholder="hunter@system.com"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white focus:border-[#A78BFA] focus:ring-1 focus:ring-[#A78BFA]/30 outline-none transition-all placeholder:text-gray-700"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] text-gray-500 uppercase tracking-[0.2em] mb-1.5 block ml-1 text-left">Security Key (Password)</label>
+          <input 
+            type="password" 
+            required
+            placeholder="••••••••"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white focus:border-[#A78BFA] focus:ring-1 focus:ring-[#A78BFA]/30 outline-none transition-all placeholder:text-gray-700"
+          />
+        </div>
+      </div>
+
+      <button 
+        disabled={loading}
+        type="submit"
+        className="w-full mt-10 bg-[#A78BFA] hover:bg-[#c4b5fd] disabled:bg-gray-800 disabled:text-gray-500 text-black font-black uppercase tracking-[0.2em] py-4 rounded-xl transition-all shadow-[0_0_20px_rgba(167,139,250,0.3)] hover:shadow-[0_0_30px_rgba(167,139,250,0.5)] active:scale-[0.98]"
+      >
+        {loading ? (
+          <span className="flex items-center justify-center gap-2">
+            <span className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+            Initializing...
+          </span>
+        ) : 'Awaken'}
+      </button>
+
+      <p className="text-center mt-6 text-[10px] text-gray-500 uppercase tracking-widest">
+        Already a Hunter? <button type="button" onClick={() => router.push('/login')} className="text-[#A78BFA] hover:underline">Establish Connection</button>
+      </p>
+    </form>
+  );
+}

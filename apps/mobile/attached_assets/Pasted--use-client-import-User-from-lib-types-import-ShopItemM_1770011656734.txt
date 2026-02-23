@@ -1,0 +1,150 @@
+"use client";
+
+import { User } from '@/lib/types';
+import { ShopItemMedia } from './ShopItemMedia';
+
+export default function LayeredAvatar({
+  user,
+  size = 64,
+  onAvatarClick,
+  className = "",
+  hideBackground = false
+}: {
+  user: User;
+  size?: number;
+  onAvatarClick?: (avatar: string, name: string) => void;
+  className?: string;
+  hideBackground?: boolean;
+}) {
+  const equippedCosmetics = user.cosmetics?.filter((c: any) => c.equipped) || [];
+
+  // Helper to normalize slot names
+  const getSlot = (item: any) => item?.slot?.trim().toLowerCase();
+  
+  // Define what counts as a "body replacement" slot
+  const isAvatarSlot = (slot: string | undefined) => {
+    return slot === 'avatar' || slot === 'fullbody' || slot === 'skin' || slot === 'character';
+  };
+
+  // 1. Find the equipped skin
+  const equippedShopSkinItem = equippedCosmetics.find(c => isAvatarSlot(getSlot(c.shop_items)));
+  const equippedShopSkin = equippedShopSkinItem?.shop_items?.image_url;
+
+  // 2. Priority: Equipped Skin > Base Body > User Avatar > Default
+    const baseBodyLayer = equippedShopSkin || user.base_body_url || user.avatar_url || '/NoobMan.png';
+
+  // 3. Filter overlays (exclude the equipped skin)
+  const overlayLayers = equippedCosmetics
+    .filter((c: any) => c.shop_items?.image_url && !isAvatarSlot(getSlot(c.shop_items)))
+    .sort((a: any, b: any) => Number(a.shop_items.z_index || 1) - Number(b.shop_items.z_index || 1));
+
+  const ADMIN_CONTAINER_SIZE = 512;
+  const ADMIN_ANCHOR_POINT = 128;
+  const scaleRatio = size / ADMIN_CONTAINER_SIZE;
+
+  return (
+    <div
+      className={`relative overflow-hidden ${className || 'rounded-full'}`}
+      style={{ width: size, height: size }}
+       onClick={() => onAvatarClick?.(user.avatar_url || '', user.name || '')}
+    >
+      {!hideBackground && equippedCosmetics.filter(c => getSlot(c.shop_items) === 'background').map(cosmetic => (
+        <div key={cosmetic.id} className="absolute inset-0 w-full h-full" style={{ zIndex: 0 }}>
+          <ShopItemMedia item={cosmetic.shop_items} className="w-full h-full object-cover" animate={true} />
+        </div>
+      ))}
+
+      <div className="absolute inset-0 w-full h-full" style={{ zIndex: 5 }}>
+         <img
+            src={baseBodyLayer}
+            alt="Hunter Body"
+            className="w-full h-full object-cover"
+            onError={(e) => { e.currentTarget.src = '/NoobMan.png'; }}
+         />
+      </div>
+
+      {overlayLayers.map(cosmetic => {
+          const item = cosmetic.shop_items;
+          const dbScale = parseFloat(item.scale || "1");
+
+          const leftPercent = ((ADMIN_ANCHOR_POINT + (item.offset_x || 0)) / ADMIN_CONTAINER_SIZE) * 100;
+          const topPercent = ((ADMIN_ANCHOR_POINT + (item.offset_y || 0)) / ADMIN_CONTAINER_SIZE) * 100;
+
+          const zIndex = Number(item.z_index || 10);
+
+          // Determine if item is animated and get frame dimensions
+          let isAnimated = false;
+          let frameWidth = 96; // Default for static items
+          let frameHeight = 96;
+          
+          if (item.is_animated && item.animation_config) {
+            try {
+              let config = item.animation_config;
+              if (typeof config === 'string') {
+                config = JSON.parse(config);
+                if (typeof config === 'string') {
+                  config = JSON.parse(config);
+                }
+              }
+              if (config?.frameWidth && config?.frameHeight) {
+                isAnimated = true;
+                frameWidth = Number(config.frameWidth);
+                frameHeight = Number(config.frameHeight);
+              }
+            } catch (e) {
+              // Use defaults if parsing fails
+            }
+          }
+
+          // For animated items: use frame dimensions (content is centered in frame)
+          // For static items: use a larger container that allows natural image sizing
+          // This handles items with offset visual content (like backpack with padding)
+          const useFrameDimensions = isAnimated;
+          
+          // Calculate container dimensions
+          let containerWidth: number | string;
+          let containerHeight: number | string;
+          let transformValue: string;
+          let mediaClassName: string;
+          
+          if (useFrameDimensions) {
+            // Animated items: use exact frame dimensions
+            containerWidth = frameWidth * dbScale * scaleRatio;
+            containerHeight = frameHeight * dbScale * scaleRatio;
+            transformValue = `translate(-50%, -50%)`;
+            mediaClassName = "w-full h-full";
+          } else {
+            // Static items: use 1px container with scale transform
+            // This allows the image to render at natural size, then scale
+            // The offset_x/offset_y in admin tool can be used to adjust for visual content offset
+            containerWidth = 1;
+            containerHeight = 1;
+            transformValue = `translate(-50%, -50%) scale(${dbScale * scaleRatio})`;
+            mediaClassName = "max-w-none";
+          }
+
+          return (
+            <div
+              key={cosmetic.id}
+              className="absolute pointer-events-none flex items-center justify-center"
+              style={{
+                zIndex: zIndex,
+                left: `${leftPercent}%`,
+                top: `${topPercent}%`,
+                transform: transformValue,
+                transformOrigin: 'center',
+                width: typeof containerWidth === 'number' && containerWidth === 1 ? '1px' : `${containerWidth}px`,
+                height: typeof containerHeight === 'number' && containerHeight === 1 ? '1px' : `${containerHeight}px`,
+              }}
+            >
+              <ShopItemMedia 
+                item={item} 
+                animate={true} 
+                className={mediaClassName} 
+              />
+            </div>
+          );
+        })}
+    </div>
+  );
+}

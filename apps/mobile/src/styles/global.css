@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-deep-charcoal: #121214;
+    --color-digital-lavender: #A78BFA;
+    --color-neon-cyan: #00E8FF;
+  }
+}
+
+/* Custom shadow mapping for NativeWind */
+.shadow-aura {
+  box-shadow: 0px 0px 15px rgba(167, 139, 250, 0.3);
+  elevation: 10;
+}
+
+.system-glass {
+  background-color: rgba(30, 27, 75, 0.4);
+  border-width: 1px;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.aura-card-gradient {
+  background-color: rgba(18, 18, 20, 0.95);
+  border-width: 1px;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Safe Area Utilities */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}

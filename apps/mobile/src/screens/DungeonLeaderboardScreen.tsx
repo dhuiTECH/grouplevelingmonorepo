@@ -1,0 +1,206 @@
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, ActivityIndicator } from 'react-native';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import { supabase } from '@/lib/supabase';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import LayeredAvatar from '@/components/LayeredAvatar';
+
+export default function DungeonLeaderboardScreen() {
+  const route = useRoute<any>();
+  const navigation = useNavigation();
+  const { dungeon } = route.params || {};
+  
+  const [loading, setLoading] = useState(true);
+  const [rankings, setRankings] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchLeaderboard();
+  }, [dungeon]);
+
+  const fetchLeaderboard = async () => {
+    try {
+      setLoading(true);
+      // Query for "best_dungeon_times" view as requested in Step 4
+      const { data, error } = await supabase
+        .from('best_dungeon_times')
+        .select('*')
+        .eq('dungeon_tier', dungeon?.tier || '5k')
+        .order('best_time_seconds', { ascending: true })
+        .limit(20);
+
+      if (error) throw error;
+      setRankings(data || []);
+    } catch (err) {
+      console.error('Error fetching leaderboard:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatTime = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const renderRankItem = ({ item, index }: { item: any, index: number }) => {
+    const profile = item;
+    return (
+      <View style={styles.rankItem}>
+        <Text style={[styles.rankNumber, index < 3 && styles.topRankText]}>
+          {index + 1}
+        </Text>
+        
+        <View style={styles.avatarContainer}>
+          <LayeredAvatar user={profile} size={40} />
+        </View>
+
+        <View style={styles.hunterInfo}>
+          <Text style={styles.hunterName}>{profile.hunter_name || 'Hunter'}</Text>
+          <Text style={styles.hunterTitle}>{profile.current_title || 'Novice'}</Text>
+        </View>
+
+        <View style={styles.timeContainer}>
+          <Text style={styles.timeValue}>{formatTime(item.best_time_seconds)}</Text>
+          <Text style={styles.timeLabel}>TIME</Text>
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['#020617', '#0f172a']}
+        style={StyleSheet.absoluteFill}
+      />
+      
+      <SafeAreaView style={{ flex: 1 }}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="chevron-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <View>
+            <Text style={styles.headerTitle}>LEADERBOARD</Text>
+            <Text style={styles.headerSubtitle}>{dungeon?.name?.toUpperCase() || 'DUNGEON'}</Text>
+          </View>
+        </View>
+
+        {loading ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color="#06b6d4" />
+          </View>
+        ) : (
+          <FlatList
+            data={rankings}
+            renderItem={renderRankItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            ListEmptyComponent={
+              <View style={styles.centerContainer}>
+                <Text style={styles.emptyText}>NO RECORDS FOUND</Text>
+              </View>
+            }
+          />
+        )}
+      </SafeAreaView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#020617',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    gap: 15,
+  },
+  backButton: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 20,
+  },
+  headerTitle: {
+    color: '#06b6d4',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  headerSubtitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '900',
+    fontStyle: 'italic',
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  listContent: {
+    padding: 20,
+  },
+  rankItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.1)',
+  },
+  rankNumber: {
+    color: '#64748b',
+    fontSize: 18,
+    fontWeight: '900',
+    width: 30,
+    fontStyle: 'italic',
+  },
+  topRankText: {
+    color: '#fbbf24',
+  },
+  avatarContainer: {
+    marginRight: 12,
+  },
+  hunterInfo: {
+    flex: 1,
+  },
+  hunterName: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  hunterTitle: {
+    color: '#64748b',
+    fontSize: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  timeContainer: {
+    alignItems: 'flex-end',
+  },
+  timeValue: {
+    color: '#22d3ee',
+    fontSize: 16,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+  },
+  timeLabel: {
+    color: '#64748b',
+    fontSize: 8,
+    fontWeight: 'bold',
+  },
+  emptyText: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+  },
+});

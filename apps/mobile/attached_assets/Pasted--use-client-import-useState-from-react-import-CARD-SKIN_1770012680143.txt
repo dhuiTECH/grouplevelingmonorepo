@@ -1,0 +1,120 @@
+"use client";
+
+import { useState } from 'react';
+import { CARD_SKINS } from '@/lib/cardSkins'; 
+import { User } from '@/lib/types';
+import LayeredAvatar from '@/components/LayeredAvatar';
+
+interface PlayerCallingCardProps {
+  user: User;
+  referralCode?: string; 
+  skinId?: string;      // 🟢 The ID from the file above (default, magma, galaxy)
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
+  isOwnCard?: boolean;
+}
+
+export default function PlayerCallingCard({ 
+  user,
+  referralCode,
+  skinId = 'default',
+  size = 'md',
+  className = "",
+  isOwnCard = false
+}: PlayerCallingCardProps) {
+  
+  const [status, setStatus] = useState<'idle' | 'copied'>('idle');
+
+  // 1. LOOKUP SKIN
+  const skin = CARD_SKINS[skinId as keyof typeof CARD_SKINS] || CARD_SKINS.default;
+
+  // 2. GENERATE LINK
+    const username = user.name || "HUNTER";
+  const code = referralCode || `HUNT-${username.substring(0, 3).toUpperCase()}${user.level || 1}`;
+  const link = `https://hunter-system.app/join?ref=${code}`;
+
+  // 3. HANDLE TAP (Mobile Friendly)
+  const handleTap = (e: React.MouseEvent) => {
+    if (!isOwnCard) return;
+    
+    e.stopPropagation();
+    navigator.clipboard.writeText(link);
+    if (typeof (navigator as any).vibrate === 'function') (navigator as any).vibrate(50);
+    setStatus('copied');
+    setTimeout(() => setStatus('idle'), 2000);
+  };
+
+  // Dimensions - Compressed
+  const hClass = size === 'sm' ? 'h-10' : size === 'lg' ? 'h-20' : 'h-16';
+  const textSize = size === 'sm' ? 'text-[10px]' : 'text-sm';
+
+  return (
+    <div 
+      onClick={handleTap}
+      className={`
+        relative overflow-hidden rounded-lg select-none
+        transition-all duration-200 border
+        /* 🟢 DYNAMIC STYLES */
+        ${skin.style} ${skin.effect}
+        /* Mobile Interaction */
+        ${isOwnCard ? 'cursor-pointer active:scale-95 active:opacity-90' : ''}
+        ${hClass} ${className}
+      `}
+      style={skin.backgroundImage ? { 
+        backgroundImage: `url(${skin.backgroundImage})`, 
+        backgroundSize: 'cover' 
+      } : {}}
+    >
+      {/* LAYER 1: AVATAR (Layered Eye Crop) */}
+      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none opacity-80">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[-25%] scale-[7]">
+          <LayeredAvatar 
+            user={user} 
+            size={size === 'sm' ? 60 : 100}
+            className="rounded-none bg-transparent"
+            hideBackground={true}
+          />
+        </div>
+        {/* Dark Gradient so text is always readable */}
+        <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/40 to-transparent" />
+      </div>
+
+      {/* LAYER 2: TEXT & REFERRAL */}
+      <div className="relative z-10 flex flex-col justify-center h-full px-3">
+        {/* Username */}
+        <h3 className={`font-black text-white uppercase tracking-widest font-[Orbitron] truncate ${isOwnCard ? 'w-3/4' : 'w-full'} drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] ${textSize}`}>
+          {username}
+        </h3>
+
+        {/* Referral & Rewards */}
+        {isOwnCard && (
+        <div className="flex items-center gap-2 h-3 mt-0.5">
+          {status === 'copied' ? (
+            <span className="text-[8px] font-bold text-cyan-400 tracking-widest uppercase animate-pulse">
+              ✓ COPIED
+            </span>
+          ) : (
+            <>
+              <span className="text-[7px] text-gray-400 font-bold tracking-widest uppercase whitespace-nowrap">
+                REF: {code}
+              </span>
+              
+              {/* Rewards Badge */}
+              <div className="flex items-center gap-1 bg-black/60 border border-yellow-500/20 px-1 py-0 rounded-[2px] backdrop-blur-sm">
+                <div className="flex items-center gap-0.5">
+                  <img src="/coinicon.png" alt="C" className="w-2 h-2 object-contain" />
+                  <span className="text-[7px] text-yellow-400 font-bold">1000</span>
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <img src="/gemicon.png" alt="G" className="w-2 h-2 object-contain" />
+                  <span className="text-[7px] text-blue-400 font-bold">2</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+        )}
+      </div>
+    </div>
+  );
+}
