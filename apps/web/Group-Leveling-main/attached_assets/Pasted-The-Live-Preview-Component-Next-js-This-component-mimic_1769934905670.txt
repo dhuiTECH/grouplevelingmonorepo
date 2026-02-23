@@ -1,0 +1,49 @@
+The "Live Preview" Component (Next.js)
+This component mimics your React Native modal's styling so you can verify the layout.
+
+TypeScript
+const ModalPreview = ({ name, type, imageUrl, data }) => {
+  return (
+    <div className="w-[300px] h-[500px] bg-black border-2 border-cyan-500/50 rounded-3xl overflow-hidden relative shadow-[0_0_20px_rgba(6,182,212,0.2)]">
+      {/* Background Image Preview */}
+      {imageUrl ? (
+        <img src={imageUrl} className="absolute inset-0 w-full h-48 object-cover" />
+      ) : (
+        <div className="h-48 bg-gray-900 flex items-center justify-center text-[10px] text-gray-700 uppercase">No Image Selected</div>
+      )}
+      
+      {/* Gradient Overlay */}
+      <div className="absolute top-0 inset-x-0 h-48 bg-gradient-to-t from-black to-transparent" />
+
+      {/* Content Area */}
+      <div className="absolute top-44 inset-0 p-4 space-y-4">
+        <h4 className="text-cyan-400 font-black text-lg uppercase tracking-tighter">{name || "Location Name"}</h4>
+        <div className="px-2 py-0.5 bg-cyan-900/30 border border-cyan-500/50 inline-block rounded text-[10px] text-cyan-300 font-bold uppercase">
+          {type}
+        </div>
+        <p className="text-gray-400 text-xs leading-relaxed">
+          {data?.welcome_text || "The system is scanning this territory..."}
+        </p>
+        
+        {/* Dynamic Button Preview */}
+        <div className="pt-4">
+          <button className="w-full py-2 bg-cyan-600/20 border border-cyan-500/50 text-cyan-400 text-[10px] font-black uppercase tracking-widest">
+            {type === 'SHOP' ? 'Enter Shop' : type === 'BATTLE' ? 'Initiate Combat' : 'Explore'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+2. Putting it all together in your Sidebar
+Now, place this ModalPreview in your sidebar next to your Icon Gallery. This creates the ultimate "Map Creation" workflow:
+
+Select Tile: Click the 50x50 grid.
+
+Pick Icon: Choose a PNG from your Icon Gallery.
+
+Config Modal: Upload a picture and type the text.
+
+Review: See it in the Modal Preview window.
+
+Plop: Save to the database.

@@ -1,0 +1,73 @@
+To move from "talking about it" to "testing it on your phone," you need the code for that Encounter Manager Sub-tab. This is where you will actually build your monsters and pets.
+
+Phase 2: Step 1 (The Admin Tools)
+Add this component to your Next.js project. I’ve automated the JSON rewards so you can just type numbers and click your icons.
+
+TypeScript
+const EncounterManager = ({ activeMapId }) => {
+  const [eventType, setEventType] = useState('MONSTER');
+  const [name, setName] = useState('');
+  const [chance, setChance] = useState(0.05);
+  const [displayMode, setDisplayMode] = useState('MODAL');
+  
+  // No-JSON Reward Builder
+  const [gold, setGold] = useState(0);
+  const [xp, setXp] = useState(0);
+  const [hp, setHp] = useState(100);
+
+  const saveEncounter = async () => {
+    // This automates the JSON metadata for you!
+    const automatedMetadata = {
+      reward_gold: gold,
+      reward_xp: xp,
+      base_hp: hp,
+      can_be_pet: eventType === 'PET'
+    };
+
+    const { error } = await supabase.from('encounter_pool').insert([{
+      map_id: activeMapId,
+      event_type: eventType,
+      name,
+      spawn_chance: chance,
+      icon_url: selectedIconUrl, // From your IconGallery
+      display_mode: displayMode,
+      metadata: automatedMetadata
+    }]);
+
+    if (!error) alert(`Successfully added ${name} to the game!`);
+  };
+
+  return (
+    <div className="p-4 bg-gray-900 border border-cyan-900/30 rounded-lg">
+      <h2 className="text-cyan-400 font-black text-xs uppercase mb-4 tracking-widest">RNG Event Creator</h2>
+      
+      {/* Form Fields */}
+      <div className="grid gap-4">
+        <select value={eventType} onChange={(e) => setEventType(e.target.value)} className="bg-black border border-gray-800 p-2 text-xs text-white">
+          <option value="MONSTER">Monster (Battle)</option>
+          <option value="PET">Wild Pet (Catch)</option>
+          <option value="LOOT">Loot Box (Find)</option>
+          <option value="LIFE_SKILL">Life Skill (Mining/etc)</option>
+        </select>
+
+        <input placeholder="Name (e.g. Blue Slime)" value={name} onChange={(e) => setName(e.target.value)} className="bg-black border border-gray-800 p-2 text-xs text-white" />
+
+        <div className="flex items-center gap-2">
+           <label className="text-[10px] text-gray-500 uppercase">Spawn Chance (0.01 - 1.0):</label>
+           <input type="number" step="0.01" value={chance} onChange={(e) => setChance(Number(e.target.value))} className="w-20 bg-black border border-gray-800 p-2 text-xs text-white" />
+        </div>
+
+        {/* Reward Builder - No JSON typing needed */}
+        <div className="grid grid-cols-3 gap-2">
+           <input type="number" placeholder="Gold" onChange={(e) => setGold(Number(e.target.value))} className="bg-black border border-gray-800 p-2 text-xs text-white" />
+           <input type="number" placeholder="XP" onChange={(e) => setXp(Number(e.target.value))} className="bg-black border border-gray-800 p-2 text-xs text-white" />
+           <input type="number" placeholder="HP" onChange={(e) => setHp(Number(e.target.value))} className="bg-black border border-gray-800 p-2 text-xs text-white" />
+        </div>
+
+        <button onClick={saveEncounter} className="bg-cyan-600 hover:bg-cyan-500 py-2 font-black text-xs uppercase tracking-tighter transition-all">
+          Add Encounter to Map
+        </button>
+      </div>
+    </div>
+  );
+};

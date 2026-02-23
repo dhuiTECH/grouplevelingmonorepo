@@ -1,0 +1,72 @@
+Copy this into your Admin sub-tab. I have updated the state names and the JSON keys to match your exp, coins, and gems columns exactly.
+
+TypeScript
+import { useState } from 'react';
+
+const EncounterSubTab = ({ activeMapId, supabase }) => {
+  const [eventType, setEventType] = useState('MONSTER');
+  const [name, setName] = useState('');
+  const [chance, setChance] = useState(0.05);
+  const [selectedIcon, setSelectedIcon] = useState('');
+  
+  // MATCHING YOUR DB COLUMNS:
+  const [exp, setExp] = useState(0);
+  const [coins, setCoins] = useState(0);
+  const [gems, setGems] = useState(0);
+  const [hp, setHp] = useState(100);
+
+  const handleSave = async () => {
+    // This automates the JSON using YOUR exact column names
+    const automatedMetadata = {
+      rewards: {
+        exp: exp,     // Matches 'exp' in your screenshot
+        coins: coins, // Matches 'coins' in your screenshot
+        gems: gems    // Matches 'gems' in your screenshot
+      },
+      stats: {
+        hp: hp
+      },
+      layout: 'POKEMON_SIDE_VIEW' // For the left/right battle look
+    };
+
+    const { error } = await supabase.from('encounter_pool').insert([{
+      map_id: activeMapId,
+      event_type: eventType,
+      name: name,
+      spawn_chance: chance,
+      icon_url: selectedIcon,
+      metadata: automatedMetadata 
+    }]);
+
+    if (!error) alert(`${name} added to the pool with correct rewards!`);
+  };
+
+  return (
+    <div className="flex flex-col gap-4 p-4 bg-gray-900/80 rounded-lg border border-cyan-900/30">
+      <h3 className="text-cyan-400 font-black uppercase text-xs">RNG Event Creator</h3>
+      
+      {/* Event Info */}
+      <input placeholder="Encounter Name" onChange={(e) => setName(e.target.value)} className="bg-black border border-gray-800 p-2 text-xs text-white" />
+
+      {/* REWARD BUILDER (Matching your DB screenshot) */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="flex flex-col">
+          <label className="text-[10px] text-gray-500 uppercase">EXP</label>
+          <input type="number" onChange={(e) => setExp(Number(e.target.value))} className="bg-black border border-gray-700 p-1 text-xs" />
+        </div>
+        <div className="flex flex-col">
+          <label className="text-[10px] text-gray-500 uppercase">Coins</label>
+          <input type="number" onChange={(e) => setCoins(Number(e.target.value))} className="bg-black border border-gray-700 p-1 text-xs" />
+        </div>
+        <div className="flex flex-col">
+          <label className="text-[10px] text-gray-500 uppercase">Gems</label>
+          <input type="number" onChange={(e) => setGems(Number(e.target.value))} className="bg-black border border-gray-700 p-1 text-xs" />
+        </div>
+      </div>
+
+      <button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-500 text-white font-black py-2 rounded text-xs uppercase">
+        Add to RNG Pool
+      </button>
+    </div>
+  );
+};

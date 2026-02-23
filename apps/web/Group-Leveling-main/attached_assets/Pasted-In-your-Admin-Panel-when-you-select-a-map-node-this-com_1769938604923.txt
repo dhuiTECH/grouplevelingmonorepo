@@ -1,0 +1,68 @@
+In your Admin Panel, when you select a map node, this component will appear in your sidebar. It allows you to transform that coordinate into a global raid.
+
+TypeScript
+const BossRaidSubTab = ({ activeNodeId, supabase }) => {
+  const [monsterLibrary, setMonsterLibrary] = useState([]);
+  const [selectedBoss, setSelectedBoss] = useState(null);
+  const [hp, setHp] = useState(1000000);
+
+  // 1. Fetch your existing Monster PNGs from Phase 2/3
+  useEffect(() => {
+    const fetchMonsters = async () => {
+      const { data } = await supabase.from('encounter_pool').select('*');
+      setMonsterLibrary(data);
+    };
+    fetchMonsters();
+  }, []);
+
+  const createRaid = async () => {
+    // 2. Save the Boss to the 'dungeon_raids' table
+    const { data: raid } = await supabase.from('dungeon_raids').insert([{
+      node_id: activeNodeId,
+      boss_name: selectedBoss.name,
+      boss_image: selectedBoss.image_url, // Reuse existing PNG!
+      max_hp: hp,
+      current_hp: hp,
+      // Setting rank rewards in JSON format
+      reward_rank_1: { coins: 5000, gems: 50, exp: 2000 },
+      reward_rank_2: { coins: 2500, gems: 25, exp: 1000 },
+      reward_rank_3: { coins: 1000, gems: 10, exp: 500 }
+    }]).select().single();
+
+    // 3. Mark the Map Node as a BOSS_RAID
+    await supabase.from('world_map_nodes').update({
+      interaction_type: 'BOSS_RAID',
+      icon_url: selectedBoss.image_url // Now the map shows the boss face!
+    }).eq('id', activeNodeId);
+
+    alert(`${selectedBoss.name} Raid is now LIVE!`);
+  };
+
+  return (
+    <div className="p-4 bg-black/40 border-l border-red-900/50">
+      <h3 className="text-red-500 font-black text-xs uppercase mb-3">Raid Config</h3>
+      
+      {/* Monster Selector using existing PNGs */}
+      <select 
+        onChange={(e) => setSelectedBoss(JSON.parse(e.target.value))}
+        className="w-full bg-gray-900 text-white p-2 text-[10px] mb-3"
+      >
+        <option>Select Boss Visual...</option>
+        {monsterLibrary.map(m => (
+          <option key={m.id} value={JSON.stringify(m)}>{m.name}</option>
+        ))}
+      </select>
+
+      <input 
+        type="number" 
+        placeholder="Total HP" 
+        onChange={(e) => setHp(e.target.value)}
+        className="w-full bg-gray-900 p-2 text-white mb-3"
+      />
+
+      <button onClick={createRaid} className="w-full bg-red-600 p-2 text-xs font-black uppercase shadow-lg shadow-red-900/20">
+        Spawn Boss to Coordinate
+      </button>
+    </div>
+  );
+};
