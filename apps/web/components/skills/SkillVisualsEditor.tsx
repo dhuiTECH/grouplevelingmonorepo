@@ -81,7 +81,7 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
     fetchAnim();
   }, [skillId]);
 
-  // JS-DRIVEN ANIMATION LOOP
+  // JS-DRIVEN ANIMATION LOOP (kept for compatibility with playPreview but CSS animation handles visuals)
   useEffect(() => {
     if (!isPlaying) {
       setCurrentFrame(0);
@@ -403,23 +403,27 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
         <div className="w-1/2 bg-black relative flex flex-col items-center justify-center border-l border-gray-800">
            <div className="absolute top-4 right-4 text-[10px] text-gray-600 font-mono">LIVE RENDER ENGINE</div>
            
-          {/* THE ANIMATION BOX */}
-          <div className="relative group">
-            <div 
-              id="preview-box"
-              style={{
-                width: config.frame_width,
-                height: config.frame_height,
-                transform: `scale(${config.preview_scale})`,
-                backgroundImage: config.sprite_url ? `url("${config.sprite_url}")` : 'none',
-                backgroundSize: `${config.frame_width * config.frame_count}px ${config.frame_height}px`,
-                backgroundPosition: `${-(currentFrame * config.frame_width) + config.offset_x}px ${config.offset_y}px`,
-                backgroundRepeat: 'no-repeat',
-                imageRendering: 'pixelated',
-                transition: 'none',
-              }} 
-              className="border border-cyan-500/30 bg-gray-900/20 flex items-center justify-center text-[10px] text-gray-700 text-center px-2 shadow-[0_0_20px_rgba(6,182,212,0.1)]"
-            >
+           {/* THE ANIMATION BOX */}
+           <div className="relative group">
+             <div 
+               id="preview-box"
+               style={{
+                 width: config.frame_width,
+                 height: config.frame_height,
+                 transform: `scale(${config.preview_scale})`,
+                 backgroundImage: config.sprite_url ? `url("${config.sprite_url}")` : 'none',
+                 backgroundSize: `${config.frame_count * config.frame_width}px ${config.frame_height}px`,
+                 backgroundPosition: `${config.offset_x}px ${config.offset_y}px`, // Apply Static Offset
+                 backgroundRepeat: 'no-repeat',
+                 imageRendering: 'pixelated',
+                 // Play once (steps(N)) then stop
+                 animation: isPlaying 
+                   ? `play-sprite ${config.duration_ms}ms steps(${config.frame_count}) forwards` 
+                   : 'none'
+               }} 
+               onAnimationEnd={() => setIsPlaying(false)}
+               className="border border-cyan-500/30 bg-gray-900/20 flex items-center justify-center text-[10px] text-gray-700 text-center px-2 shadow-[0_0_20px_rgba(6,182,212,0.1)] transition-transform"
+             >
                {!config.sprite_url && "No Sprite Sheet Uploaded"}
              </div>
              {config.sprite_url && (
@@ -437,6 +441,13 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
 
            {/* Hidden Audio Player */}
            <audio ref={audioRef} />
+
+           <style jsx>{`
+             @keyframes play-sprite {
+               0% { background-position: ${config.offset_x}px ${config.offset_y}px; }
+               100% { background-position: calc(-${config.frame_count * config.frame_width}px + ${config.offset_x}px) ${config.offset_y}px; }
+             }
+           `}</style>
         </div>
       </div>
     </div>
