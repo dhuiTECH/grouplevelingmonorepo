@@ -88,7 +88,7 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
       return;
     }
 
-    const frameDuration = Math.max(10, config.duration_ms / (Math.max(1, config.frame_count)));
+    const frameDuration = config.duration_ms / config.frame_count;
     let frame = 0;
     
     const interval = setInterval(() => {
@@ -195,20 +195,18 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
     setIsPlaying(false);
     setCurrentFrame(0);
     
-    // Play sound synchronously to avoid browser autoplay restrictions
-    if (audioRef.current && config.sfx_url) {
-      audioRef.current.currentTime = 0;
-      const playPromise = audioRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(error => {
-          console.warn("Audio playback error:", error);
-        });
-      }
-    }
-
     // Force reflow to restart animation
     setTimeout(() => {
       setIsPlaying(true);
+      // Play Sound
+      if (audioRef.current && config.sfx_url) {
+        audioRef.current.src = config.sfx_url;
+        audioRef.current.currentTime = 0;
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(error => console.warn("Audio playback prevented:", error));
+        }
+      }
     }, 10);
   };
 
@@ -354,6 +352,7 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
                 <button 
                   onClick={() => {
                     if (audioRef.current && config.sfx_url) {
+                      audioRef.current.src = config.sfx_url;
                       audioRef.current.currentTime = 0;
                       const playPromise = audioRef.current.play();
                       if (playPromise !== undefined) {
@@ -437,7 +436,7 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
            </div>
 
            {/* Hidden Audio Player */}
-           <audio ref={audioRef} src={config.sfx_url || undefined} />
+           <audio ref={audioRef} />
         </div>
       </div>
     </div>
