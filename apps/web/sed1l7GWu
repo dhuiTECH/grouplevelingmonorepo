@@ -1,0 +1,17 @@
+run = "npm start"
+language = "nodejs"
+
+[env]
+NODE_ENV = "production"
+
+[deployment]
+deploymentTarget = "autoscale"
+dockerfile = "Dockerfile"
+
+[[ports]]
+localPort = 3000
+externalPort = 80
+
+[[ports]]
+localPort = 5000
+externalPort = 5000

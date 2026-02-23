@@ -1,0 +1,69 @@
+run = "npm start"
+language = "nodejs"
+modules = ["nodejs-20", "postgresql-16"]
+
+[env]
+# NODE_ENV will be set automatically by Next.js
+# Remove this line or set to "development" for dev mode
+# NODE_ENV = "development"
+
+[deployment]
+deploymentTarget = "autoscale"
+dockerfile = "Dockerfile"
+run = ["npm", "start", "--"]
+build = ["npm", "run", "build"]
+
+[[ports]]
+localPort = 3000
+externalPort = 80
+
+[[ports]]
+localPort = 3001
+externalPort = 3001
+
+[[ports]]
+localPort = 3002
+externalPort = 3002
+
+[[ports]]
+localPort = 3005
+externalPort = 3000
+
+[[ports]]
+localPort = 5000
+externalPort = 5000
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Next.js Dev Server"
+
+[[workflows.workflow]]
+name = "Next.js Dev Server"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npx next dev -p 5000 -H 0.0.0.0"
+waitForPort = 5000
+
+[agent]
+expertMode = true
+
+[nix]
+packages = ["psmisc"]
+channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]

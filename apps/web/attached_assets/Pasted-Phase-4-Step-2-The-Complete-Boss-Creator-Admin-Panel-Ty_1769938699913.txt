@@ -1,0 +1,88 @@
+Phase 4: Step 2 — The Complete Boss Creator (Admin Panel)
+TypeScript
+import React, { useState, useEffect } from 'react';
+
+const BossRaidSubTab = ({ activeNodeId, supabase }) => {
+  const [monsterLibrary, setMonsterLibrary] = useState([]);
+  const [selectedBoss, setSelectedBoss] = useState(null);
+  const [hp, setHp] = useState(1000000);
+
+  // 1. Fetch your existing Monster PNGs from your encounter pool
+  useEffect(() => {
+    const fetchMonsters = async () => {
+      const { data } = await supabase.from('encounter_pool').select('*');
+      setMonsterLibrary(data || []);
+    };
+    fetchMonsters();
+  }, [supabase]);
+
+  const createRaid = async () => {
+    if (!selectedBoss) return alert("Please select a boss visual first!");
+
+    // 2. Save the Boss to the 'dungeon_raids' table
+    const { data: raid, error: raidError } = await supabase.from('dungeon_raids').insert([{
+      node_id: activeNodeId,
+      boss_name: selectedBoss.name,
+      boss_image: selectedBoss.image_url, // Reuses existing PNG
+      max_hp: hp,
+      current_hp: hp,
+      // Balanced Rewards: Premium gems kept low for scarcity
+      reward_rank_1: { coins: 10000, gems: 5, exp: 5000 }, 
+      reward_rank_2: { coins: 5000, gems: 2, exp: 2500 },
+      reward_rank_3: { coins: 2000, gems: 1, exp: 1250 }
+    }]).select().single();
+
+    if (raidError) return console.error(raidError);
+
+    // 3. Mark the Map Node as a BOSS_RAID and update its icon
+    await supabase.from('world_map_nodes').update({
+      interaction_type: 'BOSS_RAID',
+      icon_url: selectedBoss.image_url // Map now shows the Boss's face
+    }).eq('id', activeNodeId);
+
+    alert(`${selectedBoss.name} Raid is now LIVE!`);
+  };
+
+  return (
+    <div className="p-4 bg-black/40 border-l border-red-900/50 rounded-lg">
+      <h3 className="text-red-500 font-black text-xs uppercase mb-3">Raid Configuration</h3>
+      
+      <label className="text-[10px] text-gray-500 uppercase font-bold">Select Boss Visual</label>
+      <select 
+        onChange={(e) => setSelectedBoss(JSON.parse(e.target.value))}
+        className="w-full bg-gray-900 text-white p-2 text-[10px] mb-3 border border-gray-800"
+      >
+        <option value="null">Select Boss...</option>
+        {monsterLibrary.map(m => (
+          <option key={m.id} value={JSON.stringify(m)}>{m.name}</option>
+        ))}
+      </select>
+
+      <label className="text-[10px] text-gray-500 uppercase font-bold">Boss Total HP</label>
+      <input 
+        type="number" 
+        value={hp}
+        onChange={(e) => setHp(parseInt(e.target.value))}
+        className="w-full bg-gray-900 p-2 text-white text-xs mb-4 border border-gray-800"
+      />
+
+      <div className="bg-black/60 p-3 rounded border border-gray-800 mb-4">
+        <p className="text-[9px] text-cyan-400 font-bold uppercase mb-2">Live Reward Tiers</p>
+        <div className="text-[8px] text-gray-400 space-y-1">
+          <p>Rank 1: 10k Coins, 5 Gems, 5k EXP</p>
+          <p>Rank 2: 5k Coins, 2 Gems, 2.5k EXP</p>
+          <p>Rank 3: 2k Coins, 1 Gem, 1.25k EXP</p>
+        </div>
+      </div>
+
+      <button 
+        onClick={createRaid} 
+        className="w-full bg-red-600 hover:bg-red-500 text-white p-2 text-xs font-black uppercase shadow-lg transition-colors"
+      >
+        Spawn Boss to Coordinate
+      </button>
+    </div>
+  );
+};
+
+export default BossRaidSubTab;
