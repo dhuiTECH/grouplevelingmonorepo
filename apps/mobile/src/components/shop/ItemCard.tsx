@@ -1,10 +1,16 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable, ViewStyle } from 'react-native';
+import { Image } from 'expo-image';
 import { SystemPanelBackground } from './SystemPanelBackground';
 import Svg, { Path } from 'react-native-svg';
 import { ShopItem } from '@/types/user';
 import { ShopItemMedia } from '../ShopItemMedia';
 import { RANK_COLORS, RARITY_COLORS } from '@/constants/gameConstants';
+
+const ASSETS = {
+  coinIcon: require('../../../assets/coinicon.png'),
+  gemIcon: require('../../../assets/gemicon.png'),
+};
 
 // Stat Icons converted to RN Svg
 const StatHeart = () => (
@@ -22,12 +28,6 @@ const StatShield = () => (
 const StatSpeed = () => (
   <Svg width={14} height={14} viewBox="0 0 24 24" fill="currentColor" color="#FACC15">
     <Path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-  </Svg>
-);
-
-const GemIcon = () => (
-  <Svg width={10} height={10} viewBox="0 0 24 24" fill="currentColor" color="#67e8f9">
-    <Path d="M16 2H8L4 8l8 14 8-14-4-6z"/>
   </Svg>
 );
 
@@ -163,9 +163,7 @@ export const ItemCard = ({ item, onPress, style }: ItemCardProps) => {
             <View style={styles.pricePill}>
                  {item.price > 0 && (
                    <View style={styles.priceGroup}>
-                     <View style={styles.coinIconContainer}>
-                         <View style={styles.coinInnerDot} />
-                     </View>
+                     <Image source={ASSETS.coinIcon} style={styles.currencyIcon} contentFit="contain" />
                      <Text style={styles.priceText}>
                         {item.price}G
                      </Text>
@@ -173,7 +171,7 @@ export const ItemCard = ({ item, onPress, style }: ItemCardProps) => {
                  )}
                  {(item as any).gem_price > 0 && (
                    <View style={styles.priceGroup}>
-                     <GemIcon />
+                     <Image source={ASSETS.gemIcon} style={styles.currencyIcon} contentFit="contain" />
                      <Text style={[styles.priceText, { color: '#67e8f9' }]}>
                         {(item as any).gem_price}
                      </Text>
@@ -350,21 +348,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 4,
     },
-    coinIconContainer: {
-        width: 10, // Reduced from 12
-        height: 10, // Reduced from 12
-        borderRadius: 5,
-        backgroundColor: '#facc15',
-        borderWidth: 1,
-        borderColor: '#fef08a',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    coinInnerDot: {
-        width: 3, // Reduced from 4
-        height: 3, // Reduced from 4
-        borderRadius: 1.5,
-        backgroundColor: 'rgba(254, 249, 195, 0.9)',
+    currencyIcon: {
+        width: 12,
+        height: 12,
     },
     priceText: {
         color: '#fbbf24',
