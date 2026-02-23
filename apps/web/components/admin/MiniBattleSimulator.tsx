@@ -296,7 +296,7 @@ export default function MiniBattleSimulator({
         )}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 4px;
         }
