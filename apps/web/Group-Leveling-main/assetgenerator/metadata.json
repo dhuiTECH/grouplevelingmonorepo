@@ -1,5 +1,0 @@
-{
-  "name": "PixelForge Asset Library",
-  "description": "A production-ready pixel art asset generator and library. Features a persistent style reference system using local storage, allowing users to maintain consistent art styles across generations using the Gemini 3 Pro Image model.",
-  "requestFramePermissions": []
-}
