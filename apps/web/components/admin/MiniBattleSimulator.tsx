@@ -204,16 +204,14 @@ export default function MiniBattleSimulator({
                                 transformOrigin: 'center bottom',
                                 backgroundImage: `url(${monsterUrl})`,
                                 backgroundSize: monsterIsSpritesheet
-                                    ? `${(monsterFrameCount || 1) * 100}% 100%`
+                                    ? `${(monsterFrameCount || 1) * (monsterFrameWidth || 64)}px ${(monsterFrameHeight || 64)}px`
                                     : 'contain',
                                 backgroundRepeat: 'no-repeat',
                                 backgroundPosition: monsterIsSpritesheet 
-                                    ? `-${currentStart * (monsterFrameWidth || 64)}px 0px` 
+                                    ? `-${currentFrame * (monsterFrameWidth || 64)}px 0px` 
                                     : 'center bottom',
                                 imageRendering: 'pixelated',
-                                animation: monsterIsSpritesheet && monsterFrameCount > 1
-                                    ? `mini-battle-sprite ${monsterAnimationSpeed || 800}ms steps(${currentFrameCount}) ${loopMode}`
-                                    : 'none'
+                                transition: 'none'
                             }}
                             onAnimationEnd={() => {
                                 if (isPlayingIntro) {

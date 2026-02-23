@@ -31,6 +31,24 @@ export default function AnimatedEquip({
   // If className includes responsive-style classes, we use percentage-based scaling
   const isResponsive = className.includes('w-full') || className.includes('h-full');
 
+  // Calculate position based on responsive mode
+  let bgPos = '0px 0px';
+  let bgSize = 'auto';
+
+  if (isResponsive) {
+    // For responsive (percentage-based), we need to shift by frame index.
+    // If totalFrames > 1, the range of motion is (100% * (totalFrames - 1)).
+    // Position percentage P = (currentFrame / (totalFrames - 1)) * 100
+    // This maps frame 0 -> 0%, last frame -> 100%
+    const p = totalFrames > 1 ? (currentFrame / (totalFrames - 1)) * 100 : 0;
+    bgPos = `${p}% 0%`;
+    bgSize = `${totalFrames * 100}% 100%`;
+  } else {
+    // For fixed pixel size, we just shift by frame width
+    bgPos = `-${currentFrame * frameWidth}px 0px`;
+    bgSize = `${totalFrames * frameWidth}px ${frameHeight}px`;
+  }
+
   return (
     <div 
       className={className}
@@ -38,10 +56,8 @@ export default function AnimatedEquip({
         width: isResponsive ? '100%' : frameWidth,
         height: isResponsive ? '100%' : frameHeight,
         backgroundImage: `url(${src})`,
-        // Use pixel-based positioning for crisp frame-by-frame jumps
-        backgroundPosition: `-${currentFrame * 100}% 0%`,
-        // Scale the background-size so one frame fills 100% of the div
-        backgroundSize: `${totalFrames * 100}% 100%`,
+        backgroundPosition: bgPos,
+        backgroundSize: bgSize,
         backgroundRepeat: 'no-repeat',
         imageRendering: 'pixelated',
         transition: 'none',
