@@ -10,7 +10,7 @@ import { generateAsset } from '@/lib/services/mapGeminiService';
 import NodeEditModal, { NodeFormData } from '../NodeEditModal';
 import { supabase } from '@/lib/supabase';
 
-const WORLD_SIZE = 16384; 
+const WORLD_SIZE = 16000; 
 const TILE_SIZE = 64;
 
 interface WorldMapEngineProps {
@@ -88,15 +88,8 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     init();
   }, [loadTilesFromSupabase]);
 
-  // Auto-center on spawn
-  useEffect(() => {
-    if (nodes.length > 0 && transformComponentRef.current) {
-      const spawnNode = nodes.find(n => n.type === 'spawn') || nodes[0];
-      setTimeout(() => {
-        goToNode(spawnNode.id);
-      }, 800);
-    }
-  }, [nodes.length > 0]);
+  // No auto-centering on every node change - it was annoying the user.
+  // We rely on TransformWrapper's centerOnInit for the initial view.
 
   const goToNode = (nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);
@@ -104,26 +97,27 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     
     selectNode(nodeId);
     const targetScale = 0.5;
-    
+
     const instance = transformComponentRef.current.instance;
     const wrapper = instance.wrapperComponent;
     if (!wrapper) return;
 
-    // Use getBoundingClientRect for absolute precision of the visible map area
+    // Use getBoundingClientRect for the most accurate viewport size
     const rect = wrapper.getBoundingClientRect();
     const viewportWidth = rect.width;
     const viewportHeight = rect.height;
 
-    // The map content is 16384x16384. (0,0) in grid is at 8192, 8192 in pixels.
-    const targetX = (node.x * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
-    const targetY = (node.y * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
+    // Node center in absolute world pixels
+    // Origin (0,0) grid is exactly at WORLD_SIZE / 2
+    const targetWorldX = (node.x * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
+    const targetWorldY = (node.y * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
 
-    // Math: center_of_screen = (content_point * scale) + translation
-    // Therefore: translation = center_of_screen - (content_point * scale)
-    const x = (viewportWidth / 2) - (targetX * targetScale);
-    const y = (viewportHeight / 2) - (targetY * targetScale);
+    // Translation Math for react-zoom-pan-pinch:
+    // Translation = (Viewport Center) - (Content Target * Scale)
+    const newX = (viewportWidth / 2) - (targetWorldX * targetScale);
+    const newY = (viewportHeight / 2) - (targetWorldY * targetScale);
 
-    transformComponentRef.current.setTransform(x, y, targetScale, 500, 'easeOut');
+    transformComponentRef.current.setTransform(newX, newY, targetScale, 500, 'easeOut');
   };
 
   const fetchSupportData = async () => {
@@ -461,9 +455,10 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         <div className={`flex-1 bg-[#1a1c14] relative overflow-hidden ${isSpacePressed ? 'cursor-grabbing' : 'cursor-crosshair'}`} ref={dropTargetRef}>
           <TransformWrapper 
             ref={transformComponentRef} 
-            initialScale={1} 
+            initialScale={0.5} 
             minScale={0.005} 
             maxScale={10} 
+            centerOnInit
             onTransformed={(p) => {
               setScale(p.state.scale);
               if (dropTargetRef.current) {
@@ -499,7 +494,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                       linear-gradient(to bottom, rgba(255,255,255,0.15) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1)))
                     `,
                     backgroundSize: `${TILE_SIZE * 5}px ${TILE_SIZE * 5}px, ${TILE_SIZE * 5}px ${TILE_SIZE * 5}px, ${TILE_SIZE}px ${TILE_SIZE}px, ${TILE_SIZE}px ${TILE_SIZE}px`,
-                    backgroundPosition: '0 0'
+                    backgroundPosition: 'center center'
                   }}
                 />
                 
