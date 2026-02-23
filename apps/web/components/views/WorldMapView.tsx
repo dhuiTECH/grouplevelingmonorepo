@@ -117,8 +117,8 @@ export default function WorldMapView({ user, setUser, setActiveTab }: WorldMapVi
   const gridHeightPx = gridDimensions.height;
   const tileWidthPx = gridWidthPx / TILES_WIDE;
   const tileHeightPx = gridHeightPx / TILES_TALL;
-  const mapLeft = gridWidthPx / 2 - MAP_WIDTH / 2 - wx * tileWidthPx;
-  const mapTop = gridHeightPx / 2 - MAP_HEIGHT / 2 + wy * tileHeightPx;
+  const mapLeft = gridWidthPx / 2 - (tileWidthPx / 2);
+  const mapTop = gridHeightPx / 2 - (tileHeightPx / 2);
 
   const avatarSize = Math.min(Math.min(tileWidthPx, tileHeightPx) - 8, 64);
 
@@ -130,27 +130,8 @@ export default function WorldMapView({ user, setUser, setActiveTab }: WorldMapVi
       {/* Map + grid wrapper: 9:16 full-stretch */}
       <div
         className="relative overflow-hidden"
-        style={{ width: gridWidthPx, height: gridHeightPx }}
+        style={{ width: gridWidthPx, height: gridHeightPx, backgroundColor: '#6b705c' }}
       >
-        {/* Map layer (camera-follow) */}
-        <div className="absolute inset-0 overflow-hidden">
-          {activeMapUrl ? (
-            <div
-              className="absolute bg-cover bg-center bg-no-repeat"
-              style={{
-                width: MAP_WIDTH,
-                height: MAP_HEIGHT,
-                backgroundImage: `url(${activeMapUrl})`,
-                transform: `translate(${mapLeft}px, ${mapTop}px)`,
-              }}
-            />
-          ) : (
-            <div className="absolute inset-0 bg-slate-900/80 flex items-center justify-center">
-              <span className="text-gray-500 text-sm font-bold uppercase">No active map</span>
-            </div>
-          )}
-        </div>
-
         {/* Grid overlay */}
         <div
           className="absolute inset-0 flex flex-wrap content-start pointer-events-none"
@@ -161,19 +142,27 @@ export default function WorldMapView({ user, setUser, setActiveTab }: WorldMapVi
             return (
               <div
                 key={`${tile.x},${tile.y}`}
-                className="flex items-center justify-center border border-white/5"
+                className="flex items-center justify-center border border-white/5 relative"
                 style={{ width: tileWidthPx, height: tileHeightPx }}
               >
+                {/* Tile Background (Fallback to transparent if no image, revealing the #6b705c parent background) */}
+                {tile.imageUrl && (
+                  <div 
+                    className="absolute inset-0 bg-cover bg-center" 
+                    style={{ backgroundImage: `url(${tile.imageUrl})` }} 
+                  />
+                )}
+
                 {tile.node && !isPlayer && (
-                  <div className="flex flex-col items-center pointer-events-none relative">
+                  <div className="flex flex-col items-center pointer-events-none relative z-10">
                     {tile.node.icon_url ? (
                       <img
                         src={tile.node.icon_url}
                         alt=""
-                        className="w-8 h-8 object-contain drop-shadow-lg"
+                        className="w-8 h-8 object-contain drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
                       />
                     ) : (
-                      <div className="w-8 h-8 rounded-full bg-cyan-500/50" />
+                      <div className="w-8 h-8 rounded-full bg-cyan-500/50 shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
                     )}
                     
                     {/* Quest Indicator */}
@@ -183,7 +172,7 @@ export default function WorldMapView({ user, setUser, setActiveTab }: WorldMapVi
                       </div>
                     )}
 
-                    <span className="text-[8px] font-bold uppercase text-white mt-0.5 bg-black/60 px-1 rounded truncate max-w-full">
+                    <span className="text-[8px] font-bold uppercase text-white mt-0.5 bg-black/60 px-1 rounded truncate max-w-full drop-shadow">
                       {tile.node.name}
                     </span>
                   </div>

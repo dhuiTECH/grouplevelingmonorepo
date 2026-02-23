@@ -404,8 +404,6 @@ export const WorldMapScreen = () => {
     else await bankSteps(steps);
   };
 
-  // 📷 CAMERA LOGIC
-  // This calculates where the background image sits so your player stays in the center
   const mapLeft = -(MAP_WIDTH / 2) - ((user?.world_x || 0) * TILE_SIZE) + (width / 2);
   const mapTop = -(MAP_HEIGHT / 2) + ((user?.world_y || 0) * TILE_SIZE) + (height / 2);
 
@@ -512,9 +510,9 @@ export const WorldMapScreen = () => {
           </View>
         )}
 
-        {/* 1. THE MAP LAYER (Moving Background) */}
+        {/* 1. THE MAP LAYER (Moving Background or Fallback Color) */}
         <MotiView 
-          style={styles.mapLayer}
+          style={[styles.mapLayer, { backgroundColor: '#6b705c' }]}
           animate={{ 
             translateX: mapLeft, 
             translateY: mapTop 
@@ -524,17 +522,18 @@ export const WorldMapScreen = () => {
             duration: 300,
           }}
         >
-          {activeMapUrl ? (
+          {activeMapUrl && (
             <Image
               source={{ uri: activeMapUrl }}
               style={{
                 width: MAP_WIDTH,
                 height: MAP_HEIGHT,
+                position: 'absolute',
+                top: 0,
+                left: 0,
               }}
               resizeMode="cover"
             />
-          ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} />
           )}
         </MotiView>
 
@@ -544,11 +543,7 @@ export const WorldMapScreen = () => {
             const isPlayer = tile.x === user?.world_x && tile.y === user?.world_y;
             
             // Calculate absolute position relative to screen center
-            // user.world_x/y is the center
-            // tile.x - user.world_x is the offset in tiles
             const tileLeft = (tile.x - (user?.world_x || 0)) * TILE_SIZE + (width / 2) - (TILE_SIZE / 2);
-            // Y axis is inverted (World Y goes UP, Screen Y goes DOWN)
-            // So if tile.y > user.y, it should be ABOVE center (negative screen Y)
             const tileTop = -((tile.y - (user?.world_y || 0)) * TILE_SIZE) + (height / 2) - (TILE_SIZE / 2);
 
             return (
@@ -564,8 +559,16 @@ export const WorldMapScreen = () => {
                   duration: 300,
                 }}
               >
+                {/* 1a. TILE BACKGROUND (If chunk data exists) */}
+                {tile.imageUrl && (
+                  <Image
+                    source={{ uri: tile.imageUrl }}
+                    style={{ width: TILE_SIZE, height: TILE_SIZE, position: 'absolute' }}
+                    contentFit="cover"
+                  />
+                )}
 
-                {/* 1. LOCATIONS (Always visible now) */}
+                {/* 1b. LOCATIONS */}
                 {tile.node && (
                   <View style={styles.nodeContainer}>
                     <Image 

@@ -2,7 +2,7 @@
 import React, { useRef } from 'react';
 import { useMapStore, NodeType } from '@/lib/store/mapStore';
 import { v4 as uuidv4 } from 'uuid';
-import { Target, Map as MapIcon, User, Sword, Box, Trash2, Save, Upload, Image as ImageIcon, Plus, Eraser, MousePointer2 } from 'lucide-react';
+import { Target, Map as MapIcon, User, Sword, Box, Trash2, Save, Upload, Image as ImageIcon, Plus, Eraser, MousePointer2, Settings, Maximize } from 'lucide-react';
 
 const DRAGGABLE_NODES: { type: NodeType; label: string; icon: React.ReactNode }[] = [
   { type: 'spawn', label: 'Spawn Point', icon: <Target size={16} className="text-blue-400" /> },
@@ -12,7 +12,12 @@ const DRAGGABLE_NODES: { type: NodeType; label: string; icon: React.ReactNode }[
   { type: 'loot', label: 'Loot Chest', icon: <Box size={16} className="text-purple-400" /> },
 ];
 
-export const MapSidebar: React.FC = () => {
+interface MapSidebarProps {
+  onEditNode?: (nodeId: string) => void;
+  onGoToNode?: (nodeId: string) => void;
+}
+
+export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }) => {
   const { nodes, selectedNodeId, updateNode, removeNode, customTiles, addCustomTile, selectedTileId, selectTile, setTool, selectedTool, activeNodeType, exportMap, updateCustomTile } = useMapStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedNode = nodes.find(n => n.id === selectedNodeId);
@@ -64,7 +69,7 @@ export const MapSidebar: React.FC = () => {
   return (
     <div className="w-72 bg-slate-900 border-r border-slate-800 flex flex-col h-full z-20 shrink-0">
       <div className="p-4 border-b border-slate-800">
-        <h2 className="text-sm font-bold text-slate-100 uppercase tracking-widest">Map Editor</h2>
+        <h2 className="text-sm font-bold text-slate-100 uppercase tracking-widest">World Editor</h2>
       </div>
       <div className="p-4 border-b border-slate-800 grid grid-cols-2 gap-2">
          <button onClick={() => setTool('select')} className={`flex items-center justify-center gap-2 p-2 rounded text-xs font-bold transition-all ${selectedTool === 'select' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
@@ -76,6 +81,26 @@ export const MapSidebar: React.FC = () => {
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         <div className="p-4 border-b border-slate-800">
+          <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">Nodes on Map</h3>
+          <div className="max-h-40 overflow-y-auto space-y-1 mb-4 custom-scrollbar pr-2">
+            {nodes.length === 0 ? (
+              <p className="text-[10px] text-slate-600 italic">No nodes placed yet</p>
+            ) : (
+              nodes.map(node => (
+                <button
+                  key={node.id}
+                  onClick={() => onGoToNode?.(node.id)}
+                  className={`w-full text-left p-2 rounded text-[10px] flex items-center justify-between transition-colors ${selectedNodeId === node.id ? 'bg-blue-900/40 text-blue-300 border border-blue-800' : 'bg-slate-950/50 text-slate-400 hover:bg-slate-800 border border-transparent'}`}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: node.type === 'spawn' ? '#3b82f6' : node.type === 'enemy' ? '#ef4444' : node.type === 'npc' ? '#22c55e' : '#a855f7' }} />
+                    <span className="truncate font-bold">{node.name}</span>
+                  </div>
+                  <span className="text-[8px] opacity-50 font-mono">({node.x},{node.y})</span>
+                </button>
+              ))
+            )}
+          </div>
           <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">Node Palette</h3>
           <div className="grid grid-cols-2 gap-2">
             {DRAGGABLE_NODES.map(node => (
@@ -88,9 +113,9 @@ export const MapSidebar: React.FC = () => {
         </div>
         <div className="p-4 border-b border-slate-800">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-bold text-slate-400 uppercase">Custom Tileset</h3>
+            <h3 className="text-xs font-bold text-slate-400 uppercase">Biome Painting</h3>
             <button onClick={() => fileInputRef.current?.click()} className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded border border-slate-700 flex items-center gap-1">
-              <Plus size={10} /> ADD
+              <Plus size={10} /> ADD TILE
             </button>
             <input type="file" ref={fileInputRef} className="hidden" accept="image/png" multiple onChange={handleFileUpload} />
           </div>
@@ -132,9 +157,21 @@ export const MapSidebar: React.FC = () => {
             <div className="space-y-4 animate-in slide-in-from-right-4 fade-in duration-200">
               <div className="flex items-center justify-between">
                  <h3 className="text-xs font-bold text-blue-400 uppercase">Properties</h3>
-                 <button onClick={() => removeNode(selectedNode.id)} className="text-red-400 hover:text-red-300 p-1 hover:bg-red-900/20 rounded" title="Delete Node">
-                   <Trash2 size={14} />
-                 </button>
+                 <div className="flex gap-1">
+                   {onEditNode && (
+                     <button onClick={() => onEditNode(selectedNode.id)} className="text-cyan-400 hover:text-cyan-300 p-1 hover:bg-cyan-900/20 rounded" title="Edit JRPG Scene">
+                       <Settings size={14} />
+                     </button>
+                   )}
+                   {onGoToNode && (
+                     <button onClick={() => onGoToNode(selectedNode.id)} className="text-yellow-400 hover:text-yellow-300 p-1 hover:bg-yellow-900/20 rounded" title="Go to Node">
+                       <Maximize size={14} />
+                     </button>
+                   )}
+                   <button onClick={() => removeNode(selectedNode.id)} className="text-red-400 hover:text-red-300 p-1 hover:bg-red-900/20 rounded" title="Delete Node">
+                     <Trash2 size={14} />
+                   </button>
+                 </div>
               </div>
               <div className="space-y-3">
                 <div>
@@ -143,11 +180,11 @@ export const MapSidebar: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                    <div>
-                      <label className="text-[10px] text-slate-500 uppercase font-bold block mb-1">X Coord</label>
+                      <label className="text-[10px] text-slate-500 uppercase font-bold block mb-1">World X</label>
                       <div className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-400 font-mono">{selectedNode.x}</div>
                    </div>
                    <div>
-                      <label className="text-[10px] text-slate-500 uppercase font-bold block mb-1">Y Coord</label>
+                      <label className="text-[10px] text-slate-500 uppercase font-bold block mb-1">World Y</label>
                       <div className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-400 font-mono">{selectedNode.y}</div>
                    </div>
                 </div>

@@ -1,90 +1,314 @@
 'use client';
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useMapStore, NodeType, Tile } from '@/lib/store/mapStore';
 import { MapCanvas } from './MapCanvas';
 import { MapSidebar } from './MapSidebar';
 import { createNoise2D } from 'simplex-noise';
-import { Plus, Minus, Maximize, Grid, Zap, Loader2, Target, Map, User, Sword, Box, Globe } from 'lucide-react';
+import { Plus, Minus, Maximize, Grid, Zap, Loader2, Target, Map as MapIcon, User, Sword, Box, Globe, Search } from 'lucide-react';
 import { generateAsset } from '@/lib/services/mapGeminiService';
+import NodeEditModal, { NodeFormData } from '../NodeEditModal';
+import { supabase } from '@/lib/supabase';
 
-const WORLD_SIZE = 8192;
+const WORLD_SIZE = 16384; 
 const TILE_SIZE = 64;
 
-export const WorldMapEngine: React.FC = () => {
+interface WorldMapEngineProps {
+  shopItems?: any[];
+}
+
+export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }) => {
   const transformComponentRef = useRef<ReactZoomPanPinchRef>(null);
   const dropTargetRef = useRef<HTMLDivElement>(null);
-  const { nodes, addNode, updateNode, selectNode, selectedNodeId, addTileSimple, selectedTileId, customTiles, selectedTool, activeNodeType, removeTileAt, removeNode, batchAddTiles } = useMapStore();
+  const { nodes, addNode, updateNode, selectNode, selectedNodeId, addTileSimple, selectedTileId, customTiles, selectedTool, activeNodeType, removeTileAt, removeNode, batchAddTiles, loadTilesFromSupabase } = useMapStore();
+  
   const [isGenerating, setIsGenerating] = useState(false);
   const [seed, setSeed] = useState<string>(Math.random().toString(36).substring(7));
+  const [scale, setScale] = useState(1);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
 
-  const handleMapInteraction = (clientX: number, clientY: number) => {
-    if (!transformComponentRef.current || !dropTargetRef.current) return;
+  // Modal State
+  const [showNodeModal, setShowNodeModal] = useState(false);
+  const [nodeFormData, setNodeFormData] = useState<NodeFormData | null>(null);
+  const [encounters, setEncounters] = useState<any[]>([]);
+  const [maps, setMaps] = useState<any[]>([]);
+  const [musicTracks, setMusicTracks] = useState<any[]>([]);
+  const [stockedItems, setStockedItems] = useState<any[]>([]);
+  const [savingNode, setSavingNode] = useState(false);
+  
+  // Asset Upload State
+  const [uploadingIcon, setUploadingIcon] = useState(false);
+  const [uploadingSceneBg, setUploadingSceneBg] = useState(false);
+  const [uploadingNpcSprite, setUploadingNpcSprite] = useState(false);
+  const [uploadingSpeech, setUploadingSpeech] = useState(false);
+  const [uploadingNodeMusic, setUploadingNodeMusic] = useState(false);
+  const [uploadingDialogueImageLine, setUploadingDialogueImageLine] = useState<number | null>(null);
+  const [uploadingVoiceLineLine, setUploadingVoiceLineLine] = useState<number | null>(null);
+  const [iconGalleryUrls, setIconGalleryUrls] = useState<string[]>([]);
+
+  const nodeIconInputRef = useRef<HTMLInputElement>(null);
+  const sceneBgInputRef = useRef<HTMLInputElement>(null);
+  const npcSpriteInputRef = useRef<HTMLInputElement>(null);
+  const nodeMusicInputRef = useRef<HTMLInputElement>(null);
+  const dialogueExpressionInputRef = useRef<HTMLInputElement>(null);
+  const dialogueVoiceLineInputRef = useRef<HTMLInputElement>(null);
+  const currentUploadIdx = useRef<number | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          setIsSpacePressed(true);
+          e.preventDefault();
+        }
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') setIsSpacePressed(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  const [cursorCoords, setCursorCoords] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    if (dropTargetRef.current) {
+      dropTargetRef.current.style.setProperty('--zoom-scale', '1');
+    }
+    const init = async () => {
+      await loadTilesFromSupabase();
+      fetchSupportData();
+      fetchIconGallery();
+    };
+    init();
+  }, [loadTilesFromSupabase]);
+
+  // Auto-center on spawn
+  useEffect(() => {
+    if (nodes.length > 0 && transformComponentRef.current) {
+      const spawnNode = nodes.find(n => n.type === 'spawn') || nodes[0];
+      setTimeout(() => {
+        goToNode(spawnNode.id);
+      }, 800);
+    }
+  }, [nodes.length > 0]);
+
+  const goToNode = (nodeId: string) => {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node || !transformComponentRef.current) return;
+    
+    selectNode(nodeId);
+
+    // Use built-in zoomToElement which handles bounding boxes automatically
+    transformComponentRef.current.zoomToElement(`node-${nodeId}`, 2, 500, 'easeOut');
+  };
+
+  const fetchSupportData = async () => {
+    const [encRes, mapsRes, musRes] = await Promise.all([
+      supabase.from('encounter_pool').select('*').order('name'),
+      supabase.from('maps').select('*').order('name'),
+      supabase.from('game_music').select('*').order('name')
+    ]);
+    setEncounters(encRes.data || []);
+    setMaps(mapsRes.data || []);
+    setMusicTracks(musRes.data || []);
+  };
+
+  const fetchIconGallery = async () => {
+    const { data: list } = await supabase.storage.from('game-assets').list('nodes/icons', { limit: 100 });
+    if (list) {
+      const urls = list
+        .filter(f => f.name && !f.name.endsWith('/'))
+        .map(f => {
+          const { data } = supabase.storage.from('game-assets').getPublicUrl(`nodes/icons/${f.name}`);
+          return data.publicUrl;
+        });
+      setIconGalleryUrls(urls);
+    }
+  };
+
+  const loadStockedItems = async (shopNodeId: string) => {
+    const { data: exclusives } = await supabase
+      .from('shop_exclusives')
+      .select('id, item_id, shop_items(*)')
+      .eq('shop_id', shopNodeId);
+    
+    if (exclusives) {
+      setStockedItems(exclusives.map(e => ({
+        id: e.id,
+        item_id: e.item_id,
+        shop_item: e.shop_items
+      })));
+    }
+  };
+
+  const handleEditNodeProperties = async (nodeId: string) => {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+
+    if (node.type === 'npc' || node.type === 'loot') {
+      await loadStockedItems(node.id);
+    } else {
+      setStockedItems([]);
+    }
+
+    setNodeFormData({
+      name: node.name,
+      icon_url: node.iconUrl || '/default-node.png',
+      interaction_type: (node.properties?.interaction_type || 'DIALOGUE') as any,
+      welcome_text: node.properties?.welcome_text || '',
+      available_services: node.properties?.available_services || [],
+      shop_id: node.properties?.shop_id || '',
+      enemy_id: node.properties?.enemy_id || '',
+      dialogue_text: node.properties?.dialogue_text || '',
+      portal_target_x: node.properties?.portal_target_x || 0,
+      portal_target_y: node.properties?.portal_target_y || 0,
+      target_map_id: node.properties?.target_map_id || '',
+      can_travel_to: node.properties?.can_travel_to !== false,
+      modal_image_url: node.properties?.modal_image_url || '',
+      boss_template_id: node.properties?.boss_template_id || '',
+      raid_duration_type: node.properties?.raid_duration_type || 'TIMED',
+      raid_duration_hours: node.properties?.raid_duration_hours || 2,
+      boss_max_hp: node.properties?.boss_max_hp || 1000000,
+      is_random_event: node.properties?.is_random_event || false,
+      scene_background_url: node.properties?.scene?.scene_background_url || '',
+      scene_npc_sprite_url: node.properties?.scene?.scene_npc_sprite_url || '',
+      npc_is_spritesheet: node.properties?.scene?.npc_is_spritesheet || false,
+      npc_frame_count: node.properties?.scene?.npc_frame_count || 4,
+      npc_frame_size: node.properties?.scene?.npc_frame_size || 64,
+      dialogue_script: node.properties?.dialogue_script || [],
+      action_buttons: node.properties?.action_buttons || [],
+    });
+    setShowNodeModal(true);
+  };
+
+  const handleSaveNodeDetails = async () => {
+    if (!selectedNodeId || !nodeFormData) return;
+    setSavingNode(true);
+    await updateNode(selectedNodeId, {
+      name: nodeFormData.name,
+      iconUrl: nodeFormData.icon_url,
+      properties: {
+        ...nodeFormData,
+        scene: {
+          scene_background_url: nodeFormData.scene_background_url,
+          scene_npc_sprite_url: nodeFormData.scene_npc_sprite_url,
+          npc_is_spritesheet: nodeFormData.npc_is_spritesheet,
+          npc_frame_count: nodeFormData.npc_frame_count,
+          npc_frame_size: nodeFormData.npc_frame_size,
+        }
+      }
+    });
+    setSavingNode(false);
+    setShowNodeModal(false);
+  };
+
+  const handleUploadAsset = async (file: File, prefix: string, setUploading: (v: boolean) => void) => {
+    setUploading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not signed in');
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('prefix', prefix);
+      const res = await fetch('/api/admin/assets/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: formData,
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Upload failed');
+      return result.path;
+    } catch (e: any) {
+      alert('Upload failed: ' + e.message);
+      return null;
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleUploadIcon = async (file: File) => {
+    const path = await handleUploadAsset(file, 'nodes/icons', setUploadingIcon);
+    if (path && nodeFormData) {
+      setNodeFormData({ ...nodeFormData, icon_url: path });
+      fetchIconGallery();
+    }
+  };
+
+  const handleUploadDialogueExpression = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const idx = currentUploadIdx.current;
+    if (!file || idx === null || !nodeFormData) return;
+    setUploadingDialogueImageLine(idx);
+    const path = await handleUploadAsset(file, 'nodes/dialogue-expressions', () => {});
+    if (path) {
+      const script = [...nodeFormData.dialogue_script];
+      script[idx] = { ...script[idx], image_url: path };
+      setNodeFormData({ ...nodeFormData, dialogue_script: script });
+    }
+    setUploadingDialogueImageLine(null);
+  };
+
+  const handleUploadDialogueVoiceLine = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const idx = currentUploadIdx.current;
+    if (!file || idx === null || !nodeFormData) return;
+    setUploadingVoiceLineLine(idx);
+    const path = await handleUploadAsset(file, 'nodes/voice-lines', () => {});
+    if (path) {
+      const script = [...nodeFormData.dialogue_script];
+      script[idx] = { ...script[idx], voice_line_url: path };
+      setNodeFormData({ ...nodeFormData, dialogue_script: script });
+    }
+    setUploadingVoiceLineLine(null);
+  };
+
+  const handleMapInteraction = (clientX: number, clientY: number, isMove = false) => {
+    if (!transformComponentRef.current || !dropTargetRef.current || (isSpacePressed && !isMove)) return;
     const { positionX, positionY, scale } = transformComponentRef.current.instance.transformState;
     const rect = dropTargetRef.current.getBoundingClientRect();
     const worldX = (clientX - rect.left - positionX) / scale;
     const worldY = (clientY - rect.top - positionY) / scale;
-    const relativeGridX = Math.floor((worldX - WORLD_SIZE / 2) / TILE_SIZE);
-    const relativeGridY = Math.floor((worldY - WORLD_SIZE / 2) / TILE_SIZE);
+    const gx = Math.floor((worldX - WORLD_SIZE / 2) / TILE_SIZE);
+    const gy = Math.floor((worldY - WORLD_SIZE / 2) / TILE_SIZE);
+
+    if (isMove) {
+      setCursorCoords({ x: gx, y: gy });
+      return;
+    }
 
     if (selectedTool === 'paint' && selectedTileId) {
       const tile = customTiles.find(t => t.id === selectedTileId);
-      if (tile) {
-        addTileSimple(relativeGridX, relativeGridY, 'custom', tile.url);
-      }
+      if (tile) addTileSimple(gx, gy, 'custom', tile.url);
     } else if (selectedTool === 'node' && activeNodeType) {
-      const existingNode = nodes.find(n => n.x === relativeGridX && n.y === relativeGridY);
-      if (!existingNode) {
-        addNode({ x: relativeGridX, y: relativeGridY, type: activeNodeType, name: `New ${activeNodeType}`, iconUrl: '' });
-      }
+      const exists = nodes.find(n => n.x === gx && n.y === gy);
+      if (!exists) addNode({ x: gx, y: gy, type: activeNodeType, name: `New ${activeNodeType}`, iconUrl: '' });
     } else if (selectedTool === 'erase') {
-      removeTileAt(relativeGridX, relativeGridY);
-      const nodeAtLoc = nodes.find(n => n.x === relativeGridX && n.y === relativeGridY);
-      if (nodeAtLoc) removeNode(nodeAtLoc.id);
+      removeTileAt(gx, gy);
+      const n = nodes.find(node => node.x === gx && node.y === gy);
+      if (n) removeNode(n.id);
     }
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    if (selectedTool !== 'select') {
+    if (selectedTool !== 'select' && !isSpacePressed) {
       e.stopPropagation();
       handleMapInteraction(e.clientX, e.clientY);
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (selectedTool !== 'select' && e.buttons === 1) {
+    handleMapInteraction(e.clientX, e.clientY, true);
+    if (selectedTool !== 'select' && e.buttons === 1 && !isSpacePressed) {
       e.stopPropagation();
       handleMapInteraction(e.clientX, e.clientY);
     }
-  };
-
-  const handleNodeContextMenu = (e: React.MouseEvent, nodeId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    selectNode(nodeId);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const type = e.dataTransfer.getData('nodeType') as NodeType;
-    if (type && transformComponentRef.current) {
-      const { positionX, positionY, scale } = transformComponentRef.current.instance.transformState;
-      const rect = dropTargetRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const clientX = e.clientX - rect.left;
-      const clientY = e.clientY - rect.top;
-      const worldX = (clientX - positionX) / scale;
-      const worldY = (clientY - positionY) / scale;
-      const gridX = Math.floor(worldX / TILE_SIZE);
-      const gridY = Math.floor(worldY / TILE_SIZE);
-      addNode({ x: gridX, y: gridY, type, name: `New ${type}`, iconUrl: '' });
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
   };
 
   const handleAutoFill = async () => {
@@ -110,7 +334,7 @@ export const WorldMapEngine: React.FC = () => {
         }
         const noise2D = createNoise2D(random);
         const newTiles: Omit<Tile, 'id'>[] = [];
-        const GRID_RADIUS = 25; 
+        const GRID_RADIUS = 30; 
         const tilesByType: Record<string, typeof customTiles> = {
           water: customTiles.filter(t => t.type === 'water' || t.name.toLowerCase().includes('water')),
           grassland: customTiles.filter(t => t.type === 'grassland' || t.name.toLowerCase().includes('grass')),
@@ -124,11 +348,11 @@ export const WorldMapEngine: React.FC = () => {
         };
         for (let x = -GRID_RADIUS; x <= GRID_RADIUS; x++) {
           for (let y = -GRID_RADIUS; y <= GRID_RADIUS; y++) {
-            const elevation = noise2D(x / 10, y / 10);
+            const elevation = noise2D(x / 12, y / 12);
             let tileType = 'grassland';
-            if (elevation < -0.2) tileType = 'water';
-            else if (elevation > 0.5) tileType = 'hill';
-            else if (elevation <= 0) tileType = 'soil';
+            if (elevation < -0.3) tileType = 'water';
+            else if (elevation > 0.6) tileType = 'hill';
+            else if (elevation <= 0.1) tileType = 'soil';
             const selectedTile = getTileForType(tileType);
             newTiles.push({ x, y, imageUrl: selectedTile.url, type: tileType as any });
           }
@@ -142,76 +366,166 @@ export const WorldMapEngine: React.FC = () => {
     }, 100);
   };
 
-  const handleGenerateTile = async () => {
-    setIsGenerating(true);
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      const x = Math.floor(Math.random() * 10) - 5;
-      const y = Math.floor(Math.random() * 10) - 5;
-      const canvas = document.createElement('canvas');
-      canvas.width = 64; canvas.height = 64;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = `hsl(${Math.random() * 360}, 70%, 50%)`;
-        ctx.fillRect(0, 0, 64, 64);
-        for(let i=0; i<20; i++) {
-            ctx.fillStyle = 'rgba(0,0,0,0.2)';
-            ctx.fillRect(Math.random()*64, Math.random()*64, 4, 4);
-        }
-      }
-      addTileSimple(x, y, 'grass', canvas.toDataURL());
-    } catch (error) {
-      console.error("Generation failed", error);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
+  const onAddStockItemSync = (itemId: string) => onAddStockItem(itemId);
+  const onRemoveStockItemSync = (exclusiveId: string) => onRemoveStockItem(exclusiveId);
 
   return (
-    <div className="flex w-full h-full bg-slate-950 overflow-hidden">
-      <MapSidebar />
+    <div className="flex w-full h-full bg-[#0a0a0a] overflow-hidden font-mono text-slate-300">
+      <MapSidebar onEditNode={handleEditNodeProperties} onGoToNode={goToNode} />
+      
       <div className="flex-1 relative flex flex-col">
+        {/* Toolbar */}
         <div className="absolute top-4 left-4 z-10 flex gap-2 items-center">
-          <div className="bg-slate-900/90 backdrop-blur border border-slate-700 rounded-lg p-1 flex gap-1 shadow-xl">
-            <button onClick={() => transformComponentRef.current?.zoomIn()} className="p-2 hover:bg-slate-800 rounded text-slate-300 hover:text-white transition-colors" title="Zoom In"><Plus size={18} /></button>
-            <button onClick={() => transformComponentRef.current?.zoomOut()} className="p-2 hover:bg-slate-800 rounded text-slate-300 hover:text-white transition-colors" title="Zoom Out"><Minus size={18} /></button>
-            <button onClick={() => transformComponentRef.current?.centerView()} className="p-2 hover:bg-slate-800 rounded text-slate-300 hover:text-white transition-colors" title="Center View"><Maximize size={18} /></button>
+          <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-1.5 flex gap-1 shadow-2xl">
+            <button onClick={() => transformComponentRef.current?.zoomIn()} className="p-2.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Plus size={20} /></button>
+            <button onClick={() => transformComponentRef.current?.zoomOut()} className="p-2.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Minus size={20} /></button>
+            <button onClick={() => transformComponentRef.current?.centerView()} className="p-2.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Maximize size={20} /></button>
           </div>
-          <div className="flex items-center gap-2 bg-slate-900/90 backdrop-blur border border-slate-700 rounded-lg p-1.5 shadow-xl">
-            <input type="text" value={seed} onChange={(e) => setSeed(e.target.value)} placeholder="Seed" className="w-20 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-cyan-500 outline-none" />
-            <button onClick={handleAutoFill} disabled={isGenerating} className="bg-cyan-600 hover:bg-cyan-500 text-white px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-cyan-900/20">
-              {isGenerating ? <Loader2 className="animate-spin" size={14} /> : <Globe size={14} />} AUTO-FILL
+          <div className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-2 shadow-2xl">
+            <input type="text" value={seed} onChange={(e) => setSeed(e.target.value)} className="w-24 bg-black/50 border border-slate-700 rounded px-2 py-1 text-[10px] text-cyan-400 outline-none font-bold" />
+            <button onClick={handleAutoFill} disabled={isGenerating} className="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg text-xs font-black flex items-center gap-2 uppercase tracking-tighter">
+              {isGenerating ? <Loader2 className="animate-spin" size={14} /> : <Globe size={14} />} Auto-Fill
             </button>
           </div>
-          <button onClick={handleGenerateTile} disabled={isGenerating} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg shadow-lg shadow-indigo-900/20 flex items-center gap-2 font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-indigo-400/20 ml-2">
-            {isGenerating ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} />} Generate Tile
-          </button>
+          <div className={`px-3 py-2 rounded-lg border text-[10px] font-black uppercase flex items-center gap-4 transition-all ${isSpacePressed ? 'bg-green-900/30 border-green-500 text-green-400' : 'bg-slate-900/90 border-slate-800 text-slate-500'}`}>
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${isSpacePressed ? 'bg-green-500 animate-pulse' : 'bg-slate-700'}`} />
+              {isSpacePressed ? 'Panning Mode' : 'Space: Pan'}
+            </div>
+            <div className="flex items-center gap-2 border-l border-slate-700 pl-4 font-mono text-cyan-400">
+              X: {cursorCoords.x} Y: {cursorCoords.y}
+            </div>
+            <div className="flex items-center gap-2 border-l border-slate-700 pl-4 font-mono text-slate-400">
+              Scale: {scale.toFixed(2)}x
+            </div>
+          </div>
         </div>
-        <div className="flex-1 bg-[#020617] relative overflow-hidden cursor-crosshair" ref={dropTargetRef} onDrop={handleDrop} onDragOver={handleDragOver}>
-          <TransformWrapper ref={transformComponentRef} initialScale={1} minScale={0.1} maxScale={4} centerOnInit limitToBounds={false} wheel={{ step: 0.1 }} panning={{ disabled: selectedTool !== 'select' }}>
-            <TransformComponent wrapperClass="w-full h-full" contentClass="w-full h-full">
-              <div style={{ width: WORLD_SIZE, height: WORLD_SIZE, position: 'relative', background: 'radial-gradient(circle at center, #1e293b 1px, transparent 1px)', backgroundSize: '40px 40px' }} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}>
+
+        {/* Viewport */}
+        <div className={`flex-1 bg-[#1a1c14] relative overflow-hidden ${isSpacePressed ? 'cursor-grabbing' : 'cursor-crosshair'}`} ref={dropTargetRef}>
+          <TransformWrapper 
+            ref={transformComponentRef} 
+            initialScale={1} 
+            minScale={0.005} 
+            maxScale={10} 
+            onTransformed={(p) => {
+              setScale(p.state.scale);
+              if (dropTargetRef.current) {
+                dropTargetRef.current.style.setProperty('--zoom-scale', p.state.scale.toString());
+              }
+            }}
+            centerOnInit 
+            limitToBounds={false} 
+            wheel={{ step: 0.2 }} 
+            panning={{ disabled: !isSpacePressed && selectedTool !== 'select' }}
+          >
+            <TransformComponent wrapperClass="w-full h-full">
+              <div 
+                style={{ 
+                  width: WORLD_SIZE, 
+                  height: WORLD_SIZE, 
+                  position: 'relative', 
+                  backgroundColor: '#6b705c',
+                }} 
+                onMouseDown={handleMouseDown} 
+                onMouseMove={handleMouseMove}
+              >
                 <MapCanvas width={WORLD_SIZE} height={WORLD_SIZE} scale={1} />
+                
+                {/* High-Visibility Grid Overlay */}
+                <div 
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    zIndex: 50,
+                    backgroundImage: `
+                      linear-gradient(to right, rgba(0,0,0,0.8) calc(3px / var(--zoom-scale, 1)), transparent calc(3px / var(--zoom-scale, 1))),
+                      linear-gradient(to bottom, rgba(0,0,0,0.8) calc(3px / var(--zoom-scale, 1)), transparent calc(3px / var(--zoom-scale, 1))),
+                      linear-gradient(to right, rgba(255,255,255,0.15) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1))),
+                      linear-gradient(to bottom, rgba(255,255,255,0.15) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1)))
+                    `,
+                    backgroundSize: `${TILE_SIZE * 5}px ${TILE_SIZE * 5}px, ${TILE_SIZE * 5}px ${TILE_SIZE * 5}px, ${TILE_SIZE}px ${TILE_SIZE}px, ${TILE_SIZE}px ${TILE_SIZE}px`,
+                    backgroundPosition: '0 0'
+                  }}
+                />
+                
                 {nodes.map(node => (
-                  <div key={node.id} onClick={(e) => { e.stopPropagation(); selectNode(node.id); }} onContextMenu={(e) => handleNodeContextMenu(e, node.id)} style={{ position: 'absolute', left: node.x * TILE_SIZE + WORLD_SIZE / 2, top: node.y * TILE_SIZE + WORLD_SIZE / 2, width: TILE_SIZE, height: TILE_SIZE, transform: 'translate(0, 0)' }} className={`group transition-transform hover:scale-110 z-20 ${selectedNodeId === node.id ? 'z-30' : ''}`}>
-                    <div className={`w-8 h-8 rounded-full shadow-lg flex items-center justify-center border-2 ${selectedNodeId === node.id ? 'bg-blue-600 border-white shadow-blue-500/50' : 'bg-slate-800 border-slate-600 hover:border-blue-400'}`}>
-                      {node.type === 'spawn' && <Target size={16} className="text-white" />}
-                      {node.type === 'enemy' && <Sword size={16} className="text-red-400" />}
-                      {node.type === 'npc' && <User size={16} className="text-green-400" />}
-                      {node.type === 'loot' && <Box size={16} className="text-purple-400" />}
-                      {node.type === 'poi' && <Map size={16} className="text-yellow-400" />}
+                  <div 
+                    key={node.id} 
+                    id={`node-${node.id}`} 
+                    onClick={(e) => { e.stopPropagation(); goToNode(node.id); }} 
+                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); selectNode(node.id); handleEditNodeProperties(node.id); }}
+                    style={{ 
+                      position: 'absolute', 
+                      left: node.x * TILE_SIZE + WORLD_SIZE / 2, 
+                      top: node.y * TILE_SIZE + WORLD_SIZE / 2, 
+                      width: TILE_SIZE, 
+                      height: TILE_SIZE,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      zIndex: 100
+                    }} 
+                    className={`group transition-transform hover:scale-125 ${selectedNodeId === node.id ? 'z-[200]' : ''}`}
+                  >
+                    <div className={`w-10 h-10 rounded-full shadow-2xl flex items-center justify-center border-2 transition-all ${selectedNodeId === node.id ? 'bg-cyan-500 border-white scale-110' : 'bg-slate-900 border-slate-600 hover:border-cyan-400'}`}>
+                      {node.type === 'spawn' && <Target size={20} className="text-white" />}
+                      {node.type === 'enemy' && <Sword size={20} className="text-red-400" />}
+                      {node.type === 'npc' && <User size={20} className="text-green-400" />}
+                      {node.type === 'loot' && <Box size={20} className="text-purple-400" />}
+                      {node.type === 'poi' && <MapIcon size={20} className="text-yellow-400" />}
                     </div>
-                    <div className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 bg-black/80 text-white text-[10px] rounded pointer-events-none ${selectedNodeId === node.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                      {node.name}
+                    <div className={`absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-1 bg-black/90 text-white text-[10px] font-black rounded border border-slate-700 pointer-events-none transition-opacity ${selectedNodeId === node.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                      {node.name.toUpperCase()}
                     </div>
                   </div>
                 ))}
-                <div className="absolute left-1/2 top-1/2 w-4 h-4 -ml-2 -mt-2 border border-red-500/50 rounded-full pointer-events-none" />
               </div>
             </TransformComponent>
           </TransformWrapper>
         </div>
       </div>
+
+      {showNodeModal && nodeFormData && (
+        <NodeEditModal
+          open={showNodeModal}
+          onClose={() => setShowNodeModal(false)}
+          mode="edit"
+          coords={{ x: nodes.find(n => n.id === selectedNodeId)?.x || 0, y: nodes.find(n => n.id === selectedNodeId)?.y || 0 }}
+          nodeData={nodeFormData}
+          onChange={setNodeFormData}
+          onSave={handleSaveNodeDetails}
+          saving={savingNode}
+          shopItems={shopItems}
+          encounters={encounters}
+          maps={maps}
+          stockedItems={stockedItems}
+          onAddStockItem={onAddStockItemSync}
+          onRemoveStockItem={onRemoveStockItemSync}
+          musicTracks={musicTracks}
+          iconGalleryUrls={iconGalleryUrls}
+          onIconSelect={(url) => setNodeFormData({ ...nodeFormData, icon_url: url })}
+          uploadingIcon={uploadingIcon}
+          onUploadIcon={handleUploadIcon}
+          iconInputRef={nodeIconInputRef}
+          uploadingSceneBg={uploadingSceneBg}
+          onUploadSceneBg={(f) => handleUploadAsset(f, 'nodes/scene-backgrounds', setUploadingSceneBg).then(p => p && setNodeFormData({...nodeFormData, scene_background_url: p}))}
+          sceneBgInputRef={sceneBgInputRef}
+          uploadingNpcSprite={uploadingNpcSprite}
+          onUploadNpcSprite={(f) => handleUploadAsset(f, 'nodes/npc-sprites', setUploadingNpcSprite).then(p => p && setNodeFormData({...nodeFormData, scene_npc_sprite_url: p}))}
+          npcSpriteInputRef={npcSpriteInputRef}
+          onUploadNodeMusic={handleUploadNodeMusic}
+          uploadingNodeMusic={uploadingNodeMusic}
+          nodeMusicInputRef={nodeMusicInputRef}
+          onRequestUploadDialogueImage={(idx) => { currentUploadIdx.current = idx; dialogueExpressionInputRef.current?.click(); }}
+          uploadingDialogueImageLine={uploadingDialogueImageLine}
+          onRequestUploadVoiceLine={(idx) => { currentUploadIdx.current = idx; dialogueVoiceLineInputRef.current?.click(); }}
+          uploadingVoiceLineLine={uploadingVoiceLineLine}
+        />
+      )}
+
+      {/* Hidden Upload Inputs */}
+      <input type="file" ref={dialogueExpressionInputRef} className="hidden" accept="image/*" onChange={handleUploadDialogueExpression} />
+      <input type="file" ref={dialogueVoiceLineInputRef} className="hidden" accept="audio/*" onChange={handleUploadDialogueVoiceLine} />
     </div>
   );
 };

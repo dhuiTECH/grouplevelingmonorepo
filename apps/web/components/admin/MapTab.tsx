@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Loader2, XCircle, Trash2, Settings, Edit2, Upload, GripVertical } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { motion } from 'framer-motion';
-import WorldGridMap from './WorldGridMap';
+import { WorldMapEngine } from './WorldMap/WorldMapEngine';
 import NodeEditModal, { NodeFormData } from './NodeEditModal';
 import DropZone from './DropZone';
 
@@ -34,8 +34,10 @@ export default function MapTab({ shopItems }: { shopItems: any[] }) {
   const [gridKey, setGridKey] = useState(Date.now());
   const [focusedTile, setFocusedTile] = useState<{ global_x: number; global_y: number } | null>(null);
 
-  // Restored State
-  const [worldMapNodes, setWorldMapNodes] = useState<any[]>([]);
+  // We no longer need these since we are using WorldMapEngine
+  // const [worldMapNodes, setWorldMapNodes] = useState<any[]>([]);
+  // const [maps, setMaps] = useState<any[]>([]);
+  
   const [showNodeModal, setShowNodeModal] = useState(false);
   const [nodeModalCoords, setNodeModalCoords] = useState<{x: number, y: number}>({x: 0, y: 0});
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
@@ -81,11 +83,11 @@ export default function MapTab({ shopItems }: { shopItems: any[] }) {
   const [musicTracks, setMusicTracks] = useState<any[]>([]);
   const [editingMapId, setEditingMapId] = useState<string | null>(null);
 
+        loadWorldMapNodes();
+        loadMapsAndSafehouse();
   useEffect(() => {
     const fetchInitialData = async () => {
         loadEncounters();
-        loadWorldMapNodes();
-        loadMapsAndSafehouse();
         loadMusicTracks();
     };
     fetchInitialData();
@@ -632,208 +634,17 @@ export default function MapTab({ shopItems }: { shopItems: any[] }) {
   };
 
   return (
-    <section className="space-y-6 animate-in fade-in duration-500">
-        <div className="flex justify-between items-center">
+    <section className="space-y-6 animate-in fade-in duration-500 h-[calc(100vh-10rem)]">
+        <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-black uppercase tracking-widest text-cyan-400 flex items-center gap-2">
                 <Settings size={22} /> World Map Admin
             </h2>
         </div>
-
-             <div className="flex flex-col lg:flex-row gap-6 lg:gap-6">
-                <div className="flex-1 min-w-0 order-2 lg:order-1">
-                    <WorldGridMap
-                      key={gridKey}
-                      focusedTile={focusedTile}
-                      spawnPoint={spawnMapId && safehousePosition ? { mapId: spawnMapId, x: safehousePosition.x, y: safehousePosition.y } : null}
-                      onFocusTile={(gx, gy) => setFocusedTile({ global_x: gx, global_y: gy })}
-                      onUnfocus={() => setFocusedTile(null)}
-                      onSelectEmptySlot={handleSelectEmptySlot}
-                      onMapClick={handleMapClick}
-                      onNodeDrop={handleNodeDrop}
-                      nodes={worldMapNodes}
-                    />
-                </div>
-                <div className="w-full lg:min-w-[340px] lg:w-[380px] lg:max-w-[400px] flex-shrink-0 order-1 lg:order-2 space-y-4 bg-gray-900/40 p-5 rounded-2xl border border-gray-800 overflow-y-auto lg:max-h-[calc(100vh-12rem)]">
-                    <h3 className="text-sm font-black uppercase text-cyan-400 border-b border-gray-800 pb-2">World Plotter</h3>
-                    <div className="p-3 rounded-lg border border-cyan-800/50 bg-cyan-950/20">
-                      <p className="text-[10px] font-black uppercase text-cyan-400/90 mb-1">Add node to map</p>
-                      <p className="text-xs text-gray-400">Click a tile on the map to add a node. Use zoom in to place precisely.</p>
-                    </div>
-                    <div className="space-y-2 p-3 bg-black/30 rounded-lg border border-cyan-900/50">
-                      <p className="text-[10px] font-black uppercase text-gray-500">Global Safehouse (Spawn)</p>
-                      <p className="text-sm font-bold text-white">
-                        {safehousePosition != null ? `(${safehousePosition.x}, ${safehousePosition.y})` : 'No spawn map yet'}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setPlacingSafehouse(!placingSafehouse)}
-                        className={`w-full py-2 rounded-lg text-[10px] font-black uppercase transition-all ${placingSafehouse ? 'bg-amber-600 text-white' : 'bg-cyan-700 hover:bg-cyan-600 text-white'}`}
-                      >
-                        {placingSafehouse ? 'Cancel' : 'Set spawn point'}
-                      </button>
-                      {placingSafehouse && (
-                        <p className="text-[10px] text-cyan-300">Click a map tile to set spawn.</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-black uppercase text-cyan-400 border-b border-gray-800 pb-2">Maps ({maps.length})</h3>
-                      <div className="max-h-[120px] overflow-y-auto space-y-1 pr-1">
-                        {maps.map((m: any) => (
-                          <div key={m.id} className="flex flex-col bg-black/40 p-2 rounded border border-gray-800 gap-2">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs text-white truncate">{m.name || m.id?.slice(0, 8)}</span>
-                                <div className="flex gap-1">
-                                    <button type="button" onClick={() => setEditingMapId(m.id === editingMapId ? null : m.id)} className="p-1.5 bg-blue-900/50 hover:bg-blue-600 text-blue-400 rounded text-[10px] font-bold uppercase"><Settings size={10} /></button>
-                                    <button type="button" onClick={() => handleDeleteMap(m.id)} className="p-1.5 bg-red-900/50 hover:bg-red-600 text-red-400 rounded text-[10px] font-bold uppercase"><Trash2 size={10} /></button>
-                                </div>
-                            </div>
-                            {editingMapId === m.id && (
-                                <div className="p-2 bg-black/60 rounded border border-gray-700 space-y-2">
-                                    <label className="text-[10px] font-black uppercase text-gray-500">Map Music</label>
-                                    <select 
-                                        className="w-full bg-black border border-gray-600 rounded px-2 py-1 text-xs text-white"
-                                        value={m.music_id || ''}
-                                        onChange={(e) => handleSaveMapMusic(m.id, e.target.value)}
-                                    >
-                                        <option value="">None (Global/Silence)</option>
-                                        {musicTracks.map(t => (
-                                            <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <h3 className="text-sm font-black uppercase text-cyan-400 border-b border-gray-800 pb-2">Active Nodes ({worldMapNodes.length})</h3>
-                    <p className="text-[10px] text-gray-500">Drag a node by the handle, then drop on the map to move it.</p>
-                     <div className="max-h-[500px] overflow-y-auto space-y-2 pr-2">
-                        {worldMapNodes.map((node: any) => (
-                            <div key={node.id} className="flex items-center gap-2 bg-black/40 p-3 rounded-lg border border-gray-800">
-                                <div
-                                    className="cursor-grab active:cursor-grabbing touch-none p-1 rounded text-gray-500 hover:text-cyan-400 hover:bg-cyan-900/30 shrink-0"
-                                    draggable
-                                    onDragStart={(e) => {
-                                        e.dataTransfer.setData('application/json', JSON.stringify({ nodeId: node.id }));
-                                        e.dataTransfer.effectAllowed = 'move';
-                                    }}
-                                    title="Drag to map to move"
-                                >
-                                    <GripVertical size={16} />
-                                </div>
-                                <div className="flex items-center gap-3 flex-1 min-w-0">
-                                <img src={node.icon_url || '/default-node.png'} className="w-8 h-8 object-contain shrink-0" />
-                                <div className="min-w-0">
-                                    <p className="text-sm font-bold text-white truncate">{node.name}</p>
-                                    <p className="text-[10px] text-gray-500">({node.x}, {node.y}) on map {node.map_id ? node.map_id.substring(0,4) : 'N/A'}</p>
-                                </div>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <button onClick={() => handleEditNode(node)} className="p-2 bg-cyan-900/30 hover:bg-cyan-600 text-cyan-400 hover:text-white rounded transition-all"><Edit2 size={14} /></button>
-                                    <button onClick={async () => {
-                                        if (confirm(`Delete node "${node.name}"?`)) {
-                                            await supabase.from('world_map_nodes').delete().eq('id', node.id);
-                                            loadWorldMapNodes();
-                                        }
-                                    }} className="p-2 bg-red-900/30 hover:bg-red-600 text-red-400 hover:text-white rounded transition-all"><Trash2 size={14} /></button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-             </div>
-
-      <NodeEditModal
-        open={showNodeModal}
-        onClose={() => setShowNodeModal(false)}
-        mode={activeNodeId ? 'edit' : 'create'}
-        coords={nodeModalCoords}
-        nodeData={nodeFormData}
-        onChange={setNodeFormData}
-        onSave={saveNode}
-        saving={savingNode}
-        shopItems={shopItems}
-        encounters={encounters}
-        maps={maps}
-        stockedItems={stockedItems}
-        onAddStockItem={onAddStockItem}
-        onRemoveStockItem={onRemoveStockItem}
-        iconGalleryUrls={iconGalleryUrls}
-        onIconSelect={(url) => setNodeFormData((prev) => ({ ...prev, icon_url: url }))}
-        uploadingIcon={uploadingNodeIcon}
-        onUploadIcon={handleUploadNodeIcon}
-        iconInputRef={nodeIconInputRef}
-        uploadingSceneBg={uploadingSceneBg}
-        uploadingNpcSprite={uploadingNpcSprite}
-        onUploadSceneBg={handleUploadSceneBg}
-        onUploadNpcSprite={handleUploadNpcSprite}
-        sceneBgInputRef={sceneBgInputRef}
-        npcSpriteInputRef={npcSpriteInputRef}
-        musicTracks={musicTracks}
-        speechInputRef={speechInputRef}
-        nodeMusicInputRef={nodeMusicInputRef}
-        uploadingSpeech={uploadingSpeech}
-        uploadingNodeMusic={uploadingNodeMusic}
-        onUploadSpeech={handleUploadSpeech}
-        onUploadNodeMusic={handleUploadNodeMusic}
-        onRequestUploadDialogueImage={handleRequestUploadDialogueImage}
-        uploadingDialogueImageLine={uploadingDialogueImageLine}
-        onRequestUploadVoiceLine={handleRequestUploadVoiceLine}
-        uploadingVoiceLineLine={uploadingDialogueVoiceLineLine}
-      />
-      <input
-        type="file"
-        ref={dialogueExpressionInputRef}
-        accept="image/png,image/jpeg,image/webp"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) handleUploadDialogueExpression(f);
-          e.target.value = '';
-        }}
-      />
-      <input
-        type="file"
-        ref={dialogueVoiceLineInputRef}
-        accept="audio/mpeg,audio/mp3,audio/*"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) handleUploadDialogueVoiceLine(f);
-          e.target.value = '';
-        }}
-      />
-
-      {showUploadModal && newMapCoords && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-gray-900 border-2 border-green-500/50 rounded-2xl p-6 max-w-md w-full shadow-[0_0_40px_rgba(34,197,94,0.2)]">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-black uppercase text-green-400">Upload New Map to ({newMapCoords.x}, {newMapCoords.y})</h3>
-              <button onClick={() => { setShowUploadModal(false); setSelectedMapFile(null); }} className="text-gray-500 hover:text-white transition-colors"><XCircle size={24} /></button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Map Name *</label>
-                <input value={mapName} onChange={(e) => setMapName(e.target.value)} className="w-full bg-black/40 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-green-500 outline-none" placeholder="e.g. Whispering Woods" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Map Image *</label>
-                <DropZone accept="image/webp,image/png,image/jpeg,image/*" disabled={uploadingMap} onFiles={(files) => files[0] && setSelectedMapFile(files[0])} single className="p-2">
-                  <input type="file" ref={mapFileInputRef} accept="image/webp,image/png,image/jpeg" className="text-sm text-gray-400 file:bg-green-800/50 file:text-green-300 file:border-0 file:rounded-lg file:px-3 file:py-2 file:mr-3 cursor-pointer w-full hover:file:bg-green-700/50" />
-                  {selectedMapFile && <p className="text-[10px] text-green-400 mt-1">Dropped: {selectedMapFile.name}</p>}
-                </DropZone>
-              </div>
-              <div className="flex justify-end gap-3 pt-4">
-                <button onClick={() => { setShowUploadModal(false); setSelectedMapFile(null); }} className="px-4 py-2 text-xs font-bold text-gray-500 hover:text-white uppercase">Cancel</button>
-                <button onClick={handleUploadMap} disabled={uploadingMap} className="px-6 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white text-xs font-black uppercase rounded-lg shadow-lg shadow-green-500/20 flex items-center justify-center gap-2">
-                  {uploadingMap ? <><Loader2 size={14} className="animate-spin" /> Uploading...</> : "Upload and Place Map"}
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </div>
+        
+        <div className="w-full h-full rounded-2xl overflow-hidden border border-gray-800">
+            <WorldMapEngine />
       )}
+        </div>
     </section>
   );
 }

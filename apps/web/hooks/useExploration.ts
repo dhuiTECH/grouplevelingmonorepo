@@ -23,14 +23,20 @@ export interface VisionTile {
   x: number;
   y: number;
   node: WorldMapNode | null;
+  imageUrl?: string;
+  type?: string;
+  isFallback?: boolean;
 }
 
 const GRID_RADIUS = 2; // 5x5 grid: from -2 to +2 around player
+const CHUNK_SIZE = 16;
+export const DEFAULT_LAND_COLOR = '#6b705c'; // Greenish-brown
 
 function buildVisionGrid(
   centerX: number,
   centerY: number,
-  nodes: WorldMapNode[]
+  nodes: WorldMapNode[],
+  tilesData: any[] = []
 ): VisionTile[] {
   const tiles: VisionTile[] = [];
   for (let dy = -GRID_RADIUS; dy <= GRID_RADIUS; dy++) {
@@ -38,7 +44,16 @@ function buildVisionGrid(
       const x = centerX + dx;
       const y = centerY + dy;
       const node = nodes.find((n) => n.x === x && n.y === y) ?? null;
-      tiles.push({ x, y, node });
+      const tile = tilesData.find((t) => t.x === x && t.y === y) ?? null;
+      
+      tiles.push({ 
+        x, 
+        y, 
+        node, 
+        imageUrl: tile?.imageUrl || tile?.image_url, 
+        type: tile?.type || tile?.tile_type || 'land',
+        isFallback: !tile
+      });
     }
   }
   return tiles;
@@ -57,101 +72,119 @@ export function useExploration(
   const [userQuests, setUserQuests] = useState<any[]>([]);
   const [availableQuests, setAvailableQuests] = useState<any[]>([]);
 
+  const [worldTiles, setWorldTiles] = useState<any[]>([]);
+
   const wx = user?.world_x ?? 0;
   const wy = user?.world_y ?? 0;
 
   const refreshVision = useCallback(
     (centerX: number, centerY: number) => {
-      setVisionGrid(buildVisionGrid(centerX, centerY, nodes));
+      setVisionGrid(buildVisionGrid(centerX, centerY, nodes, worldTiles));
     },
-    [nodes]
+    [nodes, worldTiles]
   );
+
+  const fetchChunks = async (x: number, y: number) => {
+    const cx = Math.floor(x / CHUNK_SIZE);
+    const cy = Math.floor(y / CHUNK_SIZE);
+
+    // Fetch 9 chunks (3x3 grid)
+    const { data: chunks } = await supabase
+      .from('map_chunks')
+      .select('tile_data')
+      .gte('chunk_x', cx - 1)
+      .lte('chunk_x', cx + 1)
+      .gte('chunk_y', cy - 1)
+      .lte('chunk_y', cy + 1);
+
+    if (chunks) {
+      const tiles: any[] = [];
+      chunks.forEach(c => {
+        if (Array.isArray(c.tile_data)) {
+          tiles.push(...c.tile_data);
+        }
+      });
+      
+      setWorldTiles(prev => {
+        const map = new Map(prev.map(t => [`${t.x},${t.y}`, t]));
+        tiles.forEach(t => map.set(`${t.x},${t.y}`, t));
+        return Array.from(map.values());
+      });
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const { data: mapData, error: mapError } = await supabase
-          .from('maps')
-          .select('id, image_url')
-          .eq('is_active', true)
-          .maybeSingle();
+        // Fetch all nodes with global coordinates
+        const { data: nodesData, error: nodesError } = await supabase
+          .from('world_map_nodes')
+          .select('id, name, type, x, y, global_x, global_y, map_id, icon_url, interaction_type, interaction_data, modal_image_url');
 
-        if (mapError) {
-          console.error('Error fetching active map:', mapError);
-          setLoading(false);
-          return;
-        }
-
-        if (mapData) {
-          setActiveMapId(mapData.id);
-          setActiveMapUrl(mapData.image_url ?? null);
+        if (nodesError) {
+          console.error('Error fetching nodes:', nodesError);
         } else {
-          setActiveMapId(null);
-          setActiveMapUrl(null);
-        }
+          const processedNodes = (nodesData as any[]).map(n => ({
+            ...n,
+            x: n.global_x ?? n.x,
+            y: n.global_y ?? n.y
+          }));
 
-        if (mapData?.id) {
-          const { data: nodesData, error: nodesError } = await supabase
-            .from('world_map_nodes')
-            .select('id, name, type, x, y, map_id, icon_url, interaction_type, interaction_data, modal_image_url')
-            .eq('map_id', mapData.id);
+          // Fetch quests for these nodes
+          const { data: questsData } = await supabase
+            .from('quests')
+            .select('*')
+            .in('node_id', processedNodes.map(n => n.id));
 
-          if (nodesError) {
-            console.error('Error fetching nodes:', nodesError);
-          } else {
-            // Fetch quests for these nodes
-            const { data: questsData, error: questsError } = await supabase
-              .from('quests')
+          setAvailableQuests(questsData || []);
+
+          // Fetch user's quests
+          if (user?.id) {
+            const { data: uQuestsData } = await supabase
+              .from('user_quests')
               .select('*')
-              .in('node_id', (nodesData as any[]).map(n => n.id));
+              .eq('user_id', user.id);
+            
+            setUserQuests(uQuestsData || []);
 
-            setAvailableQuests(questsData || []);
-
-            // Fetch user's quests
-            if (user?.id) {
-              const { data: uQuestsData, error: uQuestsError } = await supabase
-                .from('user_quests')
-                .select('*')
-                .eq('user_id', user.id);
+            // Map quest status to nodes
+            const mappedNodes = processedNodes.map(node => {
+              const nodeQuest = (questsData || []).find(q => q.node_id === node.id);
+              const userQuest = (uQuestsData || []).find(uq => uq.quest_id === nodeQuest?.id);
               
-              setUserQuests(uQuestsData || []);
-
-              // Map quest status to nodes
-              const mappedNodes = (nodesData as WorldMapNode[]).map(node => {
-                const nodeQuest = (questsData || []).find(q => q.node_id === node.id);
-                const userQuest = (uQuestsData || []).find(uq => uq.quest_id === nodeQuest?.id);
-                
-                if (nodeQuest && userQuest?.status !== 'claimed') {
-                  return {
-                    ...node,
-                    has_quest: true,
-                    quest_status: userQuest ? (userQuest.status === 'completed' ? 'completed' : 'active') : 'available'
-                  } as WorldMapNode;
-                }
+              if (nodeQuest && userQuest?.status !== 'claimed') {
                 return {
                   ...node,
-                  has_quest: false
-                };
-              });
-              setNodes(mappedNodes);
-            } else {
-              setNodes((nodesData as WorldMapNode[]) ?? []);
-            }
+                  has_quest: true,
+                  quest_status: userQuest ? (userQuest.status === 'completed' ? 'completed' : 'active') : 'available'
+                } as WorldMapNode;
+              }
+              return {
+                ...node,
+                has_quest: false
+              };
+            });
+            setNodes(mappedNodes);
+          } else {
+            setNodes(processedNodes);
           }
-        } else {
-          setNodes([]);
         }
+
+        // Fetch initial chunks
+        await fetchChunks(wx, wy);
+
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, []);
+  }, [user?.id]); // Re-load when user changes
 
   useEffect(() => {
     if (!loading) {
       refreshVision(wx, wy);
+      fetchChunks(wx, wy); // Fetch chunks as player moves
     }
   }, [wx, wy, nodes, loading, refreshVision]);
 
@@ -333,6 +366,7 @@ export function useExploration(
     activeMapUrl,
     activeMapId,
     nodes,
+    worldTiles,
     loading,
     userQuests,
     availableQuests,

@@ -1012,8 +1012,7 @@ export default function AdminDashboard() {
           <AdminNavItem id="mobs" icon={Users} label="Mobs" active={activeTab === 'mobs'} onClick={setActiveTab} />
           <AdminNavItem id="pets" icon={PawPrint} label="Pets" active={activeTab === 'pets'} onClick={setActiveTab} />
           <AdminNavItem id="music" icon={Music2} label="Music" active={activeTab === 'music'} onClick={setActiveTab} />
-          <AdminNavItem id="map" icon={Map} label="World Map" active={activeTab === 'map'} onClick={setActiveTab} />
-          <AdminNavItem id="map_generator" icon={Globe} label="Map Gen" active={activeTab === 'map_generator'} onClick={setActiveTab} />
+          <AdminNavItem id="map_generator" icon={Globe} label="World Editor" active={activeTab === 'map_generator'} onClick={setActiveTab} />
             </div>
           </div>
         </div>
@@ -1655,12 +1654,8 @@ export default function AdminDashboard() {
           <MusicTab />
         )}
 
-        {activeTab === 'map' && (
-          <MapTab shopItems={shopItems} />
-        )}
-
         {activeTab === 'map_generator' && (
-          <WorldMapEngine />
+          <WorldMapEngine shopItems={shopItems} />
         )}
 
       </main>
