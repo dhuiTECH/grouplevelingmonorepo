@@ -25,6 +25,12 @@ const StatSpeed = () => (
   </Svg>
 );
 
+const GemIcon = () => (
+  <Svg width={10} height={10} viewBox="0 0 24 24" fill="currentColor" color="#67e8f9">
+    <Path d="M16 2H8L4 8l8 14 8-14-4-6z"/>
+  </Svg>
+);
+
 interface ItemCardProps {
   item: ShopItem;
   onPress: () => void;
@@ -155,14 +161,24 @@ export const ItemCard = ({ item, onPress, style }: ItemCardProps) => {
 
             {/* Pill Currency/Price */}
             <View style={styles.pricePill}>
-                 {/* Gold Coin Icon */}
-                 <View style={styles.coinIconContainer}>
-                     <View style={styles.coinInnerDot} />
-                 </View>
-                 {/* Price Text */}
-                 <Text style={styles.priceText}>
-                    {item.price}G
-                 </Text>
+                 {item.price > 0 && (
+                   <View style={styles.priceGroup}>
+                     <View style={styles.coinIconContainer}>
+                         <View style={styles.coinInnerDot} />
+                     </View>
+                     <Text style={styles.priceText}>
+                        {item.price}G
+                     </Text>
+                   </View>
+                 )}
+                 {(item as any).gem_price > 0 && (
+                   <View style={styles.priceGroup}>
+                     <GemIcon />
+                     <Text style={[styles.priceText, { color: '#67e8f9' }]}>
+                        {(item as any).gem_price}
+                     </Text>
+                   </View>
+                 )}
             </View>
 
         </View>
@@ -328,6 +344,11 @@ const styles = StyleSheet.create({
         gap: 4,
         borderWidth: 1,
         borderColor: '#1e2d3d',
+    },
+    priceGroup: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
     },
     coinIconContainer: {
         width: 10, // Reduced from 12
