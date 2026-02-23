@@ -13,6 +13,7 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
   const [loading, setLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentFrame, setCurrentFrame] = useState(0);
+  const [playKey, setPlayKey] = useState(0);
 
   // VISUAL CONFIG
   const [config, setConfig] = useState({
@@ -81,7 +82,7 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
     fetchAnim();
   }, [skillId]);
 
-  // JS-DRIVEN ANIMATION LOOP (kept for compatibility with playPreview but CSS animation handles visuals)
+  // JS-DRIVEN ANIMATION LOOP
   useEffect(() => {
     if (!isPlaying) {
       setCurrentFrame(0);
@@ -89,21 +90,20 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
     }
 
     const frameDuration = config.duration_ms / config.frame_count;
-    let frame = 0;
     
     const interval = setInterval(() => {
-      frame++;
-      if (frame >= config.frame_count) {
-        clearInterval(interval);
-        setIsPlaying(false);
-        setCurrentFrame(0);
-      } else {
-        setCurrentFrame(frame);
-      }
+      setCurrentFrame(prev => {
+        if (prev + 1 >= config.frame_count) {
+          clearInterval(interval);
+          setIsPlaying(false);
+          return 0;
+        }
+        return prev + 1;
+      });
     }, frameDuration);
 
     return () => clearInterval(interval);
-  }, [isPlaying, config.duration_ms, config.frame_count]);
+  }, [isPlaying, config.duration_ms, config.frame_count, playKey]);
 
   // 2. UPLOAD HANDLER (Handles both Images and Audio)
   const handleUpload = async (file: File, type: 'sprite' | 'sfx') => {
@@ -194,20 +194,22 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
   const playPreview = () => {
     setIsPlaying(false);
     setCurrentFrame(0);
+    setPlayKey(prev => prev + 1);
     
-    // Force reflow to restart animation
+    // Play Sound immediately on user interaction to avoid block
+    if (audioRef.current && config.sfx_url) {
+      audioRef.current.src = config.sfx_url;
+      audioRef.current.currentTime = 0;
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => console.warn("Audio playback prevented:", error));
+      }
+    }
+
+    // Smallest delay to ensure state updates trigger the useEffect
     setTimeout(() => {
       setIsPlaying(true);
-      // Play Sound
-      if (audioRef.current && config.sfx_url) {
-        audioRef.current.src = config.sfx_url;
-        audioRef.current.currentTime = 0;
-        const playPromise = audioRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(error => console.warn("Audio playback prevented:", error));
-        }
-      }
-    }, 10);
+    }, 20);
   };
 
   return (
@@ -403,9 +405,10 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
         <div className="w-1/2 bg-black relative flex flex-col items-center justify-center border-l border-gray-800">
            <div className="absolute top-4 right-4 text-[10px] text-gray-600 font-mono">LIVE RENDER ENGINE</div>
            
-           {/* THE ANIMATION BOX */}
+          {/* THE ANIMATION BOX */}
            <div className="relative group">
              <div 
+               key={playKey}
                id="preview-box"
                style={{
                  width: config.frame_width,
@@ -413,16 +416,12 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
                  transform: `scale(${config.preview_scale})`,
                  backgroundImage: config.sprite_url ? `url("${config.sprite_url}")` : 'none',
                  backgroundSize: `${config.frame_count * config.frame_width}px ${config.frame_height}px`,
-                 backgroundPosition: `${config.offset_x}px ${config.offset_y}px`, // Apply Static Offset
+                 backgroundPosition: `${-(currentFrame * config.frame_width) + config.offset_x}px ${config.offset_y}px`,
                  backgroundRepeat: 'no-repeat',
                  imageRendering: 'pixelated',
-                 // Play once (steps(N)) then stop
-                 animation: isPlaying 
-                   ? `play-sprite ${config.duration_ms}ms steps(${config.frame_count}) forwards` 
-                   : 'none'
+                 transition: 'none',
                }} 
-               onAnimationEnd={() => setIsPlaying(false)}
-               className="border border-cyan-500/30 bg-gray-900/20 flex items-center justify-center text-[10px] text-gray-700 text-center px-2 shadow-[0_0_20px_rgba(6,182,212,0.1)] transition-transform"
+               className="border border-cyan-500/30 bg-gray-900/20 flex items-center justify-center text-[10px] text-gray-700 text-center px-2 shadow-[0_0_20px_rgba(6,182,212,0.1)]"
              >
                {!config.sprite_url && "No Sprite Sheet Uploaded"}
              </div>
@@ -441,13 +440,6 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
 
            {/* Hidden Audio Player */}
            <audio ref={audioRef} />
-
-           <style jsx>{`
-             @keyframes play-sprite {
-               0% { background-position: ${config.offset_x}px ${config.offset_y}px; }
-               100% { background-position: calc(-${config.frame_count * config.frame_width}px + ${config.offset_x}px) ${config.offset_y}px; }
-             }
-           `}</style>
         </div>
       </div>
     </div>
