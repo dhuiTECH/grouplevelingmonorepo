@@ -26,6 +26,11 @@ export interface VisionTile {
   imageUrl?: string;
   type?: string;
   isFallback?: boolean;
+  isSpritesheet?: boolean;
+  frameCount?: number;
+  frameWidth?: number;
+  frameHeight?: number;
+  animationSpeed?: number;
 }
 
 const GRID_RADIUS = 2; // 5x5 grid: from -2 to +2 around player
@@ -53,7 +58,12 @@ function buildVisionGrid(
         node, 
         imageUrl: tile?.imageUrl || tile?.image_url, 
         type: tile?.type || tile?.tile_type || 'land',
-        isFallback: !tile
+        isFallback: !tile,
+        isSpritesheet: tile?.isSpritesheet,
+        frameCount: tile?.frameCount,
+        frameWidth: tile?.frameWidth,
+        frameHeight: tile?.frameHeight,
+        animationSpeed: tile?.animationSpeed
       });
     }
   }
@@ -107,8 +117,8 @@ export function useExploration(
       });
       
       setWorldTiles(prev => {
-        const map = new Map(prev.map(t => [`${t.x},${t.y}`, t]));
-        tiles.forEach(t => map.set(`${t.x},${t.y}`, t));
+        const map = new Map(prev.map(t => [`${t.x},${t.y},${t.layer || 0}`, t]));
+        tiles.forEach(t => map.set(`${t.x},${t.y},${t.layer || 0}`, t));
         return Array.from(map.values());
       });
     }
@@ -220,8 +230,19 @@ export function useExploration(
       let newY = wy;
       if (direction === 'N') newY = wy + 1;
       else if (direction === 'S') newY = wy - 1;
-      else if (direction === 'E') newX = wx + 1;
+      else       if (direction === 'E') newX = wx + 1;
       else if (direction === 'W') newX = wx - 1;
+
+      // CHECK COLLISION: Find all tiles at the target destination
+      const destinationTiles = worldTiles.filter(t => t.x === newX && t.y === newY);
+      
+      // If any tile at this position is marked as non-walkable, block the movement
+      const isBlocked = destinationTiles.some(t => t.isWalkable === false);
+      
+      if (isBlocked) {
+        console.log(`Movement blocked: Tile at ${newX}, ${newY} is not walkable.`);
+        return;
+      }
 
       const stepsBanked = user.steps_banked ?? 0;
       if (stepsBanked < MOVE_COST) return;

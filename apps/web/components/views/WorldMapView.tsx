@@ -147,10 +147,44 @@ export default function WorldMapView({ user, setUser, setActiveTab }: WorldMapVi
               >
                 {/* Tile Background (Fallback to transparent if no image, revealing the #6b705c parent background) */}
                 {tile.imageUrl && (
-                  <div 
-                    className="absolute inset-0 bg-cover bg-center" 
-                    style={{ backgroundImage: `url(${tile.imageUrl})` }} 
-                  />
+                  tile.isSpritesheet && tile.frameCount && tile.frameCount > 1 ? (
+                    <div
+                      className="absolute inset-0 overflow-hidden"
+                      style={{
+                        width: tileWidthPx * ((tile.frameWidth || 64) / 64),
+                        height: tileHeightPx * ((tile.frameHeight || 64) / 64),
+                        left: '50%',
+                        bottom: 0,
+                        transform: 'translateX(-50%)',
+                      }}
+                    >
+                      <div
+                        className="spritesheet-inner-game"
+                        style={{
+                          width: `${tile.frameCount * 100}%`,
+                          height: '100%',
+                          backgroundImage: `url(${tile.imageUrl})`,
+                          backgroundSize: '100% 100%',
+                          backgroundRepeat: 'no-repeat',
+                          // @ts-ignore
+                          '--frame-count': tile.frameCount,
+                          '--animation-speed': `${tile.animationSpeed || 0.8}s`,
+                        } as any}
+                      />
+                    </div>
+                  ) : (
+                    <div 
+                      className="absolute inset-0 bg-cover bg-center" 
+                      style={{ 
+                        backgroundImage: `url(${tile.imageUrl})`,
+                        width: tileWidthPx * ((tile.frameWidth || 64) / 64),
+                        height: tileHeightPx * ((tile.frameHeight || 64) / 64),
+                        left: '50%',
+                        bottom: 0,
+                        transform: 'translateX(-50%)',
+                      }} 
+                    />
+                  )
                 )}
 
                 {tile.node && !isPlayer && (
@@ -300,6 +334,15 @@ export default function WorldMapView({ user, setUser, setActiveTab }: WorldMapVi
         onAcceptQuest={acceptQuest}
         onClaimQuestReward={claimQuestReward}
       />
+      <style jsx global>{`
+        @keyframes spritesheet-animation-game {
+          from { transform: translateX(0); }
+          to { transform: translateX(calc(-100% + (100% / var(--frame-count)))); }
+        }
+        .spritesheet-inner-game {
+          animation: spritesheet-animation-game var(--animation-speed, 0.8s) steps(calc(var(--frame-count) - 1)) infinite;
+        }
+      `}</style>
     </div>
   );
 }
