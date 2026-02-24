@@ -1,6 +1,6 @@
 'use client';
 import React from 'react';
-import { useMapStore } from '@/lib/store/mapStore';
+import { useMapStore, CustomTile } from '@/lib/store/mapStore';
 
 interface MapCanvasProps {
   width: number;
@@ -8,10 +8,14 @@ interface MapCanvasProps {
   scale: number;
   viewport: { x: number, y: number, width: number, height: number };
   onPropMouseDown?: (tileId: string, e: React.MouseEvent) => void;
+  waterBaseTile?: CustomTile;
+  foamStripTile?: CustomTile;
 }
 
-export const MapCanvas: React.FC<MapCanvasProps> = ({ width, height, scale, viewport, onPropMouseDown }) => {
-  const { tiles, isFoamEnabled, autoTileSheetUrl, dirtSheetUrl, terrainOffsets, waterBaseTile, foamStripTile } = useMapStore();
+export const MapCanvas: React.FC<MapCanvasProps> = ({ 
+  width, height, scale, viewport, onPropMouseDown, waterBaseTile, foamStripTile 
+}) => {
+  const { tiles, isFoamEnabled, autoTileSheetUrl, dirtSheetUrl, terrainOffsets } = useMapStore();
   const TILE_SIZE = 64;
 
   // Cull tiles outside the viewport for performance
@@ -116,8 +120,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({ width, height, scale, view
                                 position: 'absolute', inset: 0,
                                 backgroundImage: `url(${foamStripTile.url})`,
                                 backgroundPosition: `-${((tile.foamBitmask || 0) % 4) * TILE_SIZE}px -${Math.floor((tile.foamBitmask || 0) / 4) * TILE_SIZE}px`,
-                                backgroundSize: foamStripTile.isSpritesheet && foamStripTile.frameCount && foamStripTile.frameWidth ? 
-                                  `${(foamStripTile.frameCount / 4) * 100}% ${(foamStripTile.frameCount / 4) * 100}%` : '400% 400%', // Adjust for spritesheet
+                                backgroundSize: foamStripTile.isSpritesheet && foamStripTile.frameCount ? 
+                                  `${foamStripTile.frameCount * 100}% 100%` : '400% 400%',
                                 imageRendering: 'pixelated',
                                 // @ts-ignore
                                 '--foam-frame-count': foamStripTile.frameCount || 1,
