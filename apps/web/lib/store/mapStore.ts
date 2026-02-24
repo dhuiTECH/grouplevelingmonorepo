@@ -87,6 +87,7 @@ interface MapState {
   addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean) => Promise<void>;
   batchAddTiles: (newTiles: Omit<Tile, 'id'>[]) => Promise<void>;
   removeTileAt: (x: number, y: number) => Promise<Tile | null>;
+  removeTileById: (id: string) => Promise<void>;
   moveTile: (tileId: string, newX: number, newY: number, newOffsetX: number, newOffsetY: number) => Promise<void>;
   exportMap: () => string;
 }
@@ -436,6 +437,37 @@ export const useMapStore = create<MapState>((set, get) => ({
     }
 
     return removedTile;
+  },
+
+  removeTileById: async (id) => {
+    const state = get();
+    const tile = state.tiles.find(t => t.id === id);
+    if (!tile) return;
+
+    const { x, y, layer } = tile;
+    const chunkX = Math.floor(x / CHUNK_SIZE);
+    const chunkY = Math.floor(y / CHUNK_SIZE);
+
+    set((state) => ({
+      tiles: state.tiles.filter(t => t.id !== id)
+    }));
+
+    const { data: existingChunk } = await supabase
+      .from('map_chunks')
+      .select('tile_data')
+      .eq('chunk_x', chunkX)
+      .eq('chunk_y', chunkY)
+      .maybeSingle();
+
+    if (existingChunk?.tile_data) {
+      const newTileData = existingChunk.tile_data.filter((t: any) => !(t.x === x && t.y === y && (t.layer || 0) === (layer || 0)));
+      await supabase.from('map_chunks').upsert({
+        chunk_x: chunkX,
+        chunk_y: chunkY,
+        tile_data: newTileData,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'chunk_x,chunk_y' });
+    }
   },
 
   moveTile: async (tileId, newX, newY, newOffsetX, newOffsetY) => {

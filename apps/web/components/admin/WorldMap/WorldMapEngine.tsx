@@ -25,7 +25,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     addTileSimple, selectedTileId, customTiles, selectedTool, 
     activeNodeType, removeTileAt, removeNode, batchAddTiles, 
     loadTilesFromSupabase, tiles, isDraggingTile, draggingTileId, 
-    setDraggingTile, moveTile 
+    setDraggingTile, moveTile, removeTileById
   } = useMapStore();
   
   const [isGenerating, setIsGenerating] = useState(false);
@@ -66,6 +66,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
   // Undo Stack State
   const [undoStack, setUndoStack] = useState<any[]>([]);
+  const [dragGrabOffset, setDragGrabOffset] = useState<{ x: number, y: number } | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -118,39 +119,50 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     }
   }, []);
 
-  const goToNode = (nodeId: string) => {
-    const node = nodes.find(n => n.id === nodeId);
-    if (!node || !transformComponentRef.current) return;
-    
+  const goToNode = useCallback((nodeId: string) => {
     selectNode(nodeId);
-    
-    // Lock the scale to 1 for now to completely rule out scaling offset bugs
-    const targetScale = 1; 
-
-    // 1. Get viewport size, with an absolute fallback just in case the ref is 0 during a fast render
-    const container = dropTargetRef.current;
-    const viewportWidth = container?.clientWidth || window.innerWidth || 1000;
-    const viewportHeight = container?.clientHeight || window.innerHeight || 800;
-
-    // 2. Brutal type coercion. If the database gives us a string or garbage, force it to an integer.
-    const gridX = parseInt(String(node.x), 10) || 0;
-    const gridY = parseInt(String(node.y), 10) || 0;
-
-    // 3. Find the exact pixel center of the node on the 128,000 canvas
-    const targetX = (gridX * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
-    const targetY = (gridY * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
-
-    // 4. Calculate camera offset
-    const finalX = (viewportWidth / 2) - (targetX * targetScale);
-    const finalY = (viewportHeight / 2) - (targetY * targetScale);
-
-    // DEBUG: If you go to Narnia again, look at your browser console (F12). 
-    // This will tell you EXACTLY which number is breaking.
-    console.log(`[ZOOM DEBUG] NodeCoords: ${gridX},${gridY} | Viewport: ${viewportWidth}x${viewportHeight} | TargetPx: ${targetX},${targetY} | CameraMove: X:${finalX} Y:${finalY}`);
-
-    // 5. Force the library to move
-    transformComponentRef.current.setTransform(finalX, finalY, targetScale, 400, 'easeOut');
-  };
+  
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node || !transformComponentRef.current) {
+      console.error(`[GoTo ERROR] Node ${nodeId} not found`);
+      return;
+    }
+  
+    const gridX = Number(node.x) || 0;
+    const gridY = Number(node.y) || 0;
+  
+    const worldX = gridX * TILE_SIZE + WORLD_SIZE / 2 + TILE_SIZE / 2;
+    const worldY = gridY * TILE_SIZE + WORLD_SIZE / 2 + TILE_SIZE / 2;
+  
+    const targetScale = 0.5;   // ←←← THIS IS WHAT YOU WANTED (wide view)
+  
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        let viewportW = window.innerWidth - 440;
+        let viewportH = window.innerHeight - 160;
+  
+        const container = dropTargetRef.current;
+        if (container) {
+          if (container.clientWidth > 500 && container.clientWidth < 3000) viewportW = container.clientWidth;
+          if (container.clientHeight > 400 && container.clientHeight < 3000) viewportH = container.clientHeight;
+        }
+  
+        const targetPosX = viewportW / 2 - worldX * targetScale;
+        const targetPosY = viewportH / 2 - worldY * targetScale;
+  
+        console.log(`%c[GoTo SUCCESS] "${node.name}" → (${gridX}, ${gridY}) @ 0.5x`, 'color:#22ff88;font-weight:bold');
+        console.log(`   Viewport: ${Math.round(viewportW)}×${Math.round(viewportH)}`);
+  
+        transformComponentRef.current!.setTransform(
+          targetPosX,
+          targetPosY,
+          targetScale,
+          320,
+          'easeOut'
+        );
+      });
+    });
+  }, [nodes, selectNode]);
 
   const fetchSupportData = async () => {
     const [encRes, mapsRes, musRes] = await Promise.all([
@@ -343,28 +355,41 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   };
 
   const handleGoToCoords = () => {
-    if (!transformComponentRef.current) return;
-    const x = parseInt(goToX, 10);
-    const y = parseInt(goToY, 10);
+  const x = Number(goToX);
+  const y = Number(goToY);
+  if (isNaN(x) || isNaN(y)) {
+    alert('Please enter valid numbers for X and Y coordinates.');
+    return;
+  }
 
-    if (isNaN(x) || isNaN(y)) {
-      alert('Please enter valid numbers for X and Y coordinates.');
-      return;
-    }
+  const targetScale = 0.1;
 
-    const targetScale = 1; 
-    const container = dropTargetRef.current;
-    const viewportWidth = container?.clientWidth || window.innerWidth || 1000;
-    const viewportHeight = container?.clientHeight || window.innerHeight || 800;
+  requestAnimationFrame(() => {
+    // Find the node element that would be at these coords (we reuse the same ID logic)
+    const tempId = `temp-node-${Date.now()}`; // not needed, we calculate manually
+    const containerRect = dropTargetRef.current?.getBoundingClientRect();
+    if (!containerRect || !transformComponentRef.current) return;
 
-    const targetX = (x * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
-    const targetY = (y * TILE_SIZE) + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
+    // Calculate world pixel position manually
+    const worldPixelX = x * TILE_SIZE + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
+    const worldPixelY = y * TILE_SIZE + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
 
-    const finalX = (viewportWidth / 2) - (targetX * targetScale);
-    const finalY = (viewportHeight / 2) - (targetY * targetScale);
+    // But since we don't have a real DOM element, fall back to math (still works)
+    const { positionX, positionY, scale: currentScale } = transformComponentRef.current.instance.transformState;
+    const viewportCenterX = containerRect.width / 2;
+    const viewportCenterY = containerRect.height / 2;
 
-    transformComponentRef.current.setTransform(finalX, finalY, targetScale, 400, 'easeOut');
-  };
+    const targetContentX = worldPixelX;
+    const targetContentY = worldPixelY;
+
+    const deltaContentX = (viewportCenterX - (targetContentX - (positionX / currentScale * currentScale))) * (targetScale / currentScale); // simplified
+    // Easier version for coords:
+    const newPositionX = (viewportCenterX) - targetContentX * targetScale;
+    const newPositionY = (viewportCenterY) - targetContentY * targetScale;
+
+    transformComponentRef.current.setTransform(newPositionX, newPositionY, targetScale, 280, 'easeOut');
+  });
+};
 
   const handleUploadDialogueExpression = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -417,9 +442,13 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           const exactX = worldX - WORLD_SIZE / 2;
           const exactY = worldY - WORLD_SIZE / 2;
           
-          // Use standard prop offset calculation: center X, bottom Y
-          offsetX = Math.round(exactX - (gx * TILE_SIZE + TILE_SIZE / 2));
-          offsetY = Math.round(exactY - (gy * TILE_SIZE + TILE_SIZE));
+          // Current mouse minus initial grab offset gives the new logical target position
+          const targetLogicalX = exactX - (dragGrabOffset?.x || 0);
+          const targetLogicalY = exactY - (dragGrabOffset?.y || 0);
+          
+          // Calculate new offsets from the target logical position
+          offsetX = Math.round(targetLogicalX - (gx * TILE_SIZE + TILE_SIZE / 2));
+          offsetY = Math.round(targetLogicalY - (gy * TILE_SIZE + TILE_SIZE));
         }
 
         // Update local state for smooth dragging performance
@@ -490,9 +519,45 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   };
 
   const handlePropMouseDown = (tileId: string, e: React.MouseEvent) => {
-    if (selectedTool === 'select' && !isSpacePressed) {
+    if (isSpacePressed) return;
+    
+    if (selectedTool === 'select') {
       e.stopPropagation();
-      setDraggingTile(tileId);
+      const tile = tiles.find(t => t.id === tileId);
+      if (tile) {
+        // Calculate where we grabbed the tile relative to its logical center/bottom
+        const { positionX, positionY, scale } = transformComponentRef.current!.instance.transformState;
+        const rect = dropTargetRef.current!.getBoundingClientRect();
+        const worldX = (e.clientX - rect.left - positionX) / scale;
+        const worldY = (e.clientY - rect.top - positionY) / scale;
+        
+        const exactX = worldX - WORLD_SIZE / 2;
+        const exactY = worldY - WORLD_SIZE / 2;
+        
+        // Logical center/bottom position of tile
+        const logicalX = tile.x * TILE_SIZE + TILE_SIZE / 2;
+        const logicalY = tile.y * TILE_SIZE + TILE_SIZE;
+        
+        setDragGrabOffset({
+          x: exactX - (logicalX + (tile.offsetX || 0)),
+          y: exactY - (logicalY + (tile.offsetY || 0))
+        });
+        
+        setDraggingTile(tileId);
+      }
+    } else if (selectedTool === 'erase') {
+      e.stopPropagation();
+      const tile = tiles.find(t => t.id === tileId);
+      if (tile) {
+        setUndoStack(prev => [...prev, {
+          action: 'erase_tile',
+          x: tile.x,
+          y: tile.y,
+          layer: tile.layer || 0,
+          previousTile: tile
+        }]);
+        removeTileById(tileId);
+      }
     }
   };
 
@@ -515,6 +580,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         await moveTile(tile.id, tile.x, tile.y, tile.offsetX || 0, tile.offsetY || 0);
       }
       setDraggingTile(null);
+      setDragGrabOffset(null);
     }
   };
 
