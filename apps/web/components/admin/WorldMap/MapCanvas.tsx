@@ -194,7 +194,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         );
       })}
       
-      <style jsx global>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @keyframes foam-pulse {
           0%, 100% { opacity: 0.9; transform: scale(1.0); }
           50% { opacity: 0.6; transform: scale(1.02); }
@@ -219,7 +219,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         .spritesheet-animated-foam {
           animation: foam-spritesheet-animation var(--foam-animation-speed) steps(var(--foam-frame-count)) infinite;
         }
-      `}</style>
+      ` }} />
     </div>
   );
 };
