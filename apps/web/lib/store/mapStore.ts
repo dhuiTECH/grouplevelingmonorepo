@@ -32,6 +32,12 @@ export interface Tile {
   isWalkable?: boolean;
   snapToGrid?: boolean;
   isAutoFill?: boolean;
+  isAutoTile?: boolean;
+  hasFoam?: boolean;
+  foamBitmask?: number;
+  smartType?: string;
+  bitmask?: number;
+  elevation?: number;
 }
 
 export interface CustomTile {
@@ -48,6 +54,9 @@ export interface CustomTile {
   isWalkable?: boolean;
   snapToGrid?: boolean;
   isAutoFill?: boolean;
+  isAutoTile?: boolean;
+  smartType?: string;
+  category?: 'water_base' | 'foam_strip' | 'tile' | 'prop';
 }
 
 export type ToolType = 'select' | 'paint' | 'erase' | 'node';
@@ -67,6 +76,27 @@ interface MapState {
   draggingTileId: string | null;
   spawnPoint: { x: number; y: number } | null;
   
+  // Auto-tiling editor state
+  isSmartMode: boolean;
+  selectedSmartType: string; // 'off' | 'grass' | 'dirt'
+  terrainOffsets: Record<string, { flat: [number, number], raised: [number, number] }>;
+  isRaiseMode: boolean;
+  isFoamEnabled: boolean;
+  autoTileSheetUrl: string | null;
+  dirtSheetUrl: string | null;
+  selectedWaterBaseId: string | null; // NEW
+  selectedFoamStripId: string | null; // NEW
+  setSmartMode: (enabled: boolean) => void;
+  setSelectedSmartType: (type: string) => void;
+  setRaiseMode: (enabled: boolean) => void;
+  setFoamEnabled: (enabled: boolean) => void;
+  setAutoTileSheetUrl: (url: string | null) => Promise<void>;
+  setDirtSheetUrl: (url: string | null) => Promise<void>;
+  setSelectedWaterBaseId: (id: string | null) => Promise<void>; // NEW
+  setSelectedFoamStripId: (id: string | null) => Promise<void>; // NEW
+  waterBaseTile: () => CustomTile | undefined; // NEW SELECTOR
+  foamStripTile: () => CustomTile | undefined; // NEW SELECTOR
+  
   setTiles: (tiles: Tile[]) => void;
   setNodes: (nodes: MapNode[]) => void;
   setCustomTiles: (tiles: CustomTile[]) => void;
@@ -84,7 +114,7 @@ interface MapState {
   updateCustomTile: (id: string, updates: Partial<CustomTile>) => Promise<void>;
   setSpawnPoint: (x: number, y: number) => void;
   addTile: (tile: Tile) => void;
-  addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean) => Promise<void>;
+  addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string) => Promise<void>;
   batchAddTiles: (newTiles: Omit<Tile, 'id'>[]) => Promise<void>;
   removeTileAt: (x: number, y: number) => Promise<Tile | null>;
   removeTileById: (id: string) => Promise<void>;
@@ -105,11 +135,59 @@ export const useMapStore = create<MapState>((set, get) => ({
   draggingTileId: null,
   spawnPoint: null,
 
+  isSmartMode: true,
+  selectedSmartType: 'grass',
+  terrainOffsets: {
+    grass: { flat: [0, 0], raised: [0, 256] },
+    dirt: { flat: [0, 512], raised: [0, 768] }
+  },
+  isRaiseMode: false,
+  isFoamEnabled: true,
+  autoTileSheetUrl: null,
+  dirtSheetUrl: null,
+  selectedWaterBaseId: null, // NEW
+  selectedFoamStripId: null, // NEW
+
+  setSmartMode: (isSmartMode) => set({ isSmartMode }),
+  setSelectedSmartType: (selectedSmartType) => set({ selectedSmartType, isSmartMode: selectedSmartType !== 'off' }),
+  setRaiseMode: (isRaiseMode) => set({ isRaiseMode }),
+  setFoamEnabled: (isFoamEnabled) => set({ isFoamEnabled }),
+  setAutoTileSheetUrl: async (url) => {
+    set({ autoTileSheetUrl: url });
+    await supabase.from('world_map_settings').upsert({ id: 1, autotile_sheet_url: url }, { onConflict: 'id' });
+  },
+  setDirtSheetUrl: async (url) => {
+    set({ dirtSheetUrl: url });
+    await supabase.from('world_map_settings').upsert({ id: 1, dirt_sheet_url: url }, { onConflict: 'id' });
+  },
+  setSelectedWaterBaseId: async (id) => { // NEW
+    set({ selectedWaterBaseId: id });
+    await supabase.from('world_map_settings').upsert({ id: 1, selected_water_base_id: id }, { onConflict: 'id' });
+  },
+  setSelectedFoamStripId: async (id) => { // NEW
+    set({ selectedFoamStripId: id });
+    await supabase.from('world_map_settings').upsert({ id: 1, selected_foam_strip_id: id }, { onConflict: 'id' });
+  },
+
+  waterBaseTile: () => get().customTiles.find(t => t.id === get().selectedWaterBaseId), // NEW SELECTOR
+  foamStripTile: () => get().customTiles.find(t => t.id === get().selectedFoamStripId), // NEW SELECTOR
+
   setTiles: (tiles) => set({ tiles }),
   setNodes: (nodes) => set({ nodes }),
   setCustomTiles: (customTiles) => set({ customTiles }),
 
   loadTilesFromSupabase: async () => {
+    // Load Global Settings
+    const { data: settingsData } = await supabase.from('world_map_settings').select('*').eq('id', 1).maybeSingle();
+    if (settingsData) {
+      set({
+        autoTileSheetUrl: settingsData.autotile_sheet_url,
+        dirtSheetUrl: settingsData.dirt_sheet_url,
+        selectedWaterBaseId: settingsData.selected_water_base_id, // NEW
+        selectedFoamStripId: settingsData.selected_foam_strip_id, // NEW
+      });
+    }
+
     // Load Chunks
     const { data: chunksData } = await supabase.from('map_chunks').select('*');
     if (chunksData) {
@@ -133,7 +211,14 @@ export const useMapStore = create<MapState>((set, get) => ({
               offsetX: t.offsetX || 0,
               offsetY: t.offsetY || 0,
               isWalkable: t.isWalkable ?? true,
-              snapToGrid: t.snap_to_grid ?? false
+              snapToGrid: t.snapToGrid ?? false,
+              isAutoFill: t.isAutoFill ?? true,
+              isAutoTile: t.isAutoTile,
+              bitmask: t.bitmask,
+              elevation: t.elevation,
+              hasFoam: t.hasFoam,
+              foamBitmask: t.foamBitmask,
+              smartType: t.smartType
             });
           });
         }
@@ -158,7 +243,10 @@ export const useMapStore = create<MapState>((set, get) => ({
           layer: t.layer || 0,
           isWalkable: t.is_walkable ?? true,
           snapToGrid: t.snap_to_grid ?? false,
-          isAutoFill: t.is_autofill ?? true
+          isAutoFill: t.is_autofill ?? true,
+          isAutoTile: t.is_autotile ?? false,
+          smartType: t.smartType,
+          category: t.category // NEW
         }))
       });
     }
@@ -256,7 +344,10 @@ export const useMapStore = create<MapState>((set, get) => ({
       animation_speed: tile.animationSpeed,
       is_walkable: tile.isWalkable ?? true,
       snap_to_grid: tile.snapToGrid ?? false,
-      is_autofill: tile.isAutoFill ?? true
+      is_autofill: tile.isAutoFill ?? true,
+      is_autotile: tile.isAutoTile ?? false,
+      smartType: tile.smartType, // Ensure smartType is saved
+      category: tile.category // NEW
     });
   },
 
@@ -285,7 +376,10 @@ export const useMapStore = create<MapState>((set, get) => ({
         animation_speed: tile.animationSpeed,
         is_walkable: tile.isWalkable ?? true,
         snap_to_grid: tile.snapToGrid ?? false,
-        is_autofill: tile.isAutoFill ?? true
+        is_autofill: tile.isAutoFill ?? true,
+        is_autotile: tile.isAutoTile ?? false,
+        smartType: tile.smartType, // Ensure smartType is updated
+        category: tile.category // NEW
       }).eq('id', id);
     }
   },
@@ -296,7 +390,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     tiles: [...state.tiles.filter(t => t.x !== tile.x || t.y !== tile.y), tile]
   })),
 
-  addTileSimple: async (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean) => {
+  addTileSimple: async (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string) => {
     const chunkX = Math.floor(x / CHUNK_SIZE);
     const chunkY = Math.floor(y / CHUNK_SIZE);
 
@@ -317,7 +411,13 @@ export const useMapStore = create<MapState>((set, get) => ({
         offsetY: offsetY || 0,
         isWalkable: isWalkable ?? true,
         snapToGrid: snapToGrid ?? false,
-        isAutoFill: isAutoFill ?? true
+        isAutoFill: isAutoFill ?? true,
+        isAutoTile,
+        bitmask,
+        elevation,
+        hasFoam,
+        foamBitmask,
+        smartType
       }]
     }));
 
@@ -335,7 +435,12 @@ export const useMapStore = create<MapState>((set, get) => ({
     // Remove existing tile at this pos AND layer within chunk data
     newTileData = newTileData.filter((t: any) => !(t.x === x && t.y === y && (t.layer || 0) === (layer || 0)));
     // Add new tile
-    newTileData.push({ x, y, type, imageUrl, isSpritesheet, frameCount, frameWidth, frameHeight, animationSpeed, layer: layer || 0, offsetX: offsetX || 0, offsetY: offsetY || 0, isWalkable: isWalkable ?? true, snapToGrid: snapToGrid ?? false, isAutoFill: isAutoFill ?? true });
+    newTileData.push({ 
+      x, y, type, imageUrl, isSpritesheet, frameCount, frameWidth, frameHeight, animationSpeed, 
+      layer: layer || 0, offsetX: offsetX || 0, offsetY: offsetY || 0, 
+      isWalkable: isWalkable ?? true, snapToGrid: snapToGrid ?? false, isAutoFill: isAutoFill ?? true,
+      isAutoTile, bitmask, elevation, hasFoam, foamBitmask, smartType
+    });
 
     await supabase.from('map_chunks').upsert({
       chunk_x: chunkX,
@@ -530,7 +635,13 @@ export const useMapStore = create<MapState>((set, get) => ({
       offsetY: newOffsetY,
       isWalkable: tile.isWalkable ?? true,
       snapToGrid: tile.snapToGrid ?? false,
-      isAutoFill: tile.isAutoFill ?? true
+      isAutoFill: tile.isAutoFill ?? true,
+      isAutoTile: tile.isAutoTile,
+      bitmask: tile.bitmask,
+      elevation: tile.elevation,
+      hasFoam: tile.hasFoam,
+      foamBitmask: tile.foamBitmask,
+      smartType: tile.smartType
     });
 
     await supabase.from('map_chunks').upsert({

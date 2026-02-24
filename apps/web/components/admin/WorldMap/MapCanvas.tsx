@@ -6,15 +6,33 @@ interface MapCanvasProps {
   width: number;
   height: number;
   scale: number;
+  viewport: { x: number, y: number, width: number, height: number };
   onPropMouseDown?: (tileId: string, e: React.MouseEvent) => void;
 }
 
-export const MapCanvas: React.FC<MapCanvasProps> = ({ width, height, onPropMouseDown }) => {
-  const { tiles } = useMapStore();
+export const MapCanvas: React.FC<MapCanvasProps> = ({ width, height, scale, viewport, onPropMouseDown }) => {
+  const { tiles, isFoamEnabled, autoTileSheetUrl, dirtSheetUrl, terrainOffsets, waterBaseTile, foamStripTile } = useMapStore();
   const TILE_SIZE = 64;
 
-  // Sort tiles by layer to ensure ground is drawn before objects
-  const sortedTiles = [...tiles].sort((a, b) => (a.layer || 0) - (b.layer || 0));
+  // Cull tiles outside the viewport for performance
+  const visibleTiles = React.useMemo(() => {
+    const BUFFER = 256; // Render a few extra tiles around the edges to prevent popping
+    
+    return tiles.filter(tile => {
+      const displayWidth = tile.frameWidth || TILE_SIZE;
+      const displayHeight = tile.frameHeight || TILE_SIZE;
+      
+      const left = (tile.x * TILE_SIZE + width / 2) - (displayWidth - TILE_SIZE) / 2 + (tile.offsetX || 0);
+      const top = (tile.y * TILE_SIZE + height / 2) - (displayHeight - TILE_SIZE) + (tile.offsetY || 0);
+      
+      return (
+        left + displayWidth >= viewport.x - BUFFER &&
+        left <= viewport.x + viewport.width + BUFFER &&
+        top + displayHeight >= viewport.y - BUFFER &&
+        top <= viewport.y + viewport.height + BUFFER
+      );
+    }).sort((a, b) => (a.layer || 0) - (b.layer || 0));
+  }, [tiles, viewport, width, height]);
 
   return (
     <div 
@@ -26,7 +44,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({ width, height, onPropMouse
         pointerEvents: 'none' // Still none on container so grid is clickable
       }}
     >
-      {sortedTiles.map((tile) => {
+      {visibleTiles.map((tile) => {
         // Default to TILE_SIZE if not specified
         const displayWidth = tile.frameWidth || TILE_SIZE;
         const displayHeight = tile.frameHeight || TILE_SIZE;
@@ -41,6 +59,77 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({ width, height, onPropMouse
         let zIndex = (tile.layer || 0) * 100000;
         if (tile.layer === 1) {
            zIndex += Math.floor(top + displayHeight);
+        }
+
+        // --- AUTO-TILE RENDERING (Ground Layer) ---
+        if (tile.isAutoTile && (tile.layer || 0) === 0) {
+            const elevation = tile.elevation || 0;
+            const bitmask = tile.bitmask || 0;
+            const smartType = tile.smartType || 'grass';
+            
+            // Fallback Logic: if Dirt selected but no sheet, use Grass visuals
+            let activeSheet = autoTileSheetUrl;
+            let effectiveSmartType = smartType;
+            
+            if (smartType === 'dirt') {
+                if (dirtSheetUrl) {
+                    activeSheet = dirtSheetUrl;
+                } else {
+                    effectiveSmartType = 'grass'; // Visual fallback
+                }
+            }
+    
+            if (activeSheet) {
+                const typeOffsets = terrainOffsets[effectiveSmartType] || terrainOffsets['grass'];
+                const stateOffsets = elevation === 1 ? typeOffsets.raised : typeOffsets.flat;
+                
+                // Paul Solt 4x4 Grid Mapping inside the block
+                const col = bitmask % 4;
+                const row = Math.floor(bitmask / 4);
+                
+                const bgX = -(stateOffsets[0] + col * TILE_SIZE);
+                const bgY = -(stateOffsets[1] + row * TILE_SIZE);
+
+                return (
+                   <div key={tile.id} style={{ position: 'absolute', left, top, width: TILE_SIZE, height: TILE_SIZE, zIndex }}>
+                      {/* Water Base (Bottom Layer) */}
+                      {waterBaseTile?.url && (
+                        <img src={waterBaseTile.url} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ imageRendering: 'pixelated', zIndex: -1 }} />
+                      )}
+                      
+                      {/* Auto-Tile Block */}
+                      <div 
+                         style={{
+                            width: '100%', height: '100%',
+                            backgroundImage: `url(${activeSheet})`,
+                            backgroundPosition: `${bgX}px ${bgY}px`,
+                            backgroundSize: '1024px 1024px', // 16x16 tiles or 4x4 blocks of 4x4
+                            imageRendering: 'pixelated'
+                         }}
+                      />
+                      
+                      {/* Foam Overlay */}
+                      {isFoamEnabled && foamStripTile?.url && (tile.foamBitmask || 0) > 0 && (
+                          <div 
+                             className={`foam-overlay ${foamStripTile.isSpritesheet && foamStripTile.frameCount && foamStripTile.frameCount > 1 ? 'spritesheet-animated-foam' : ''}`}
+                             style={{
+                                position: 'absolute', inset: 0,
+                                backgroundImage: `url(${foamStripTile.url})`,
+                                backgroundPosition: `-${((tile.foamBitmask || 0) % 4) * TILE_SIZE}px -${Math.floor((tile.foamBitmask || 0) / 4) * TILE_SIZE}px`,
+                                backgroundSize: foamStripTile.isSpritesheet && foamStripTile.frameCount && foamStripTile.frameWidth ? 
+                                  `${(foamStripTile.frameCount / 4) * 100}% ${(foamStripTile.frameCount / 4) * 100}%` : '400% 400%', // Adjust for spritesheet
+                                imageRendering: 'pixelated',
+                                // @ts-ignore
+                                '--foam-frame-count': foamStripTile.frameCount || 1,
+                                '--foam-animation-speed': `${foamStripTile.animationSpeed || 1}s`,
+                                '--foam-frame-width': `${foamStripTile.frameWidth || TILE_SIZE}px`,
+                                '--foam-frame-height': `${foamStripTile.frameHeight || TILE_SIZE}px`,
+                             } as React.CSSProperties}
+                          />
+                      )}
+                   </div>
+                );
+            }
         }
 
         if (tile.isSpritesheet && tile.frameCount && tile.frameCount > 1) {
@@ -102,12 +191,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({ width, height, onPropMouse
       })}
       
       <style jsx global>{`
+        @keyframes foam-pulse {
+          0%, 100% { opacity: 0.9; transform: scale(1.0); }
+          50% { opacity: 0.6; transform: scale(1.02); }
+        }
+        .foam-overlay {
+          animation: foam-pulse 2s infinite ease-in-out;
+          pointer-events: none;
+        }
+        
         @keyframes spritesheet-animation {
           from { transform: translateX(0); }
           to { transform: translateX(calc(-100% + (100% / var(--frame-count)))); }
         }
         .spritesheet-inner {
           animation: spritesheet-animation var(--animation-speed, 1s) steps(calc(var(--frame-count) - 1)) infinite;
+        }
+
+        @keyframes foam-spritesheet-animation {
+          from { background-position-x: 0; }
+          to { background-position-x: calc(-1 * var(--foam-frame-count) * var(--foam-frame-width)); }
+        }
+        .spritesheet-animated-foam {
+          animation: foam-spritesheet-animation var(--foam-animation-speed) steps(var(--foam-frame-count)) infinite;
         }
       `}</style>
     </div>
