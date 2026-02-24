@@ -84,15 +84,47 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             }
     
             if (activeSheet) {
-                const typeOffsets = terrainOffsets[effectiveSmartType] || terrainOffsets['grass'];
-                const stateOffsets = elevation === 1 ? typeOffsets.raised : typeOffsets.flat;
+                let bgX = 0;
+                let bgY = 0;
+                let bgSize = '1024px 1024px';
                 
-                // Paul Solt 4x4 Grid Mapping inside the block
-                const col = bitmask % 4;
-                const row = Math.floor(bitmask / 4);
-                
-                const bgX = -(stateOffsets[0] + col * TILE_SIZE);
-                const bgY = -(stateOffsets[1] + row * TILE_SIZE);
+                if (effectiveSmartType === 'dirt') {
+                    // Translated from User's Top=1, Right=2, Bottom=4, Left=8
+                    // to Engine's Top=8, Right=1, Bottom=2, Left=4
+                    const DIRT_TILE_MAP: Record<number, {x: number, y: number}> = {
+                      0:  { x: 256, y: 512 }, // Isolated
+                      8:  { x: 256, y: 384 }, // Top Cap
+                      1:  { x: 0,   y: 64  }, // Right Cap
+                      2:  { x: 256, y: 256 }, // Bottom Cap
+                      4:  { x: 128, y: 64  }, // Left Cap
+                      10: { x: 256, y: 320 }, // Vertical Path
+                      5:  { x: 64,  y: 64  }, // Horizontal Path
+                      9:  { x: 0,   y: 640 }, // Bottom-Left Corner
+                      3:  { x: 0,   y: 512 }, // Top-Left Corner
+                      12: { x: 128, y: 640 }, // Bottom-Right Corner
+                      6:  { x: 128, y: 512 }, // Top-Right Corner
+                      11: { x: 0,   y: 576 }, // Left Edge
+                      13: { x: 64,  y: 640 }, // Bottom Edge
+                      14: { x: 128, y: 576 }, // Right Edge
+                      7:  { x: 64,  y: 512 }, // Top Edge
+                      15: { x: 64,  y: 576 }  // Full Center
+                    };
+                    
+                    const mapping = DIRT_TILE_MAP[bitmask] || DIRT_TILE_MAP[0];
+                    bgX = -mapping.x;
+                    bgY = -mapping.y;
+                    bgSize = '768px 768px';
+                } else {
+                    const typeOffsets = terrainOffsets[effectiveSmartType] || terrainOffsets['grass'];
+                    const stateOffsets = elevation === 1 ? typeOffsets.raised : typeOffsets.flat;
+                    
+                    // Paul Solt 4x4 Grid Mapping inside the block
+                    const col = bitmask % 4;
+                    const row = Math.floor(bitmask / 4);
+                    
+                    bgX = -(stateOffsets[0] + col * TILE_SIZE);
+                    bgY = -(stateOffsets[1] + row * TILE_SIZE);
+                }
 
                 return (
                    <div key={tile.id} style={{ position: 'absolute', left, top, width: TILE_SIZE, height: TILE_SIZE, zIndex }}>
@@ -107,7 +139,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             width: '100%', height: '100%',
                             backgroundImage: `url(${activeSheet})`,
                             backgroundPosition: `${bgX}px ${bgY}px`,
-                            backgroundSize: '1024px 1024px', // 16x16 tiles or 4x4 blocks of 4x4
+                            backgroundSize: bgSize,
                             imageRendering: 'pixelated'
                          }}
                       />

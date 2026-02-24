@@ -334,7 +334,7 @@ export default function WorldMapView({ user, setUser, setActiveTab }: WorldMapVi
         onAcceptQuest={acceptQuest}
         onClaimQuestReward={claimQuestReward}
       />
-      <style jsx global>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @keyframes spritesheet-animation-game {
           from { transform: translateX(0); }
           to { transform: translateX(calc(-100% + (100% / var(--frame-count)))); }
@@ -342,7 +342,7 @@ export default function WorldMapView({ user, setUser, setActiveTab }: WorldMapVi
         .spritesheet-inner-game {
           animation: spritesheet-animation-game var(--animation-speed, 0.8s) steps(calc(var(--frame-count) - 1)) infinite;
         }
-      `}</style>
+      ` }} />
     </div>
   );
 }

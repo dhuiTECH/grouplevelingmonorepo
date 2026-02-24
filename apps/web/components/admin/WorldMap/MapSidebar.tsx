@@ -67,6 +67,26 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
     }
   };
 
+  const handleAutoTileSheetUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const publicUrl = await handleUploadAsset(file, 'tiles/auto');
+    if (publicUrl) {
+      await setAutoTileSheetUrl(publicUrl);
+    }
+    if (autoTileInputRef.current) autoTileInputRef.current.value = '';
+  };
+
+  const handleDirtSheetUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const publicUrl = await handleUploadAsset(file, 'tiles/auto');
+    if (publicUrl) {
+      await setDirtSheetUrl(publicUrl);
+    }
+    if (dirtInputRef.current) dirtInputRef.current.value = '';
+  };
+
   const processFiles = async (files: FileList | File[], category: 'tile' | 'prop' | 'water_base' | 'foam_strip' = 'tile') => {
     setUploadingTiles(true);
     const fileArray = Array.from(files);
@@ -225,7 +245,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Grass Sheet</label>
                   <button onClick={() => autoTileInputRef.current?.click()} className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded border border-slate-700 hover:border-slate-500 transition-colors">LOAD</button>
-                  <input type="file" ref={autoTileInputRef} className="hidden" accept="image/png" onChange={(e) => setAutoTileSheetUrl(e.target.files?.[0] ? URL.createObjectURL(e.target.files[0]) : null)} />
+                  <input type="file" ref={autoTileInputRef} className="hidden" accept="image/png" onChange={handleAutoTileSheetUpload} />
                 </div>
                 {autoTileSheetUrl ? (
                   <div className="relative h-8 bg-slate-950 rounded border border-slate-800 overflow-hidden group mb-2">
@@ -243,7 +263,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Dirt Path Sheet</label>
                   <button onClick={() => dirtInputRef.current?.click()} className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded border border-slate-700 hover:border-slate-500 transition-colors">LOAD</button>
-                  <input type="file" ref={dirtInputRef} className="hidden" accept="image/png" onChange={(e) => setDirtSheetUrl(e.target.files?.[0] ? URL.createObjectURL(e.target.files[0]) : null)} />
+                  <input type="file" ref={dirtInputRef} className="hidden" accept="image/png" onChange={handleDirtSheetUpload} />
                 </div>
                 {dirtSheetUrl ? (
                   <div className="relative h-8 bg-slate-950 rounded border border-slate-800 overflow-hidden group">
