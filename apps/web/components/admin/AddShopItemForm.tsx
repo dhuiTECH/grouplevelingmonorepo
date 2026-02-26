@@ -485,7 +485,14 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
       setUploading(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.access_token) throw new Error('Not authenticated - please log in again');
+        
+        if (!session?.access_token) {
+          console.error('Session missing or no access token found', session);
+          throw new Error('Not authenticated - please log in again');
+        }
+
+        console.log('Starting upload with token length:', session.access_token.length);
+
         const formDataUpload = new FormData();
         formDataUpload.append('file', selectedFile);
         const uploadResponse = await fetch('/api/admin/upload', {
@@ -1365,7 +1372,12 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
                           const hX = (isFemaleHand && handItem.offset_x_female !== null && handItem.offset_x_female !== undefined) ? handItem.offset_x_female : (handItem.offset_x || 0);
                           const hY = (isFemaleHand && handItem.offset_y_female !== null && handItem.offset_y_female !== undefined) ? handItem.offset_y_female : (handItem.offset_y || 0);
                           const hRot = (isFemaleHand && handItem.rotation_female !== null && handItem.rotation_female !== undefined) ? handItem.rotation_female : (handItem.rotation || 0);
-                          const hZIndex = handItem.z_index ?? 90;
+                          
+                          // Use overridden Z-index if available for this weapon (formData)
+                          let hZIndex = handItem.z_index ?? 90;
+                          if (formData.slot === 'weapon' && formData.hand_grip_z_index_override !== null) {
+                            hZIndex = formData.hand_grip_z_index_override;
+                          }
 
                           return (
                             <div
@@ -1572,6 +1584,11 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
                       onChange={(e) => setHandOpacity(parseFloat(e.target.value))}
                       className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-purple"
                     />
+                    {formData.slot === 'weapon' && formData.hand_grip_z_index_override !== null && (
+                      <p className="text-[9px] text-purple-300 mt-2 font-bold bg-purple-900/30 p-1.5 rounded inline-block">
+                        Previewing with Z-Index Override: {formData.hand_grip_z_index_override}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

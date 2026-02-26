@@ -2,7 +2,8 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useMapStore, NodeType, Tile } from '@/lib/store/mapStore';
-import { MapCanvas } from './MapCanvas';
+// import { MapCanvas } from './MapCanvas'; // Replaced by PixiMapCanvas
+import { PixiMapCanvas } from './PixiMapCanvas';
 import { MapSidebar } from './MapSidebar';
 import { MapDataSidebar } from './MapDataSidebar';
 import { createNoise2D } from 'simplex-noise';
@@ -40,6 +41,32 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
 
+  // Resize Handlers for Sidebars
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isResizingLeft) {
+        const newWidth = Math.max(200, Math.min(600, e.clientX));
+        setSidebarWidth(newWidth);
+      }
+      if (isResizingRight) {
+        const newWidth = Math.max(200, Math.min(600, window.innerWidth - e.clientX));
+        setRightSidebarWidth(newWidth);
+      }
+    };
+    const handleMouseUp = () => {
+      setIsResizingLeft(false);
+      setIsResizingRight(false);
+    };
+    if (isResizingLeft || isResizingRight) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingLeft, isResizingRight, setSidebarWidth, setRightSidebarWidth]);
+
   // Resize Handlers
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -68,8 +95,13 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   
   const [isGenerating, setIsGenerating] = useState(false);
   const [seed, setSeed] = useState<string>(Math.random().toString(36).substring(7));
+  
+  // Transform State for Pixi
   const [scale, setScale] = useState(1);
-  const [viewport, setViewport] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const [positionX, setPositionX] = useState(0);
+  const [positionY, setPositionY] = useState(0);
+  const [viewport, setViewport] = useState({ width: 0, height: 0 }); // Container dimensions
+
   const [isSpacePressed, setIsSpacePressed] = useState(false);
 
   // Modal State
@@ -166,20 +198,16 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
       
       // Initialize viewport
       if (dropTargetRef.current) {
-        const rect = dropTargetRef.current.getBoundingClientRect();
+        const clientWidth = dropTargetRef.current.clientWidth;
+        const clientHeight = dropTargetRef.current.clientHeight;
         setViewport({
-          x: (WORLD_SIZE / 2) - (rect.width / 2),
-          y: (WORLD_SIZE / 2) - (rect.height / 2),
-          width: rect.width,
-          height: rect.height
+          width: clientWidth,
+          height: clientHeight
         });
       }
     };
     init();
   }, [loadTilesFromSupabase]);
-
-  // No auto-centering on every node change - it was annoying the user.
-  // We rely on TransformWrapper's centerOnInit for the initial view.
 
   useEffect(() => {
     // Initialize zoom scale for CSS
@@ -368,8 +396,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const handleDeleteIcon = async (url: string) => {
     if (!confirm('Are you sure you want to delete this icon from the library?')) return;
     try {
-      // Extract path from Supabase URL: .../public/game-assets/nodes/icons/file.png
-      // We need just "nodes/icons/file.png"
       const pathPart = url.split('/game-assets/')[1]?.split('?')[0];
       if (!pathPart) throw new Error('Invalid icon URL');
 
@@ -434,8 +460,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const targetScale = 0.1;
 
   requestAnimationFrame(() => {
-    // Find the node element that would be at these coords (we reuse the same ID logic)
-    const tempId = `temp-node-${Date.now()}`; // not needed, we calculate manually
     const containerRect = dropTargetRef.current?.getBoundingClientRect();
     if (!containerRect || !transformComponentRef.current) return;
 
@@ -443,7 +467,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     const worldPixelX = x * TILE_SIZE + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
     const worldPixelY = y * TILE_SIZE + (WORLD_SIZE / 2) + (TILE_SIZE / 2);
 
-    // But since we don't have a real DOM element, fall back to math (still works)
     const { positionX, positionY, scale: currentScale } = transformComponentRef.current.instance.transformState;
     const viewportCenterX = containerRect.width / 2;
     const viewportCenterY = containerRect.height / 2;
@@ -451,7 +474,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     const targetContentX = worldPixelX;
     const targetContentY = worldPixelY;
 
-    const deltaContentX = (viewportCenterX - (targetContentX - (positionX / currentScale * currentScale))) * (targetScale / currentScale); // simplified
     // Easier version for coords:
     const newPositionX = (viewportCenterX) - targetContentX * targetScale;
     const newPositionY = (viewportCenterY) - targetContentY * targetScale;
@@ -490,35 +512,28 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
   // --- PAUL SOLT AUTO-TILING HELPERS ---
   const calculateAndUpdateTile = async (tx: number, ty: number) => {
-    // We need fresh state because multiple updates might happen
     const currentTiles = useMapStore.getState().tiles;
     const tile = currentTiles.find(t => t.x === tx && t.y === ty && (t.layer || 0) === 0);
     
     if (!tile || !tile.isAutoTile) return;
 
-    // Determine Elevation (should already be set on tile)
     const elevation = tile.elevation || 0;
     
-    // Calculate Bitmask
     const getBitmaskFresh = (x: number, y: number, elev: number) => {
         const check = (dx: number, dy: number, val: number) => {
           const n = currentTiles.find(t => t.x === x + dx && t.y === y + dy && (t.layer || 0) === 0);
-          // Only connect if same elevation AND same smartType
           return (n?.elevation === elev && n?.smartType === tile.smartType) ? val : 0;
         };
-        // N=8, E=1, S=2, W=4
         return check(0, -1, 8) | check(1, 0, 1) | check(0, 1, 2) | check(-1, 0, 4);
     };
 
     const newBitmask = getBitmaskFresh(tx, ty, elevation);
     
-    // Calculate Foam (only if Land/Elev 1 and Foam Enabled)
     let newFoamBitmask = 0;
     if (useMapStore.getState().isFoamEnabled && elevation === 1) {
        const getFoamFresh = (x: number, y: number) => {
           const check = (dx: number, dy: number, val: number) => {
              const n = currentTiles.find(t => t.x === x + dx && t.y === y + dy && (t.layer || 0) === 0);
-             // Water is anything NOT elevation 1 (so 0 or undefined)
              return (n?.elevation !== 1) ? val : 0;
           };
           return check(0, -1, 8) | check(1, 0, 1) | check(0, 1, 2) | check(-1, 0, 4);
@@ -526,17 +541,13 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
        newFoamBitmask = getFoamFresh(tx, ty);
     }
 
-    // Only update if changed
     if (tile.bitmask !== newBitmask || tile.foamBitmask !== newFoamBitmask) {
-       // Perform a fast synchronous local state update first to prevent race conditions
        useMapStore.setState((state) => ({
          tiles: state.tiles.map(t => 
            t.id === tile.id ? { ...t, bitmask: newBitmask, foamBitmask: newFoamBitmask } : t
          )
        }));
 
-       // Then sync to Supabase in the background
-     // Run them sequentially so the store state settles
        addTileSimple(
          tx, ty, tile.type, tile.imageUrl, tile.isSpritesheet, 
          tile.frameCount, tile.frameWidth, tile.frameHeight, tile.animationSpeed, 
@@ -556,6 +567,12 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   };
 
   const [isSelecting, setIsSelecting] = useState(false);
+
+  const getTopMostTileId = (gx: number, gy: number) => {
+    const tilesAtPos = tiles.filter(t => t.x === gx && t.y === gy && (t.layer === 1 || t.layer === 2));
+    if (tilesAtPos.length === 0) return null;
+    return tilesAtPos.sort((a, b) => (b.layer || 0) - (a.layer || 0))[0].id;
+  };
 
   const handleMapInteraction = async (clientX: number, clientY: number, isMove = false, isShift = false, forceErase = false, isAlt = false) => {
     if (!transformComponentRef.current || !dropTargetRef.current || (isSpacePressed && !isMove)) return;
@@ -586,7 +603,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           useMapStore.getState().setSelectedSmartType(tileAtPos.smartType);
           setTool('paint');
         } else {
-          // Find custom tile ID by matching image URL
           const customTile = state.customTiles.find(ct => ct.url === tileAtPos.imageUrl);
           if (customTile) {
             selectTile(customTile.id);
@@ -604,11 +620,9 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         }
         setCursorCoords({ x: gx, y: gy });
       } else {
-        // If we have a stamp and no selection is in progress, Left Click pastes it. Hold shift to create a new selection.
         if (state.currentStamp && !isShift) {
           handlePasteStamp(gx, gy);
         } else {
-          // Mouse Down logic for selection
           useMapStore.getState().setSelection({ start: { x: gx, y: gy }, end: { x: gx, y: gy } });
           setIsSelecting(true);
         }
@@ -629,16 +643,17 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           const exactX = worldX - WORLD_SIZE / 2;
           const exactY = worldY - WORLD_SIZE / 2;
           
-          // Current mouse minus initial grab offset gives the new logical target position
-          const targetLogicalX = exactX - (dragGrabOffset?.x || 0);
-          const targetLogicalY = exactY - (dragGrabOffset?.y || 0);
+        const targetLogicalX = exactX - (dragGrabOffset?.x || 0);
+        const targetLogicalY = exactY - (dragGrabOffset?.y || 0);
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/e3253593-de95-4d0a-9242-349fb357def6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WorldMapEngine.tsx:621',message:'Drag Math',data:{exactX, exactY, targetLogicalX, targetLogicalY},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
           
-          // Calculate new offsets from the target logical position
           offsetX = Math.round(targetLogicalX - (gx * TILE_SIZE + TILE_SIZE / 2));
           offsetY = Math.round(targetLogicalY - (gy * TILE_SIZE + TILE_SIZE));
         }
 
-        // Update local state for smooth dragging performance
         useMapStore.setState((state) => ({
           tiles: state.tiles.map(t => t.id === state.draggingTileId ? { ...t, x: gx, y: gy, offsetX, offsetY } : t)
         }));
@@ -656,36 +671,28 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         let offsetX = 0;
         let offsetY = 0;
         
-        // If painting a PROP (layer 2) or ROAD (layer 1), calculate exact sub-grid offset based on click position
-        // Roads might also want offsets for slight variations, but props definitely do.
         if ((tile.layer === 1 || tile.layer === 2) && !tile.snapToGrid) {
           const exactX = worldX - WORLD_SIZE / 2;
           const exactY = worldY - WORLD_SIZE / 2;
           
-          // Center X of prop at mouse
           offsetX = Math.round(exactX - (gx * TILE_SIZE + TILE_SIZE / 2));
-          // Bottom Y of prop at mouse
           offsetY = Math.round(exactY - (gy * TILE_SIZE + TILE_SIZE));
         }
 
-        // --- PAUL SOLT AUTO-TILE LOGIC ---
         let isAutoTile = tile.isAutoTile ?? false;
         let elevation = 0;
         let bitmask = 0;
-        let hasFoam = isFoamEnabled; // Default foam setting from store
+        let hasFoam = isFoamEnabled;
         let foamBitmask = 0;
         let smartType = tile.smartType;
 
-        // Apply Smart Mode Logic for Ground Tiles
         if (selectedSmartType !== 'off' && (!tile.layer || tile.layer === 0)) {
            isAutoTile = true;
            smartType = selectedSmartType;
-           // Elevation Logic: Raise Mode (1) vs Normal (0). Shift key inverts/lowers.
            if (isRaiseMode) elevation = 1;
            if (isShift) elevation = 0; 
         }
 
-        // Save previous state for undo
         const prevTile = useMapStore.getState().tiles.find(t => t.x === gx && t.y === gy && (t.layer || 0) === (tile.layer || 0));
         setUndoStack(prev => [...prev, {
           action: 'paint',
@@ -695,7 +702,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           previousTile: prevTile || null
         }]);
         
-        // --- 3x3 Brush for Grass ---
         if (selectedSmartType === 'grass') {
           const tilesToPaint = [];
           for (let dx = -1; dx <= 1; dx++) {
@@ -722,6 +728,8 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                 hasFoam: hasFoam,
                 foamBitmask: 0,
                 smartType: 'grass',
+                blockCol: state.selectedBlockCol,
+                blockRow: state.selectedBlockRow,
                 rotation: tile.rotation || 0
               });
             }
@@ -732,10 +740,10 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           gx, gy, 'custom', tile.url, tile.isSpritesheet, tile.frameCount, 
           tile.frameWidth, tile.frameHeight, tile.animationSpeed, tile.layer, 
           offsetX, offsetY, tile.isWalkable, tile.snapToGrid, tile.isAutoFill,
-          isAutoTile, bitmask, elevation, hasFoam, foamBitmask, smartType, tile.rotation || 0
+          isAutoTile, bitmask, elevation, hasFoam, foamBitmask, smartType, tile.rotation || 0,
+          state.selectedBlockCol, state.selectedBlockRow
         );
 
-          // Trigger Auto-Tile Update for neighbors
           if (isAutoTile) {
              await updateTileAndNeighbors(gx, gy);
           }
@@ -758,7 +766,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           previousTile: removedTile
         }]);
 
-        // Trigger neighbor update if it was an auto-tile
         if (removedTile.isAutoTile) {
            await updateTileAndNeighbors(gx, gy);
         }
@@ -792,7 +799,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
       e.stopPropagation();
       const tile = tiles.find(t => t.id === tileId);
       if (tile) {
-        // Calculate where we grabbed the tile relative to its logical center/bottom
         const { positionX, positionY, scale } = transformComponentRef.current!.instance.transformState;
         const rect = dropTargetRef.current!.getBoundingClientRect();
         const worldX = (e.clientX - rect.left - positionX) / scale;
@@ -801,7 +807,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         const exactX = worldX - WORLD_SIZE / 2;
         const exactY = worldY - WORLD_SIZE / 2;
         
-        // Logical center/bottom position of tile
         const logicalX = tile.x * TILE_SIZE + TILE_SIZE / 2;
         const logicalY = tile.y * TILE_SIZE + TILE_SIZE;
         
@@ -824,11 +829,26 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     }
     if (e.button !== 0) return;
     if (!isSpacePressed) {
-      // Eyedropper (Alt + Click) should ALWAYS work
       if (e.altKey) {
         e.stopPropagation();
         handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey, false, true);
         return;
+      }
+
+      if (selectedTool === 'select' || selectedTool === 'erase') {
+        const { positionX, positionY, scale } = transformComponentRef.current!.instance.transformState;
+        const rect = dropTargetRef.current!.getBoundingClientRect();
+        const worldX = (e.clientX - rect.left - positionX) / scale;
+        const worldY = (e.clientY - rect.top - positionY) / scale;
+        const gx = Math.floor((worldX - WORLD_SIZE / 2) / TILE_SIZE);
+        const gy = Math.floor((worldY - WORLD_SIZE / 2) / TILE_SIZE);
+
+        const topTileId = getTopMostTileId(gx, gy);
+        if (topTileId) {
+           handlePropMouseDown(topTileId, e);
+           // If selecting a prop, we stop there. If nothing found, proceed to normal interaction?
+           return;
+        }
       }
 
       if (selectedTool !== 'select' && selectedTool !== 'stamp') {
@@ -849,7 +869,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     if (state.isDraggingTile && state.draggingTileId) {
       const tile = state.tiles.find(t => t.id === state.draggingTileId);
       if (tile) {
-        // Finalize the move in Supabase
         await moveTile(tile.id, tile.x, tile.y, tile.offsetX || 0, tile.offsetY || 0);
       }
       setDraggingTile(null);
@@ -868,7 +887,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
     const capturedTiles = state.tiles.filter(t => 
       t.x >= startX && t.x <= endX && t.y >= startY && t.y <= endY
-    ).map(t => ({ ...t, x: t.x - startX, y: t.y - startY })); // Relative to selection top-left
+    ).map(t => ({ ...t, x: t.x - startX, y: t.y - startY })); 
 
     state.setCurrentStamp(capturedTiles);
     state.setSelection(null);
@@ -892,7 +911,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     
     if (isSpacePressed) return;
 
-    if (e.buttons & 2) { // Right click held
+    if (e.buttons & 2) { 
       e.stopPropagation();
       handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey, true, e.altKey);
     } else if (e.buttons & 1 && selectedTool !== 'select') {
@@ -905,16 +924,13 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     if (undoStack.length === 0) return;
     
     const lastAction = undoStack[undoStack.length - 1];
-    setUndoStack(prev => prev.slice(0, -1)); // pop
+    setUndoStack(prev => prev.slice(0, -1));
 
     const { action, x, y, layer, previousTile, nodeData, previousFullTiles } = lastAction;
 
     if (action === 'autofill' && previousFullTiles) {
-      // Revert local state
       useMapStore.setState({ tiles: previousFullTiles });
       
-      // Clear the chunks on Supabase that were modified by the autofill
-      // We'll iterate through the chunks in the area that was filled
       const chunkCoords = new Set<string>();
       const GRID_RADIUS = 30; 
       for (let x = -GRID_RADIUS; x <= GRID_RADIUS; x++) {
@@ -923,33 +939,29 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         }
       }
 
-      // Restore each chunk from the snapshot
-      for (const coord of chunkCoords) {
-        const [cx, cy] = coord.split(',').map(Number);
-        const chunkTiles = previousFullTiles.filter(t => Math.floor(t.x / 16) === cx && Math.floor(t.y / 16) === cy);
-        
-        // This is a bit slow but ensures consistency
-        supabase.from('map_chunks').upsert({
-          chunk_x: cx,
-          chunk_y: cy,
-          tile_data: chunkTiles.map(t => {
-            const { id, ...rest } = t;
-            return rest;
-          }),
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'chunk_x,chunk_y' }).then(({ error }) => {
-          if (error) console.error("Error reverting chunk during undo", error);
-        });
-      }
+        for (const coord of chunkCoords) {
+          const [cx, cy] = coord.split(',').map(Number);
+          const chunkTiles = previousFullTiles.filter((t: any) => Math.floor(t.x / 16) === cx && Math.floor(t.y / 16) === cy);
+          
+          supabase.from('map_chunks').upsert({
+            chunk_x: cx,
+            chunk_y: cy,
+            tile_data: chunkTiles.map((t: any) => {
+              const { id, ...rest } = t;
+              return rest;
+            }),
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'chunk_x,chunk_y' }).then(({ error }) => {
+            if (error) console.error("Error reverting chunk during undo", error);
+          });
+        }
       
       alert("Autofill undone and synced to database.");
       return;
     }
 
     if (action === 'paint') {
-      // Revert a paint action
       if (previousTile) {
-        // Restore the tile that was overwritten
         await addTileSimple(
           x, y, previousTile.type, previousTile.imageUrl, 
           previousTile.isSpritesheet, previousTile.frameCount, 
@@ -968,14 +980,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           previousTile.rotation || 0
         );
       } else {
-        // If there was no tile before, we just need to remove the one we just painted.
-        // We'll temporarily modify removeTileAt logic internally or use a custom remove to target specific layer.
-        // For simplicity, we can fetch all tiles at (x,y), filter out the painted layer, and batch update.
-        // Actually, since we updated removeTileAt to remove top-down, we might need a specific layer remove.
-        // Let's implement a targeted remove in the store if needed, or just re-sync chunk.
-        
-        // Quick fix: Since we added it, let's remove it directly using the store's set state and then sync supabase
-        const chunkX = Math.floor(x / 16); // CHUNK_SIZE
+        const chunkX = Math.floor(x / 16); 
         const chunkY = Math.floor(y / 16);
         useMapStore.setState((state) => ({
           tiles: state.tiles.filter(t => !(t.x === x && t.y === y && (t.layer || 0) === layer))
@@ -988,7 +993,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         }
       }
     } else if (action === 'erase_tile') {
-      // Restore the erased tile
       if (previousTile) {
         await addTileSimple(
           x, y, previousTile.type, previousTile.imageUrl, 
@@ -1009,11 +1013,9 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         );
       }
     } else if (action === 'node_add') {
-      // Find the node we added at x,y and remove it
       const n = useMapStore.getState().nodes.find(node => node.x === x && node.y === y);
       if (n) await removeNode(n.id);
     } else if (action === 'erase_node') {
-      // Restore the node
       if (nodeData) {
         await addNode({
           x: nodeData.x,
@@ -1052,14 +1054,12 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         const newTiles: Omit<Tile, 'id'>[] = [];
         const GRID_RADIUS = 30; 
         
-        // Save state for undo BEFORE autofill
         const snapshotBefore = useMapStore.getState().tiles;
         setUndoStack(prev => [...prev, {
           action: 'autofill',
           previousFullTiles: snapshotBefore
         }]);
 
-        // Filter tiles to ONLY those that have isAutoFill enabled (defaults to true)
         const autoFillTiles = customTiles.filter(t => t.isAutoFill !== false);
         
         const waterTiles = autoFillTiles.filter(t => (t.layer || 0) < 0 || t.category === 'water_base');
@@ -1084,7 +1084,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
              if (groundTiles.length > 0) return groundTiles[Math.floor(Math.random() * groundTiles.length)];
           }
           
-          // Final fallback: only use tiles that have Auto-Fill enabled
           return groundTiles[Math.floor(Math.random() * groundTiles.length)] || waterTiles[0] || autoFillTiles[0];
         };
 
@@ -1110,7 +1109,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
               tileType = 'soil';
             }
             
-            // 1. Ground/Water Layer: ONLY place if nothing exists at this (x, y) on this layer
             const groundExists = currentTiles.some(t => t.x === x && t.y === y && (t.layer || 0) === targetLayer);
             if (!groundExists) {
               const selectedTile = getTileForType(tileType);
@@ -1135,7 +1133,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
               }
             }
 
-            // 2. Prop Layer: ONLY place if tileType isn't water AND nothing exists at this (x, y) on layer 2+
             if (propTiles.length > 0 && tileType !== 'water') {
               const propExists = currentTiles.some(t => t.x === x && t.y === y && (t.layer || 0) >= 2);
               if (!propExists && Math.random() < 0.08) {
@@ -1269,6 +1266,19 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
         {/* Viewport */}
         <div className={`flex-1 bg-[#6b705c] relative overflow-hidden ${isSpacePressed || isDraggingTile ? 'cursor-grabbing' : 'cursor-crosshair'}`} ref={dropTargetRef}>
+          
+          {/* Layer 1: The stationary Pixi Canvas (Internal container handles the panning) */}
+          <div className="absolute inset-0 z-0 pointer-events-none">
+            <PixiMapCanvas 
+              width={viewport.width} 
+              height={viewport.height} 
+              worldSize={WORLD_SIZE}
+              transform={{ x: positionX, y: positionY, scale }} 
+              waterBaseTile={waterBaseTile()}
+              foamStripTile={foamStripTile()}
+            />
+          </div>
+
           <TransformWrapper 
             ref={transformComponentRef} 
             initialScale={1.0} 
@@ -1277,13 +1287,15 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
             centerOnInit
             onTransformed={(p) => {
               setScale(p.state.scale);
+              setPositionX(p.state.positionX);
+              setPositionY(p.state.positionY);
+              
               if (dropTargetRef.current) {
-                const rect = dropTargetRef.current.getBoundingClientRect();
+                const clientWidth = dropTargetRef.current.clientWidth;
+                const clientHeight = dropTargetRef.current.clientHeight;
                 setViewport({
-                  x: -p.state.positionX / p.state.scale,
-                  y: -p.state.positionY / p.state.scale,
-                  width: rect.width / p.state.scale,
-                  height: rect.height / p.state.scale
+                  width: clientWidth,
+                  height: clientHeight
                 });
                 dropTargetRef.current.style.setProperty('--zoom-scale', p.state.scale.toString());
               }
@@ -1298,7 +1310,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                   width: WORLD_SIZE, 
                   height: WORLD_SIZE, 
                   position: 'relative', 
-                  backgroundColor: '#6b705c',
+                  backgroundColor: 'transparent', // IMPORTANT: Transparent so Pixi shows through
                 }} 
                 onMouseDown={handleMouseDown} 
                 onMouseMove={handleMouseMove}
@@ -1306,15 +1318,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                 onMouseLeave={handleMouseUp}
                 onContextMenu={(e) => e.preventDefault()}
               >
-                <MapCanvas 
-                  width={WORLD_SIZE} 
-                  height={WORLD_SIZE} 
-                  scale={scale} 
-                  viewport={viewport} 
-                  onPropMouseDown={handlePropMouseDown} 
-                  waterBaseTile={waterBaseTile()}
-                  foamStripTile={foamStripTile()}
-                />
                 
                 {/* High-Visibility Black Grid Overlay */}
                 <div 
@@ -1363,12 +1366,19 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                 {nodes.filter(node => {
                   const x = node.x * TILE_SIZE + WORLD_SIZE / 2;
                   const y = node.y * TILE_SIZE + WORLD_SIZE / 2;
-                  const BUFFER = 100;
+                  
+                  // Calculate visible bounds manually for DOM culling
+                  const visibleLeft = -positionX / scale;
+                  const visibleTop = -positionY / scale;
+                  const visibleRight = visibleLeft + (viewport.width / scale);
+                  const visibleBottom = visibleTop + (viewport.height / scale);
+                  
+                  const BUFFER = 200;
                   return (
-                    x + TILE_SIZE >= viewport.x - BUFFER &&
-                    x <= viewport.x + viewport.width + BUFFER &&
-                    y + TILE_SIZE >= viewport.y - BUFFER &&
-                    y <= viewport.y + viewport.height + BUFFER
+                    x + TILE_SIZE >= visibleLeft - BUFFER &&
+                    x <= visibleRight + BUFFER &&
+                    y + TILE_SIZE >= visibleTop - BUFFER &&
+                    y <= visibleBottom + BUFFER
                   );
                 }).map(node => (
                   <div 
@@ -1381,10 +1391,10 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                       left: node.x * TILE_SIZE + WORLD_SIZE / 2, 
                       top: node.y * TILE_SIZE + WORLD_SIZE / 2, 
                       width: TILE_SIZE, 
-                      height: TILE_SIZE,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      height: TILE_SIZE, 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
                       zIndex: 10 // Above MapCanvas (which is 1)
                     }} 
                     className={`group transition-transform hover:scale-125 ${selectedNodeId === node.id ? 'z-[20]' : ''}`}

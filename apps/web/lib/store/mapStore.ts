@@ -38,6 +38,8 @@ export interface Tile {
   smartType?: string;
   bitmask?: number;
   elevation?: number;
+  blockCol?: number;
+  blockRow?: number;
   rotation?: number; // In degrees
 }
 
@@ -107,6 +109,8 @@ interface MapState {
   // Auto-tiling editor state
   isSmartMode: boolean;
   selectedSmartType: string; // 'off' | 'grass' | 'dirt'
+  selectedBlockCol: number;
+  selectedBlockRow: number;
   terrainOffsets: Record<string, { flat: [number, number], raised: [number, number] }>;
   isRaiseMode: boolean;
   isFoamEnabled: boolean;
@@ -116,6 +120,7 @@ interface MapState {
   selectedFoamStripId: string | null; // NEW
   setSmartMode: (enabled: boolean) => void;
   setSelectedSmartType: (type: string) => void;
+  setSelectedBlock: (col: number, row: number) => void;
   setRaiseMode: (enabled: boolean) => void;
   setFoamEnabled: (enabled: boolean) => void;
   setAutoTileSheetUrl: (url: string | null) => Promise<void>;
@@ -142,7 +147,7 @@ interface MapState {
   updateCustomTile: (id: string, updates: Partial<CustomTile>) => Promise<void>;
   setSpawnPoint: (x: number, y: number) => void;
   addTile: (tile: Tile) => void;
-  addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number) => Promise<void>;
+  addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number) => Promise<void>;
   batchAddTiles: (newTiles: Omit<Tile, 'id'>[]) => Promise<void>;
   removeTileAt: (x: number, y: number) => Promise<Tile | null>;
   removeTileById: (id: string) => Promise<void>;
@@ -205,6 +210,8 @@ export const useMapStore = create<MapState>((set, get) => ({
 
   isSmartMode: false,
   selectedSmartType: 'off',
+  selectedBlockCol: 0,
+  selectedBlockRow: 0,
   terrainOffsets: {
     grass: { flat: [0, 0], raised: [0, 192] },
     dirt: { flat: [0, 384], raised: [0, 576] }
@@ -218,6 +225,7 @@ export const useMapStore = create<MapState>((set, get) => ({
 
   setSmartMode: (isSmartMode) => set({ isSmartMode }),
   setSelectedSmartType: (selectedSmartType) => set({ selectedSmartType, isSmartMode: selectedSmartType !== 'off' }),
+  setSelectedBlock: (selectedBlockCol, selectedBlockRow) => set({ selectedBlockCol, selectedBlockRow }),
   setRaiseMode: (isRaiseMode) => set({ isRaiseMode }),
   setFoamEnabled: (isFoamEnabled) => set({ isFoamEnabled }),
   setAutoTileSheetUrl: async (url) => {
@@ -299,6 +307,8 @@ export const useMapStore = create<MapState>((set, get) => ({
               isAutoTile: t.isAutoTile,
               bitmask: t.bitmask,
               elevation: t.elevation,
+              blockCol: t.blockCol ?? t.block_col,
+              blockRow: t.blockRow ?? t.block_row,
               hasFoam: t.hasFoam,
               foamBitmask: t.foamBitmask,
               smartType: t.smartType,
@@ -493,7 +503,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     tiles: [...state.tiles.filter(t => t.x !== tile.x || t.y !== tile.y), tile]
   })),
 
-  addTileSimple: async (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number) => {
+  addTileSimple: async (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number) => {
     const chunkX = Math.floor(x / CHUNK_SIZE);
     const chunkY = Math.floor(y / CHUNK_SIZE);
 
@@ -522,6 +532,8 @@ export const useMapStore = create<MapState>((set, get) => ({
         hasFoam,
         foamBitmask,
         smartType,
+        blockCol: blockCol || 0,
+        blockRow: blockRow || 0,
         rotation: rotation || 0
       }]
     }));
@@ -553,6 +565,10 @@ export const useMapStore = create<MapState>((set, get) => ({
       elevation, 
       foamBitmask, 
       smartType, 
+      blockCol: blockCol || 0,
+      blockRow: blockRow || 0,
+      block_col: blockCol || 0, // Fallback for old data
+      block_row: blockRow || 0, // Fallback for old data
       rotation: rotation || 0
     });
 
@@ -614,6 +630,10 @@ export const useMapStore = create<MapState>((set, get) => ({
           elevation: newTile.elevation,
           foamBitmask: newTile.foamBitmask,
           smartType: newTile.smartType,
+          blockCol: newTile.blockCol || 0,
+          blockRow: newTile.blockRow || 0,
+          block_col: newTile.blockCol || 0,
+          block_row: newTile.blockRow || 0,
           rotation: newTile.rotation || 0
         });
       });
@@ -757,6 +777,10 @@ export const useMapStore = create<MapState>((set, get) => ({
       elevation: tile.elevation,
       foamBitmask: tile.foamBitmask,
       smartType: tile.smartType,
+      blockCol: tile.blockCol || 0,
+      blockRow: tile.blockRow || 0,
+      block_col: tile.blockCol || 0,
+      block_row: tile.blockRow || 0,
       rotation: tile.rotation || 0
     });
 

@@ -1,6 +1,7 @@
 'use client';
 import React, { useRef } from 'react';
 import { useMapStore, NodeType } from '@/lib/store/mapStore';
+import { WinluPalette } from './WinluPalette';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -365,6 +366,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
 
           {(activeTab === 'ground' || activeTab === 'road') && (
             <div className="mb-4 bg-slate-950/30 p-2 rounded border border-slate-800 space-y-3">
+              {activeTab === 'ground' && <WinluPalette />}
               <div className="flex items-center gap-2">
                  <div className="flex-1 relative">
                    <select 
