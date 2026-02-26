@@ -38,6 +38,7 @@ export interface Tile {
   smartType?: string;
   bitmask?: number;
   elevation?: number;
+  rotation?: number; // In degrees
 }
 
 export interface CustomTile {
@@ -56,12 +57,18 @@ export interface CustomTile {
   isAutoFill?: boolean;
   isAutoTile?: boolean;
   smartType?: string;
-  category?: 'water_base' | 'foam_strip' | 'tile' | 'prop';
+  category?: 'water_base' | 'foam_strip' | 'tile' | 'prop' | 'road';
+  rotation?: number; // Default rotation
 }
 
-export type ToolType = 'select' | 'paint' | 'erase' | 'node';
+export type ToolType = 'select' | 'paint' | 'erase' | 'node' | 'stamp' | 'eyedropper';
 
 const CHUNK_SIZE = 16;
+
+export interface LayerSetting {
+  locked: boolean;
+  hidden: boolean;
+}
 
 interface MapState {
   tiles: Tile[];
@@ -76,6 +83,27 @@ interface MapState {
   draggingTileId: string | null;
   spawnPoint: { x: number; y: number } | null;
   
+  // Layout state
+  sidebarWidth: number;
+  rightSidebarWidth: number;
+  setSidebarWidth: (width: number) => void;
+  setRightSidebarWidth: (width: number) => void;
+
+  // Layer state
+  layerSettings: Record<number, LayerSetting>;
+  setLayerVisibility: (layer: number, visible: boolean) => void;
+  setLayerLocked: (layer: number, locked: boolean) => void;
+
+  // Favorites & Hotbar
+  favorites: (string | null)[];
+  setFavorite: (index: number, tileId: string | null) => void;
+
+  // Stamps & Selection
+  selection: { start: { x: number, y: number }, end: { x: number, y: number } } | null;
+  currentStamp: Tile[] | null;
+  setSelection: (selection: { start: { x: number, y: number }, end: { x: number, y: number } } | null) => void;
+  setCurrentStamp: (stamp: Tile[] | null) => void;
+
   // Auto-tiling editor state
   isSmartMode: boolean;
   selectedSmartType: string; // 'off' | 'grass' | 'dirt'
@@ -114,7 +142,7 @@ interface MapState {
   updateCustomTile: (id: string, updates: Partial<CustomTile>) => Promise<void>;
   setSpawnPoint: (x: number, y: number) => void;
   addTile: (tile: Tile) => void;
-  addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string) => Promise<void>;
+  addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number) => Promise<void>;
   batchAddTiles: (newTiles: Omit<Tile, 'id'>[]) => Promise<void>;
   removeTileAt: (x: number, y: number) => Promise<Tile | null>;
   removeTileById: (id: string) => Promise<void>;
@@ -135,11 +163,51 @@ export const useMapStore = create<MapState>((set, get) => ({
   draggingTileId: null,
   spawnPoint: null,
 
-  isSmartMode: true,
-  selectedSmartType: 'grass',
+  // Layout initial state
+  sidebarWidth: 320,
+  rightSidebarWidth: 320,
+  setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
+  setRightSidebarWidth: (rightSidebarWidth) => set({ rightSidebarWidth }),
+
+  // Layer initial state
+  layerSettings: {
+    '-1': { locked: false, hidden: false }, // Water
+    0: { locked: false, hidden: false }, // Ground
+    1: { locked: false, hidden: false }, // Roads
+    2: { locked: false, hidden: false }  // Props
+  },
+  setLayerVisibility: (layer, visible) => set((state) => ({
+    layerSettings: {
+      ...state.layerSettings,
+      [layer]: { ...state.layerSettings[layer], hidden: !visible }
+    }
+  })),
+  setLayerLocked: (layer, locked) => set((state) => ({
+    layerSettings: {
+      ...state.layerSettings,
+      [layer]: { ...state.layerSettings[layer], locked }
+    }
+  })),
+
+  // Favorites initial state
+  favorites: Array(9).fill(null),
+  setFavorite: (index, tileId) => set((state) => {
+    const newFavorites = [...state.favorites];
+    newFavorites[index] = tileId;
+    return { favorites: newFavorites };
+  }),
+
+  // Stamps & Selection initial state
+  selection: null,
+  currentStamp: null,
+  setSelection: (selection) => set({ selection }),
+  setCurrentStamp: (currentStamp) => set({ currentStamp }),
+
+  isSmartMode: false,
+  selectedSmartType: 'off',
   terrainOffsets: {
-    grass: { flat: [0, 0], raised: [0, 256] },
-    dirt: { flat: [0, 512], raised: [0, 768] }
+    grass: { flat: [0, 0], raised: [0, 192] },
+    dirt: { flat: [0, 384], raised: [0, 576] }
   },
   isRaiseMode: false,
   isFoamEnabled: true,
@@ -162,11 +230,25 @@ export const useMapStore = create<MapState>((set, get) => ({
   },
   setSelectedWaterBaseId: async (id) => { // NEW
     set({ selectedWaterBaseId: id });
-    await supabase.from('world_map_settings').upsert({ id: 1, selected_water_base_id: id }, { onConflict: 'id' });
+    const tile = get().customTiles.find(t => t.id === id);
+    if (tile) {
+      await supabase.from('world_map_settings').upsert({ id: 1, water_base_url: tile.url }, { onConflict: 'id' });
+    }
   },
   setSelectedFoamStripId: async (id) => { // NEW
     set({ selectedFoamStripId: id });
-    await supabase.from('world_map_settings').upsert({ id: 1, selected_foam_strip_id: id }, { onConflict: 'id' });
+    const tile = get().customTiles.find(t => t.id === id);
+    if (tile) {
+      await supabase.from('world_map_settings').upsert({ 
+        id: 1, 
+        foam_sheet_url: tile.url,
+        foam_is_spritesheet: tile.isSpritesheet || false,
+        foam_frame_count: tile.frameCount || 1,
+        foam_frame_width: tile.frameWidth || 48,
+        foam_frame_height: tile.frameHeight || 48,
+        foam_animation_speed: String(tile.animationSpeed || 0.8)
+      }, { onConflict: 'id' });
+    }
   },
 
   waterBaseTile: () => get().customTiles.find(t => t.id === get().selectedWaterBaseId), // NEW SELECTOR
@@ -179,12 +261,13 @@ export const useMapStore = create<MapState>((set, get) => ({
   loadTilesFromSupabase: async () => {
     // Load Global Settings
     const { data: settingsData } = await supabase.from('world_map_settings').select('*').eq('id', 1).maybeSingle();
+    let initialWaterBaseId = null;
+    let initialFoamStripId = null;
+
     if (settingsData) {
       set({
         autoTileSheetUrl: settingsData.autotile_sheet_url,
         dirtSheetUrl: settingsData.dirt_sheet_url,
-        selectedWaterBaseId: settingsData.selected_water_base_id, // NEW
-        selectedFoamStripId: settingsData.selected_foam_strip_id, // NEW
       });
     }
 
@@ -218,7 +301,8 @@ export const useMapStore = create<MapState>((set, get) => ({
               elevation: t.elevation,
               hasFoam: t.hasFoam,
               foamBitmask: t.foamBitmask,
-              smartType: t.smartType
+              smartType: t.smartType,
+              rotation: t.rotation || 0
             });
           });
         }
@@ -229,25 +313,39 @@ export const useMapStore = create<MapState>((set, get) => ({
     // Load Custom Tile Library
     const { data: customTilesData } = await supabase.from('custom_tiles').select('*');
     if (customTilesData) {
+      const parsedTiles: CustomTile[] = customTilesData.map((t: any) => ({
+        id: t.id,
+        url: t.url,
+        name: t.name,
+        type: t.type,
+        isSpritesheet: t.is_spritesheet,
+        frameCount: t.frame_count,
+        frameWidth: t.frame_width,
+        frameHeight: t.frame_height,
+        animationSpeed: t.animation_speed,
+        layer: t.layer || 0,
+        isWalkable: t.is_walkable ?? true,
+        snapToGrid: t.snap_to_grid ?? false,
+        isAutoFill: t.is_autofill ?? true,
+        isAutoTile: t.is_autotile ?? false,
+        smartType: t.smartType,
+        category: t.category,
+        rotation: t.rotation || 0
+      }));
+
+      // Match the loaded URLs from settings back to the custom tile IDs
+      if (settingsData) {
+         const matchingWater = parsedTiles.find((t: CustomTile) => t.url === settingsData.water_base_url && t.category === 'water_base');
+         if (matchingWater) initialWaterBaseId = matchingWater.id;
+
+         const matchingFoam = parsedTiles.find((t: CustomTile) => t.url === settingsData.foam_sheet_url && t.category === 'foam_strip');
+         if (matchingFoam) initialFoamStripId = matchingFoam.id;
+      }
+
       set({
-        customTiles: customTilesData.map((t: any) => ({
-          id: t.id,
-          url: t.url,
-          name: t.name,
-          type: t.type,
-          isSpritesheet: t.is_spritesheet,
-          frameCount: t.frame_count,
-          frameWidth: t.frame_width,
-          frameHeight: t.frame_height,
-          animationSpeed: t.animation_speed,
-          layer: t.layer || 0,
-          isWalkable: t.is_walkable ?? true,
-          snapToGrid: t.snap_to_grid ?? false,
-          isAutoFill: t.is_autofill ?? true,
-          isAutoTile: t.is_autotile ?? false,
-          smartType: t.smartType,
-          category: t.category // NEW
-        }))
+        customTiles: parsedTiles,
+        selectedWaterBaseId: initialWaterBaseId,
+        selectedFoamStripId: initialFoamStripId
       });
     }
 
@@ -331,7 +429,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     set((state) => ({
       customTiles: [...state.customTiles, tile]
     }));
-    await supabase.from('custom_tiles').insert({
+    const { error } = await supabase.from('custom_tiles').insert({
       id: tile.id,
       name: tile.name,
       url: tile.url,
@@ -347,8 +445,10 @@ export const useMapStore = create<MapState>((set, get) => ({
       is_autofill: tile.isAutoFill ?? true,
       is_autotile: tile.isAutoTile ?? false,
       smartType: tile.smartType, // Ensure smartType is saved
-      category: tile.category // NEW
+      category: tile.category, // NEW
+      rotation: tile.rotation || 0
     });
+    if (error) console.error("Failed to add custom tile:", error);
   },
 
   removeCustomTile: async (id) => {
@@ -356,7 +456,8 @@ export const useMapStore = create<MapState>((set, get) => ({
       customTiles: state.customTiles.filter(t => t.id !== id),
       selectedTileId: state.selectedTileId === id ? null : state.selectedTileId
     }));
-    await supabase.from('custom_tiles').delete().eq('id', id);
+    const { error } = await supabase.from('custom_tiles').delete().eq('id', id);
+    if (error) console.error("Failed to remove custom tile:", error);
   },
 
   updateCustomTile: async (id, updates) => {
@@ -365,7 +466,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     }));
     const tile = get().customTiles.find(t => t.id === id);
     if (tile) {
-      await supabase.from('custom_tiles').update({
+      const { error } = await supabase.from('custom_tiles').update({
         name: tile.name,
         type: tile.type,
         layer: tile.layer || 0,
@@ -379,8 +480,10 @@ export const useMapStore = create<MapState>((set, get) => ({
         is_autofill: tile.isAutoFill ?? true,
         is_autotile: tile.isAutoTile ?? false,
         smartType: tile.smartType, // Ensure smartType is updated
-        category: tile.category // NEW
+        category: tile.category, // NEW
+        rotation: tile.rotation || 0
       }).eq('id', id);
+      if (error) console.error("Failed to update custom tile:", error);
     }
   },
 
@@ -390,10 +493,11 @@ export const useMapStore = create<MapState>((set, get) => ({
     tiles: [...state.tiles.filter(t => t.x !== tile.x || t.y !== tile.y), tile]
   })),
 
-  addTileSimple: async (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string) => {
+  addTileSimple: async (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number) => {
     const chunkX = Math.floor(x / CHUNK_SIZE);
     const chunkY = Math.floor(y / CHUNK_SIZE);
 
+    // 1. Update local state (keep full data for instant web rendering)
     set((state) => ({
       tiles: [...state.tiles.filter(t => !(t.x === x && t.y === y && t.layer === (layer || 0))), {
         id: uuidv4(),
@@ -417,11 +521,12 @@ export const useMapStore = create<MapState>((set, get) => ({
         elevation,
         hasFoam,
         foamBitmask,
-        smartType
+        smartType,
+        rotation: rotation || 0
       }]
     }));
 
-    // Sync Chunk to Supabase
+    // 2. Sync Chunk to Supabase (Strip the bloat!)
     const { data: existingChunk } = await supabase
       .from('map_chunks')
       .select('tile_data')
@@ -434,12 +539,21 @@ export const useMapStore = create<MapState>((set, get) => ({
     
     // Remove existing tile at this pos AND layer within chunk data
     newTileData = newTileData.filter((t: any) => !(t.x === x && t.y === y && (t.layer || 0) === (layer || 0)));
-    // Add new tile
+    
+    // Add new lightweight tile
     newTileData.push({ 
-      x, y, type, imageUrl, isSpritesheet, frameCount, frameWidth, frameHeight, animationSpeed, 
-      layer: layer || 0, offsetX: offsetX || 0, offsetY: offsetY || 0, 
-      isWalkable: isWalkable ?? true, snapToGrid: snapToGrid ?? false, isAutoFill: isAutoFill ?? true,
-      isAutoTile, bitmask, elevation, hasFoam, foamBitmask, smartType
+      x, 
+      y, 
+      imageUrl, 
+      layer: layer || 0, 
+      offsetX: offsetX || 0, 
+      offsetY: offsetY || 0, 
+      isAutoTile, 
+      bitmask, 
+      elevation, 
+      foamBitmask, 
+      smartType, 
+      rotation: rotation || 0
     });
 
     await supabase.from('map_chunks').upsert({
@@ -461,7 +575,7 @@ export const useMapStore = create<MapState>((set, get) => ({
       chunks[key].push(tile);
     });
 
-    // Update local state
+    // 1. Update local state with full data
     set((state) => {
       const tileMap = new Map(state.tiles.map(t => [`${t.x},${t.y},${t.layer || 0}`, t]));
       newTiles.forEach(nt => {
@@ -470,7 +584,7 @@ export const useMapStore = create<MapState>((set, get) => ({
       return { tiles: Array.from(tileMap.values()) };
     });
 
-    // Update chunks in Supabase
+    // 2. Update chunks in Supabase (Strip the bloat!)
     for (const [key, tiles] of Object.entries(chunks)) {
       const [cx, cy] = key.split(',').map(Number);
       
@@ -486,7 +600,22 @@ export const useMapStore = create<MapState>((set, get) => ({
 
       tiles.forEach(newTile => {
         tileData = tileData.filter((t: any) => !(t.x === newTile.x && t.y === newTile.y && (t.layer || 0) === (newTile.layer || 0)));
-        tileData.push(newTile);
+        
+        // Push only lightweight tile
+        tileData.push({
+          x: newTile.x,
+          y: newTile.y,
+          imageUrl: newTile.imageUrl,
+          layer: newTile.layer || 0,
+          offsetX: newTile.offsetX || 0,
+          offsetY: newTile.offsetY || 0,
+          isAutoTile: newTile.isAutoTile,
+          bitmask: newTile.bitmask,
+          elevation: newTile.elevation,
+          foamBitmask: newTile.foamBitmask,
+          smartType: newTile.smartType,
+          rotation: newTile.rotation || 0
+        });
       });
 
       await supabase.from('map_chunks').upsert({
@@ -505,17 +634,12 @@ export const useMapStore = create<MapState>((set, get) => ({
     let removedTile: Tile | null = null;
     let targetLayer: number | undefined;
 
-    // Determine what to remove: try PROP (layer 1) first, then GROUND (layer 0)
-    const existingTilesAtPos = get().tiles.filter(t => t.x === x && t.y === y);
-    const propTile = existingTilesAtPos.find(t => t.layer === 1);
-    const groundTile = existingTilesAtPos.find(t => !t.layer || t.layer === 0);
-
-    if (propTile) {
-      targetLayer = 1;
-      removedTile = propTile;
-    } else if (groundTile) {
-      targetLayer = 0;
-      removedTile = groundTile;
+    // Remove the highest layer tile first
+    const existingTilesAtPos = get().tiles.filter(t => t.x === x && t.y === y).sort((a, b) => (b.layer || 0) - (a.layer || 0));
+    
+    if (existingTilesAtPos.length > 0) {
+      removedTile = existingTilesAtPos[0];
+      targetLayer = removedTile.layer || 0;
     } else {
       return null; // Nothing to remove
     }
@@ -584,7 +708,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     const oldY = tile.y;
     const layer = tile.layer || 0;
 
-    // Update local state
+    // 1. Update local state with full data
     set((state) => ({
       tiles: state.tiles.map(t => t.id === tileId ? { 
         ...t, 
@@ -613,35 +737,27 @@ export const useMapStore = create<MapState>((set, get) => ({
       }, { onConflict: 'chunk_x,chunk_y' });
     }
 
-    // Add to new chunk
+    // Add to new chunk (Strip the bloat!)
     const { data: newChunk } = await supabase.from('map_chunks').select('tile_data').eq('chunk_x', newChunkX).eq('chunk_y', newChunkY).maybeSingle();
     let newTileData = newChunk?.tile_data || [];
     if (!Array.isArray(newTileData)) newTileData = [];
     
-    // Ensure we don't duplicate if it moved within the same chunk (though removed above, filter to be safe)
+    // Ensure we don't duplicate if it moved within the same chunk
     newTileData = newTileData.filter((t: any) => !(t.x === newX && t.y === newY && (t.layer || 0) === layer));
+    
     newTileData.push({ 
       x: newX, 
       y: newY, 
-      type: tile.type, 
       imageUrl: tile.imageUrl, 
-      isSpritesheet: tile.isSpritesheet, 
-      frameCount: tile.frameCount, 
-      frameWidth: tile.frameWidth, 
-      frameHeight: tile.frameHeight, 
-      animationSpeed: tile.animationSpeed, 
       layer: layer, 
       offsetX: newOffsetX, 
       offsetY: newOffsetY,
-      isWalkable: tile.isWalkable ?? true,
-      snapToGrid: tile.snapToGrid ?? false,
-      isAutoFill: tile.isAutoFill ?? true,
       isAutoTile: tile.isAutoTile,
       bitmask: tile.bitmask,
       elevation: tile.elevation,
-      hasFoam: tile.hasFoam,
       foamBitmask: tile.foamBitmask,
-      smartType: tile.smartType
+      smartType: tile.smartType,
+      rotation: tile.rotation || 0
     });
 
     await supabase.from('map_chunks').upsert({

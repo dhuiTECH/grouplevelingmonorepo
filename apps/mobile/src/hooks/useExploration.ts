@@ -1,16 +1,18 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import * as Haptics from 'expo-haptics';
 
 const MOVE_COST = 100; // 100 Steps = 1 Tile
+const CHUNK_SIZE = 16;
 
 export const useExploration = (
   setEncounter: (encounter: any | null) => void, 
   setInteractionVisible: (visible: boolean) => void,
   setActiveRaid: (raid: any | null) => void,
   setRaidModalVisible: (visible: boolean) => void,
-  currentMapId?: string | null
+  currentMapId?: string | null,
+  tileLibrary?: Map<string, any>
 ) => {
   const { user, setUser } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -18,19 +20,132 @@ export const useExploration = (
   const [autoTravelReport, setAutoTravelReport] = useState<any | null>(null);
   const [checkpointAlert, setCheckpointAlert] = useState<any | null>(null);
 
+  // 0. CHUNK CACHE (Prevents redundant DB calls)
+  const chunkCache = useRef<Map<string, any>>(new Map());
+  const inFlightChunks = useRef<Set<string>>(new Set());
+  const nodesCache = useRef<any[]>([]);
+  const lastX = useRef<number | null>(null);
+  const lastY = useRef<number | null>(null);
+
   // 1. REFRESH VISION (The Grid Logic)
-  const refreshVision = useCallback(async (cx: number, cy: number) => {
+  const refreshVision = useCallback(async (cx: number, cy: number, force: boolean = false) => {
     if (!user?.id) return;
 
-    const { data: unlocked } = await supabase.from('player_discoveries').select('x, y').eq('user_id', user.id);
-    const { data: nodes } = await supabase.from('world_map_nodes').select('*');
+    // Skip if we haven't moved and already have data, UNLESS forced
+    if (!force && cx === lastX.current && cy === lastY.current && visionGrid.length > 0) return;
+    lastX.current = cx;
+    lastY.current = cy;
+
+    // Calculate required chunks for current vision (expanded grid for large props)
+    const minX = cx - 10;
+    const maxX = cx + 10;
+    const minY = cy - 12;
+    const maxY = cy + 12;
+
+    const minChunkX = Math.floor(minX / CHUNK_SIZE);
+    const maxChunkX = Math.floor(maxX / CHUNK_SIZE);
+    const minChunkY = Math.floor(minY / CHUNK_SIZE);
+    const maxChunkY = Math.floor(maxY / CHUNK_SIZE);
+
+    const neededChunks: string[] = [];
+    for (let x = minChunkX; x <= maxChunkX; x++) {
+      for (let y = minChunkY; y <= maxChunkY; y++) {
+        neededChunks.push(`${x},${y}`);
+      }
+    }
+
+    const missingChunks = neededChunks.filter(key => !chunkCache.current.has(key) && !inFlightChunks.current.has(key));
+
+    // 1. Fetch data if needed
+    const promises: Promise<any>[] = [];
     
+    // Always fetch discoveries to keep fog updated (lightweight)
+    promises.push(supabase.from('player_discoveries').select('x, y').eq('user_id', user.id));
+
+    // Only fetch nodes once or periodically (nodes are usually few)
+    if (nodesCache.current.length === 0) {
+      promises.push(supabase.from('world_map_nodes').select('*'));
+    } else {
+      promises.push(Promise.resolve({ data: nodesCache.current }));
+    }
+
+    // We no longer fetch custom_tiles here because the global TileContext handles it.
+    // This makes useExploration significantly lighter.
+
+    // Only fetch missing chunks
+    if (missingChunks.length > 0) {
+      // Mark chunks as in-flight
+      missingChunks.forEach(key => inFlightChunks.current.add(key));
+      
+      const chunkQueries = missingChunks.map(key => {
+        const [x, y] = key.split(',').map(Number);
+        return supabase.from('map_chunks')
+          .select('*')
+          .eq('chunk_x', x)
+          .eq('chunk_y', y)
+          .maybeSingle();
+      });
+      promises.push(Promise.all(chunkQueries));
+    } else {
+      promises.push(Promise.resolve([]));
+    }
+
+    const [discoveriesRes, nodesRes, newChunksRes] = await Promise.all(promises);
+
+    // Clear in-flight status
+    if (missingChunks.length > 0) {
+      missingChunks.forEach(key => inFlightChunks.current.delete(key));
+    }
+
+    const unlocked = discoveriesRes.data;
+    if (nodesRes.data && nodesCache.current.length === 0) {
+      nodesCache.current = nodesRes.data;
+    }
+    const nodes = nodesCache.current;
+
+    // Store newly fetched chunks in cache
+    if (Array.isArray(newChunksRes)) {
+      newChunksRes.forEach((res, index) => {
+        const key = missingChunks[index];
+        if (res.data) {
+          chunkCache.current.set(key, res.data);
+        } else {
+          // Store empty placeholder to avoid re-fetching non-existent chunks
+          chunkCache.current.set(key, { tile_data: [] });
+        }
+      });
+    }
+
     const unlockedSet = new Set(unlocked?.map(d => `${d.x},${d.y}`));
+    
+    // Map tile data by coordinate for quick lookup (multi-layer support)
+    const tileMap = new Map<string, any[]>();
+    
+    // Process all needed chunks from cache
+    neededChunks.forEach(key => {
+      const chunk = chunkCache.current.get(key);
+      if (chunk && Array.isArray(chunk.tile_data)) {
+        chunk.tile_data.forEach((t: any) => {
+          // We NO LONGER enrich data here.
+          // SkiaTile will do an O(1) lookup in the TileContext when rendering.
+          // This keeps visionGrid extremely lightweight.
+
+          const tKey = `${t.x},${t.y}`;
+          const layers = tileMap.get(tKey) || [];
+          layers.push(t);
+          // Sort layers: lower numbers (water/ground) first, higher (props) last
+          // Layer -1 (Water), 0 (Ground), 1 (Roads), 2 (Props)
+          layers.sort((a, b) => (Number(a.layer) || 0) - (Number(b.layer) || 0));
+          tileMap.set(tKey, layers);
+        });
+      }
+    });
+
     const grid = [];
 
-    // 5x5 Grid
-    for (let dy = 2; dy >= -2; dy--) {
-      for (let dx = -2; dx <= 2; dx++) {
+    // Expanded Grid (e.g., 15x21) to cover 9:16 screen with buffer for large props
+    for (let dy = 10; dy >= -10; dy--) {
+      for (let dx = -7; dx <= 7; dx++) {
         const tx = cx + dx;
         const ty = cy + dy;
         const key = `${tx},${ty}`;
@@ -38,8 +153,15 @@ export const useExploration = (
         const isUnlocked = unlockedSet.has(key) || (tx === 0 && ty === 0);
         const isCurrent = (dx === 0 && dy === 0);
         const node = nodes?.find(n => n.x === tx && n.y === ty);
+        const spotTiles = tileMap.get(key) || [];
 
-        grid.push({ x: tx, y: ty, isVisible: isCurrent || isUnlocked, node });
+        grid.push({ 
+          x: tx, 
+          y: ty, 
+          isVisible: isCurrent || isUnlocked, 
+          node,
+          tiles: spotTiles
+        });
       }
     }
     setVisionGrid(grid);
@@ -56,7 +178,7 @@ export const useExploration = (
        return;
     }
 
-    // Simulate moving North automatically
+    // Simulate moving South automatically (since Y+ is South now)
     let ny = (user.world_y || 0) + tilesToMove;
     const nx = user.world_x || 0;
 
@@ -108,13 +230,50 @@ export const useExploration = (
     let nx = user.world_x || 0;
     let ny = user.world_y || 0;
     
-    // Y-Axis
-    if (dir.includes('N')) ny += 1;
-    if (dir.includes('S')) ny -= 1;
+    // Y-Axis (Inverted: South is Y+, North is Y-)
+    if (dir.includes('N')) ny -= 1;
+    if (dir.includes('S')) ny += 1;
     
     // X-Axis
     if (dir.includes('E')) nx += 1;
     if (dir.includes('W')) nx -= 1;
+
+    // --- COLLISION DETECTION ---
+    // Check if the target tile (nx, ny) is walkable.
+    // Water is generally Layer -1. We can find if the cell exists in visionGrid.
+    const targetCell = visionGrid.find(cell => cell.x === nx && cell.y === ny);
+    if (targetCell) {
+      // Find the highest layer tile at this coordinate (excluding props that might just be visual)
+      // Actually, we want to know what the BASE ground tile is (Layer 0 or Layer -1)
+      const baseTiles = targetCell.tiles?.filter((t: any) => {
+        // Assume missing layer is 0
+        const layer = t.layer !== undefined && t.layer !== null ? Number(t.layer) : 0;
+        return layer <= 0;
+      });
+      
+      const groundTile = baseTiles?.sort((a: any, b: any) => (Number(b.layer) || 0) - (Number(a.layer) || 0))[0];
+      
+      // If there is no ground tile, or the ground tile is water (Layer -1), block movement.
+      if (!groundTile || (Number(groundTile.layer) < 0 || groundTile.type === 'water')) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setLoading(false); // Make sure to reset loading!
+        return; 
+      }
+      
+      // Also check if ANY tile at this location is explicitly marked non-walkable
+      const hasBlockingTile = targetCell.tiles?.some((t: any) => t.isWalkable === false);
+      if (hasBlockingTile) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setLoading(false); // Make sure to reset loading!
+        return;
+      }
+    } else {
+        // If the cell isn't loaded yet, don't let them walk there
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setLoading(false);
+        return;
+    }
+    // ---------------------------
 
     try {
       const newBank = (user.steps_banked || 0) - MOVE_COST;
@@ -181,7 +340,7 @@ export const useExploration = (
           }
         }
       }
-      await refreshVision(nx, ny);
+      await refreshVision(nx, ny, false);
 
     } catch (e) { console.log(e); } finally { setLoading(false); }
   };

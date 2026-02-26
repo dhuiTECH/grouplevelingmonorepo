@@ -15,7 +15,7 @@ interface PetLayeredAvatarProps {
   background?: string | null; // Added prop for background URL
 }
 
-export function PetLayeredAvatar({
+const PetLayeredAvatarInternal = ({
   petDetails,
   size = 64,
   style,
@@ -25,7 +25,7 @@ export function PetLayeredAvatar({
   breathe = true,
   borderRadius: customBorderRadius,
   background, // Destructure new prop
-}: PetLayeredAvatarProps): JSX.Element {
+}: PetLayeredAvatarProps): JSX.Element => {
   const uri = useMemo(() => getPetSpriteSource(petDetails), [petDetails]);
   const spriteConfig = useMemo(() => getPetSpriteConfig(petDetails), [petDetails]);
 
@@ -162,7 +162,21 @@ export function PetLayeredAvatar({
       </Animated.View>
     </View>
   );
-}
+};
+
+export const PetLayeredAvatar = React.memo(PetLayeredAvatarInternal, (prev, next) => {
+  if (prev.size !== next.size) return false;
+  if (prev.animate !== next.animate) return false;
+  if (prev.breathe !== next.breathe) return false;
+  if (prev.hideBackground !== next.hideBackground) return false;
+  if (prev.background !== next.background) return false;
+  
+  if (prev.petDetails?.id !== next.petDetails?.id) return false;
+  if (prev.petDetails?.image_url !== next.petDetails?.image_url) return false;
+  if (prev.petDetails?.metadata?.equipped_background !== next.petDetails?.metadata?.equipped_background) return false;
+
+  return true;
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -174,7 +188,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
   },
   window: {
-    overflow: 'hidden',
+    // overflow: 'hidden', // Disabled to prevent clipping large sprites
   },
   sprite: {},
   fallback: {

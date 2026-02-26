@@ -1,0 +1,60 @@
+import { useState, useEffect, useRef } from 'react';
+import { Skia, SkImage } from '@shopify/react-native-skia';
+
+// Global cache to avoid reloading across unmounts/remounts
+const globalImageCache = new Map<string, SkImage>();
+
+export const useSkiaAssets = (urls: string[]) => {
+  const [images, setImages] = useState<Map<string, SkImage>>(new Map(globalImageCache));
+  const fetchingUrls = useRef(new Set<string>());
+
+  useEffect(() => {
+    let active = true;
+    
+    const loadImages = async () => {
+      let changed = false;
+      const newImages = new Map(images);
+
+      const promises = urls.map(async (url) => {
+        if (!url) return;
+        const cleanUrl = url.split('?')[0];
+        
+        if (newImages.has(cleanUrl) || fetchingUrls.current.has(cleanUrl)) return;
+        
+        fetchingUrls.current.add(cleanUrl);
+        try {
+          const response = await fetch(url);
+          const arrayBuffer = await response.arrayBuffer();
+          const data = Skia.Data.fromBytes(new Uint8Array(arrayBuffer));
+          const img = Skia.Image.MakeImageFromEncoded(data);
+          
+          if (img) {
+            newImages.set(cleanUrl, img);
+            globalImageCache.set(cleanUrl, img);
+            changed = true;
+          }
+        } catch (e) {
+          console.warn('Failed to load Skia image:', url, e);
+        } finally {
+          fetchingUrls.current.delete(cleanUrl);
+        }
+      });
+
+      await Promise.all(promises);
+
+      if (active && changed) {
+        setImages(new Map(globalImageCache));
+      }
+    };
+
+    if (urls.length > 0) {
+      loadImages();
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [urls]);
+
+  return images;
+};

@@ -53,6 +53,7 @@ export interface GearItem {
   offset_y_female?: number | null;
   scale_female?: number | null;
   rotation_female?: number | null;
+  hand_grip_z_index_override?: number | null;
 }
 
 export interface Skin {

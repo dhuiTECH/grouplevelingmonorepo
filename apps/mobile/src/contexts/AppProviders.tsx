@@ -5,6 +5,7 @@ import { NotificationProvider } from './NotificationContext';
 import { AudioProvider } from './AudioContext';
 import { ActivePetProvider } from './ActivePetContext';
 import { TransitionProvider } from '../context/TransitionContext';
+import { TileProvider } from './TileContext';
 
 interface AppProvidersProps {
   children: React.ReactNode;
@@ -17,9 +18,11 @@ export function AppProviders({ children }: AppProvidersProps): JSX.Element {
         <AudioProvider>
         <AuthProvider>
           <ActivePetProvider>
-            <NotificationProvider>
-              {children}
-            </NotificationProvider>
+            <TileProvider>
+              <NotificationProvider>
+                {children}
+              </NotificationProvider>
+            </TileProvider>
           </ActivePetProvider>
         </AuthProvider>
       </AudioProvider>

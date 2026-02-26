@@ -72,8 +72,9 @@ export const ShopItemMedia = ({
       source={finalImageSrc ? { uri: finalImageSrc } : require('../../assets/NoobMan.png')}
       style={style}
       contentFit={resizeMode === 'stretch' ? 'fill' : resizeMode}
-      transition={200}
+      transition={0}
       cachePolicy="memory-disk"
+      priority="high"
     />
   );
 };

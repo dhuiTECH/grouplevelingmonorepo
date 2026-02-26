@@ -1,0 +1,18 @@
+# MONOREPO ARCHITECTURE & RULES
+This is a monorepo containing a Next.js web app (`apps/web`) and a React Native mobile app (`apps/mobile` or `apps/app`). They share the same backend and database (Supabase). 
+
+# CORE DIRECTIVES: ZERO GUESSING
+You are strictly forbidden from guessing or hallucinating database schemas, variable names, or component logic. 
+
+# 1. CROSS-REFERENCE FRONTENDS (Web <-> Mobile)
+When writing or modifying features in the mobile app, you MUST check the web app to see how it was implemented there first, and vice versa. 
+- Mobile map components (like Skia) must mirror the data structures and layering logic used in the web's `WorldMapEngine`.
+- If a feature works on web but is broken on mobile, cross-reference the web codebase to find the discrepancy before inventing a new solution.
+
+# 2. SUPABASE IS THE SOURCE OF TRUTH
+Never guess Supabase property names (e.g., do not guess between `snake_case` and `camelCase`). 
+- Always verify exact column names by looking at the Supabase database types file (e.g., `types/supabase.ts` or similar). 
+- Do not store heavy JSON metadata in map chunks. Use the Dictionary Pattern where IDs reference a master table (like `custom_tiles`).
+
+# 3. EXECUTION
+If you do not know the exact shape of the data or the name of a variable, use your tools to search the codebase or ask the user for clarification. Do not assume.

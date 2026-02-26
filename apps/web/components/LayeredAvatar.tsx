@@ -89,6 +89,7 @@ export default function LayeredAvatar({
   // 4. Inject Hand Grip if Weapon has grip_type
   const weaponItem = overlayLayers.find(c => getSlot(c.shop_items) === 'weapon');
   const gripType = weaponItem?.shop_items?.grip_type;
+  const handGripZIndexOverride = weaponItem?.shop_items?.hand_grip_z_index_override;
   
   if (gripType) {
     // Look for a hand grip in the cosmetics list (it should be there if equipped logic handles auto-add, 
@@ -284,6 +285,9 @@ export default function LayeredAvatar({
 
           // Handle multiply blend mode for hand grips
           const isHandGrip = item.slot === 'hand_grip';
+          const finalZIndex = (isHandGrip && handGripZIndexOverride !== null && handGripZIndexOverride !== undefined) 
+            ? Number(handGripZIndexOverride) 
+            : zIndex;
           
           if (isHandGrip && item.image_url) {
              return (
@@ -291,7 +295,7 @@ export default function LayeredAvatar({
                 key={cosmetic.id ?? `overlay-${index}-${item?.id ?? index}`}
                 className="absolute pointer-events-none flex items-center justify-center"
                 style={{
-                  zIndex: zIndex,
+                  zIndex: finalZIndex,
                   left: `${leftPercent}%`,
                   top: `${topPercent}%`,
                   transform: transformValue,
@@ -333,7 +337,7 @@ export default function LayeredAvatar({
               key={cosmetic.id ?? `overlay-${index}-${item?.id ?? index}`}
               className="absolute pointer-events-none flex items-center justify-center"
               style={{
-                zIndex: zIndex,
+                zIndex: finalZIndex,
                 left: `${leftPercent}%`,
                 top: `${topPercent}%`,
                 transform: transformValue,

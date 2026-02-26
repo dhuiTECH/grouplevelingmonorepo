@@ -265,21 +265,27 @@ interface LayeredAvatarProps {
   hideBackground?: boolean;
   square?: boolean;
   allShopItems?: any[];
+  isMoving?: boolean;
 }
 
-export const LayeredAvatar: React.FC<LayeredAvatarProps> = ({ 
+const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({ 
   user, 
   size = 64, 
   onAvatarClick,
   style,
   hideBackground = false,
   square = false,
-  allShopItems = []
+  allShopItems = [],
+  isMoving = false
 }) => {
   // Create the breathing value
   const breatheAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (isMoving) {
+      breatheAnim.setValue(0);
+      return;
+    }
     Animated.loop(
       Animated.sequence([
         Animated.timing(breatheAnim, {
@@ -296,7 +302,7 @@ export const LayeredAvatar: React.FC<LayeredAvatarProps> = ({
         }),
       ])
     ).start();
-  }, [breatheAnim]);
+  }, [breatheAnim, isMoving]);
 
   // Interpolate for scale and translation
   const translateY = breatheAnim.interpolate({
@@ -352,6 +358,7 @@ export const LayeredAvatar: React.FC<LayeredAvatarProps> = ({
   // 3. Hand Grip Logic
   // Find equipped weapon to determine grip
   const equippedWeapon = equippedCosmetics.find((c: any) => getSlot(c.shop_items) === 'weapon');
+  const handGripZIndexOverride = equippedWeapon?.shop_items?.hand_grip_z_index_override;
   
   let handGripCosmetic = null;
   if (equippedWeapon?.shop_items?.grip_type) {
@@ -379,7 +386,6 @@ export const LayeredAvatar: React.FC<LayeredAvatarProps> = ({
       };
       
       const activeSkinGenders = getGenderArray(activeSkinItem?.shop_items);
-      const userGender = activeSkinGenders[0]; // Primary gender for lookups
 
       // Helper function to check gender match for hand grip
       const isGenderMatch = (item: any) => {
@@ -416,7 +422,7 @@ export const LayeredAvatar: React.FC<LayeredAvatarProps> = ({
 
       if (matchingOwned) {
           handGripCosmetic = matchingOwned;
-      } else {
+      } else if (allShopItems && allShopItems.length > 0) {
           const matchingShopItem = allShopItems?.find((item: any) => {
               return getSlot(item) === 'hand_grip' && 
                      item.grip_type?.toLowerCase() === gripType.toLowerCase() &&
@@ -425,7 +431,7 @@ export const LayeredAvatar: React.FC<LayeredAvatarProps> = ({
           if (matchingShopItem) {
               handGripCosmetic = {
                   id: `ghost-hand-${gripType}`,
-                  equipped: true,
+                  equipped: true, // Mark as virtually equipped so it renders
                   shop_items: matchingShopItem
               };
           }
@@ -436,15 +442,41 @@ export const LayeredAvatar: React.FC<LayeredAvatarProps> = ({
   const baseOverlayLayers = equippedCosmetics
     .filter((c: any) => {
       const slot = getSlot(c.shop_items);
-      return c.shop_items?.image_url && !isAvatarSlot(slot) && slot !== 'background' && slot !== 'hand_grip';
+      // Ensure we don't accidentally filter out items that don't have an image_url if they are hand grips.
+      // Actually we explicitly handle hand_grips outside of baseOverlayLayers, so we just filter them out here.
+      return c.shop_items && c.shop_items.image_url && !isAvatarSlot(slot) && slot !== 'background' && slot !== 'hand_grip';
     });
 
   const finalOverlayLayers = [...baseOverlayLayers];
+  
+  // Also include explicitly equipped hand grips if we didn't auto-detect one above
   if (handGripCosmetic) {
-      finalOverlayLayers.push(handGripCosmetic);
+      // Force it to be considered equipped and having an image_url for the renderer below
+      finalOverlayLayers.push({
+        ...handGripCosmetic,
+        equipped: true,
+      });
+  } else {
+      // Fallback: If no auto-detected hand grip, but the user explicitly has one equipped
+      const explicitlyEquippedHandGrip = equippedCosmetics.find((c: any) => getSlot(c.shop_items) === 'hand_grip');
+      if (explicitlyEquippedHandGrip) {
+          finalOverlayLayers.push(explicitlyEquippedHandGrip);
+      }
   }
 
-  const overlayLayers = finalOverlayLayers.sort((a: any, b: any) => Number(a.shop_items.z_index || 1) - Number(b.shop_items.z_index || 1));
+  // Double fallback: if absolutely no hand grip is in finalOverlayLayers, but they have a hand_grip equipped in cosmetics
+  // (this catches cases where grip_type didn't match or gender didn't match, but we still want to show *something*)
+  const hasHandGripInLayers = finalOverlayLayers.some(c => c.shop_items && getSlot(c.shop_items) === 'hand_grip');
+  if (!hasHandGripInLayers) {
+      const fallbackEquippedHandGrip = equippedCosmetics.find((c: any) => c.shop_items && getSlot(c.shop_items) === 'hand_grip');
+      if (fallbackEquippedHandGrip) {
+          finalOverlayLayers.push(fallbackEquippedHandGrip);
+      }
+  }
+
+  // Final safety check: ensuring the baseOverlayLayers don't accidentally drop items that lack an image_url but shouldn't be dropped if they are hand grips. Wait, we already added hand grips to finalOverlayLayers explicitly.
+  
+  const overlayLayers = finalOverlayLayers.sort((a: any, b: any) => Number(a.shop_items?.z_index || 1) - Number(b.shop_items?.z_index || 1));
 
   const ADMIN_CONTAINER_SIZE = 512;
   const ADMIN_ANCHOR_POINT = 128;
@@ -539,12 +571,17 @@ export const LayeredAvatar: React.FC<LayeredAvatarProps> = ({
         {/* Overlay Layers (eyes, mouth, hair, face, body, hands) — all above base body outline */}
         {overlayLayers.map((cosmetic: any) => {
             const item = cosmetic.shop_items;
+            if (!item) return null; // Safety check
+            
             const { offsetX, offsetY, scale: dbScale, rotation } = getItemPositioning(item);
 
             const leftPercent = ((ADMIN_ANCHOR_POINT + offsetX) / ADMIN_CONTAINER_SIZE) * 100;
             const topPercent = ((ADMIN_ANCHOR_POINT + offsetY) / ADMIN_CONTAINER_SIZE) * 100;
 
-            const zIndex = Number(item.z_index || 10);
+            const isHandGrip = getSlot(item) === 'hand_grip';
+            const zIndex = (isHandGrip && handGripZIndexOverride !== null && handGripZIndexOverride !== undefined) 
+              ? Number(handGripZIndexOverride) 
+              : Number(item.z_index || 10);
             
             // Fix for "Non-whitespace character found after end of conversion" error
             let isAnimated = false;
@@ -581,7 +618,8 @@ export const LayeredAvatar: React.FC<LayeredAvatarProps> = ({
             // base_body or a unique avatar (which provides its own skin_tint_hex)
             const tintColor = isHandGrip ? activeSkinColor : null;
             // For standard tinting we used silhouetteUrl, but for Skia multiplying we just use the main image_url inside SkiaTintedLayer
-            const silhouetteUrl = isHandGrip ? item.image_base_url : null;
+            // Safely get image_base_url or image_url as a fallback
+            const silhouetteUrl = isHandGrip ? (item.image_base_url || item.image_url) : null;
             
             if (isAnimated) {
               const finalWidth = frameWidth * dbScale * scaleRatio;
@@ -616,7 +654,10 @@ export const LayeredAvatar: React.FC<LayeredAvatarProps> = ({
               );
             } else {
               if (isHandGrip && tintColor) {
-                // Skia layer for Single PNG multiplying
+                // Determine if we should use SkiaTintedLayer or StaticOverlayLayer.
+                // SkiaTintedLayer multiply mode works best when the image has a white background or is specifically designed for multiply blending.
+                // If it's a standard PNG, it might just need StaticOverlayLayer.
+                // For now, keep SkiaTintedLayer for hand grips as requested previously, but ensure it receives the correct item.
                 return (
                   <SkiaTintedLayer
                     key={cosmetic.id}
@@ -655,10 +696,41 @@ export const LayeredAvatar: React.FC<LayeredAvatarProps> = ({
   );
 };
 
+export const LayeredAvatar = React.memo(LayeredAvatarInternal, (prev, next) => {
+  // Return true if props are equal (to SKIP render)
+  if (prev.size !== next.size) return false;
+  if (prev.isMoving !== next.isMoving) return false;
+  if (prev.hideBackground !== next.hideBackground) return false;
+  if (prev.square !== next.square) return false;
+  
+  // Check relevant User properties
+  if (prev.user?.avatar_url !== next.user?.avatar_url) return false;
+  if (prev.user?.base_body_url !== next.user?.base_body_url) return false;
+  if (prev.user?.base_body_tint_hex !== next.user?.base_body_tint_hex) return false;
+  if (prev.user?.gender !== next.user?.gender) return false;
+  
+  // Check if shop items loaded
+  if (prev.allShopItems !== next.allShopItems) return false;
+  
+  // Check cosmetics array reference
+  // Note: We assume that if the user changes cosmetics, the array reference changes.
+  // But during movement, we update user position which creates a new user object but 
+  // SHOULD preserve the cosmetics array reference if handled correctly in useExploration.
+  // If useExploration creates a new array, this will fail (return false) and re-render.
+  if (prev.user?.cosmetics !== next.user?.cosmetics) {
+    // Optional: Deep compare logic if references are unstable but content is same
+    // For now, strict reference check is safer, but if it causes re-renders, we might need:
+    // return JSON.stringify(prev.user?.cosmetics) === JSON.stringify(next.user?.cosmetics);
+    return false; 
+  }
+
+  return true;
+});
+
 const styles = StyleSheet.create({
   container: {
-    overflow: 'hidden',
-    backgroundColor: 'transparent', // Allow background slot to be visible or fallback handled in render
+    overflow: 'hidden', // RESTORED CLIPPING
+    backgroundColor: 'transparent',
     position: 'relative',
   },
   fullSize: {

@@ -42,7 +42,8 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
     min_level: '1',
     class_req: 'All',
     no_restrictions: false,
-    grip_type: null as string | null
+    grip_type: null as string | null,
+    hand_grip_z_index_override: null as number | null
   });
 
   const SKIN_TINT_SLOTS = ['avatar', 'base_body', 'hand_grip', 'face_eyes', 'face_mouth', 'hair'];
@@ -85,7 +86,8 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
         min_level: editingItem.min_level?.toString() || '1',
         class_req: editingItem.class_req || 'All',
         no_restrictions: Boolean(editingItem.no_restrictions ?? false),
-        grip_type: editingItem.grip_type ?? null
+        grip_type: editingItem.grip_type ?? null,
+        hand_grip_z_index_override: editingItem.hand_grip_z_index_override ?? null
       });
       setOnboardingAvailable(Boolean(editingItem.onboarding_available ?? false));
     } else {
@@ -100,7 +102,8 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
         min_level: '1',
         class_req: 'All',
         no_restrictions: false,
-        grip_type: null
+        grip_type: null,
+        hand_grip_z_index_override: null
       });
       setOnboardingAvailable(false);
     }
@@ -471,7 +474,8 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
       animation_config: isAnimated ? animConfig : null,
       is_sellable: ['base_body', 'face_eyes', 'face_mouth', 'hair', 'hand_grip'].includes(formData.slot) ? false : isSellable,
       onboarding_available: CREATOR_SLOTS.includes(formData.slot) ? onboardingAvailable : false,
-      grip_type: formData.grip_type
+      grip_type: formData.grip_type,
+      hand_grip_z_index_override: formData.hand_grip_z_index_override
     };
 
     if (editingItem && thumbnailCleared) itemData.thumbnail_url = null;
@@ -838,6 +842,35 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
                 isOpen={gripTypeOpen}
                 onToggle={() => setGripTypeOpen(!gripTypeOpen)}
               />
+            )}
+
+            {(formData.slot === 'weapon' || formData.grip_type) && (
+              <div>
+                <label className="block text-xs font-black uppercase text-gray-300 mb-1">
+                  Hand Grip Z-Index Override (Optional)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={formData.hand_grip_z_index_override ?? ''}
+                    onChange={(e) => setFormData({ ...formData, hand_grip_z_index_override: e.target.value ? parseInt(e.target.value) : null })}
+                    placeholder="Auto (based on Hand Grip item)"
+                    className="w-full bg-black border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-red-500 focus:outline-none z-10 relative"
+                  />
+                  {formData.hand_grip_z_index_override !== null && (
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, hand_grip_z_index_override: null })}
+                      className="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-gray-500 mt-1">
+                  If set, the hand grip will use this Z-Index instead of its own. Useful for items that should be in front of the hand.
+                </p>
+              </div>
             )}
 
             <div className="space-y-3">

@@ -1160,55 +1160,41 @@ export default function MobsTab() {
               className="relative group bg-black/40 border border-gray-800 rounded-xl overflow-hidden hover:border-red-500/50 transition-all aspect-square flex flex-col items-center justify-center text-center p-3"
             >
               {/* Thumbnail Logic: Sprite Sheet Frame 1 vs Static Icon */}
-              {(() => {
-                const visuals = enc.metadata?.visuals || {};
-                const spritesheet = visuals.spritesheet;
-                
-                if (spritesheet) {
-                  // If it's a spritesheet, show the first frame
-                  const frameWidth = spritesheet.frame_width || 64;
-                  const frameHeight = spritesheet.frame_height || 64;
-                  // If horizontal spritesheet, background size is (frame_count * 100)%
-                  // We only want to show the first frame, so backgroundPosition 0 0 is fine
-                  // We need to scale it down to fit the container (w-16 h-16 = 64px)
+              <div className="w-16 h-16 mb-2 flex items-center justify-center overflow-hidden drop-shadow-[0_0_10px_rgba(0,0,0,0.5)]">
+                {(() => {
+                  const visuals = enc.metadata?.visuals || {};
+                  const spritesheet = visuals.spritesheet;
+                  const imageUrl = enc.icon_url || visuals.monster_url || '/default-node.png';
                   
-                  return (
-                    <div 
-                      className="mb-2 drop-shadow-[0_0_10px_rgba(0,0,0,0.5)]"
-                      style={{
-                        width: '64px',
-                        height: '64px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        overflow: 'hidden'
-                      }}
-                    >
-                      <div
+                  if (spritesheet && spritesheet.frame_count > 1) {
+                    return (
+                      <div 
+                        className="w-full h-full"
                         style={{
-                          width: `${frameWidth}px`,
-                          height: `${frameHeight}px`,
-                          backgroundImage: `url(${enc.icon_url || visuals.monster_url})`,
-                          backgroundSize: `${(spritesheet.frame_count || 1) * 100}% 100%`,
-                          backgroundPosition: '0px 0px',
+                          backgroundImage: `url(${imageUrl})`,
+                          backgroundSize: `${spritesheet.frame_count * 100}% 100%`,
+                          backgroundPosition: '0 0',
                           backgroundRepeat: 'no-repeat',
-                          imageRendering: 'pixelated',
-                          transform: `scale(${64 / Math.max(frameWidth, frameHeight)})`, // Scale to fit 64x64 box
-                          transformOrigin: 'center center'
+                          imageRendering: 'pixelated'
                         }}
                       />
-                    </div>
-                  );
-                }
+                    );
+                  }
 
-                // Fallback to static icon
-                return (
-                  <img 
-                    src={enc.icon_url || '/default-node.png'} 
-                    className="w-16 h-16 object-contain mb-2 drop-shadow-[0_0_10px_rgba(0,0,0,0.5)]" 
-                  />
-                );
-              })()}
+                  return (
+                    <div 
+                      className="w-full h-full"
+                      style={{
+                        backgroundImage: `url(${imageUrl})`,
+                        backgroundSize: 'contain',
+                        backgroundPosition: 'center',
+                        backgroundRepeat: 'no-repeat',
+                        imageRendering: 'pixelated'
+                      }}
+                    />
+                  );
+                })()}
+              </div>
               <p className="text-xs font-black text-white leading-tight line-clamp-2">{enc.name}</p>
               
               <div className="mt-1 flex flex-wrap gap-1 justify-center">

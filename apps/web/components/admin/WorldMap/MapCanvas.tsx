@@ -15,14 +15,17 @@ interface MapCanvasProps {
 export const MapCanvas: React.FC<MapCanvasProps> = ({ 
   width, height, scale, viewport, onPropMouseDown, waterBaseTile, foamStripTile 
 }) => {
-  const { tiles, isFoamEnabled, autoTileSheetUrl, dirtSheetUrl, terrainOffsets } = useMapStore();
-  const TILE_SIZE = 64;
+  const { tiles, isFoamEnabled, autoTileSheetUrl, dirtSheetUrl, terrainOffsets, layerSettings, selection, customTiles } = useMapStore();
+  const TILE_SIZE = 48;
 
   // Cull tiles outside the viewport for performance
   const visibleTiles = React.useMemo(() => {
     const BUFFER = 256; // Render a few extra tiles around the edges to prevent popping
     
     return tiles.filter(tile => {
+      // 1. Respect Layer Visibility
+      if (layerSettings[tile.layer || 0]?.hidden) return false;
+
       const displayWidth = tile.frameWidth || TILE_SIZE;
       const displayHeight = tile.frameHeight || TILE_SIZE;
       
@@ -36,7 +39,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         top <= viewport.y + viewport.height + BUFFER
       );
     }).sort((a, b) => (a.layer || 0) - (b.layer || 0));
-  }, [tiles, viewport, width, height]);
+  }, [tiles, viewport, width, height, layerSettings]);
+
+  // Selection Overlay logic
+  const selectionRect = React.useMemo(() => {
+    if (!selection) return null;
+    const startX = Math.min(selection.start.x, selection.end.x);
+    const endX = Math.max(selection.start.x, selection.end.x);
+    const startY = Math.min(selection.start.y, selection.end.y);
+    const endY = Math.max(selection.start.y, selection.end.y);
+
+    return {
+      left: startX * TILE_SIZE + width / 2,
+      top: startY * TILE_SIZE + height / 2,
+      width: (endX - startX + 1) * TILE_SIZE,
+      height: (endY - startY + 1) * TILE_SIZE
+    };
+  }, [selection, width, height]);
 
   return (
     <div 
@@ -45,28 +64,101 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         width, 
         height,
         imageRendering: 'pixelated',
-        pointerEvents: 'none' // Still none on container so grid is clickable
+        pointerEvents: 'none', // Still none on container so grid is clickable
+        zIndex: 1 // Traps tiles in a stacking context below nodes
       }}
     >
+      {/* Selection Highlight */}
+      {selectionRect && (
+        <div 
+          className="absolute border-2 border-cyan-400 bg-cyan-400/20 z-[1000] animate-pulse pointer-events-none"
+          style={{
+            left: selectionRect.left,
+            top: selectionRect.top,
+            width: selectionRect.width,
+            height: selectionRect.height,
+            boxShadow: '0 0 15px rgba(34, 211, 238, 0.5)'
+          }}
+        />
+      )}
+
       {visibleTiles.map((tile) => {
+        // Look up the live tile properties so sidebar edits apply instantly to placed tiles
+        const liveCustomTile = customTiles.find(ct => ct.url === tile.imageUrl);
+
         // Default to TILE_SIZE if not specified
-        const displayWidth = tile.frameWidth || TILE_SIZE;
-        const displayHeight = tile.frameHeight || TILE_SIZE;
+        const displayWidth = liveCustomTile?.frameWidth || tile.frameWidth || TILE_SIZE;
+        const displayHeight = liveCustomTile?.frameHeight || tile.frameHeight || TILE_SIZE;
+        const isSpritesheet = liveCustomTile?.isSpritesheet ?? tile.isSpritesheet;
+        const frameCount = liveCustomTile?.frameCount || tile.frameCount;
+        const speed = liveCustomTile?.animationSpeed || tile.animationSpeed || 1;
 
         // Calculate position: align bottom-center of tile to the bottom-center of the grid cell, then apply offsets
         const offsetX = tile.offsetX || 0;
         const offsetY = tile.offsetY || 0;
-        const left = (tile.x * TILE_SIZE + width / 2) - (displayWidth - TILE_SIZE) / 2 + offsetX;
-        const top = (tile.y * TILE_SIZE + height / 2) - (displayHeight - TILE_SIZE) + offsetY;
+        
+        let left = (tile.x * TILE_SIZE + width / 2) - (displayWidth - TILE_SIZE) / 2 + offsetX;
+        let top = (tile.y * TILE_SIZE + height / 2) - (displayHeight - TILE_SIZE) + offsetY;
 
-        // Base z-index by layer. For props (layer 1), add their physical Y position so trees lower down overlap trees higher up.
-        let zIndex = (tile.layer || 0) * 100000;
-        if (tile.layer === 1) {
+        // Base z-index by layer. For roads (layer 1) and props (layer 2), add their physical Y position 
+        // so trees/roads lower down overlap ones higher up (Y-sorting).
+        const tileLayer = tile.layer !== undefined && tile.layer !== null ? tile.layer : 0;
+        let baseZ = (tileLayer + 10) * 100000;
+        let zIndex = baseZ;
+        
+        if (tileLayer === 1 || tileLayer === 2) {
            zIndex += Math.floor(top + displayHeight);
         }
 
+        const rotationTransform = tile.rotation ? `rotate(${tile.rotation}deg)` : '';
+
+        // --- STANDALONE FOAM RENDER ---
+        // Render foam as an entirely separate element BELOW the ground
+        let foamElement = null;
+        if (tile.isAutoTile && tileLayer === 0 && isFoamEnabled && foamStripTile?.url && (tile.foamBitmask || 0) > 0) {
+            
+            // Re-calculate left/top exactly for the 64x64 grid cell, regardless of this tile's actual display size
+            const foamLeft = (tile.x * TILE_SIZE + width / 2);
+            const foamTop = (tile.y * TILE_SIZE + height / 2);
+            const col = (tile.foamBitmask || 0) % 4;
+            const row = Math.floor((tile.foamBitmask || 0) / 4);
+
+            foamElement = (
+              <div 
+                 key={`${tile.id}-foam-wrap`}
+                 className="foam-overlay"
+                 style={{
+                    position: 'absolute', 
+                    left: foamLeft, 
+                    top: foamTop, 
+                    width: TILE_SIZE, 
+                    height: TILE_SIZE, 
+                    zIndex: baseZ - 500, // Below layer 0, above layer -1
+                    overflow: 'hidden',
+                    pointerEvents: 'none',
+                 }}
+              >
+                 <div
+                    className={foamStripTile.isSpritesheet && foamStripTile.frameCount && foamStripTile.frameCount > 1 ? 'spritesheet-inner' : ''}
+                    style={{
+                       width: foamStripTile.isSpritesheet && foamStripTile.frameCount ? `${foamStripTile.frameCount * 100}%` : '100%',
+                       height: '100%',
+                       backgroundImage: `url(${foamStripTile.url})`,
+                       backgroundPosition: foamStripTile.isSpritesheet ? `0px -${row * TILE_SIZE}px` : `-${col * TILE_SIZE}px -${row * TILE_SIZE}px`,
+                       backgroundSize: `400% 400%`,
+                       backgroundRepeat: 'no-repeat',
+                       imageRendering: 'pixelated',
+                       // @ts-ignore
+                       '--frame-count': foamStripTile.frameCount || 1,
+                       '--animation-speed': `${foamStripTile.animationSpeed || 1}s`,
+                    }}
+                 />
+              </div>
+            );
+        }
+
         // --- AUTO-TILE RENDERING (Ground Layer) ---
-        if (tile.isAutoTile && (tile.layer || 0) === 0) {
+        if (tile.isAutoTile && tileLayer === 0) {
             const elevation = tile.elevation || 0;
             const bitmask = tile.bitmask || 0;
             const smartType = tile.smartType || 'grass';
@@ -86,34 +178,43 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             if (activeSheet) {
                 let bgX = 0;
                 let bgY = 0;
-                let bgSize = '1024px 1024px';
+                let bgSize = `${16 * TILE_SIZE}px ${16 * TILE_SIZE}px`; // Default large size
                 
                 if (effectiveSmartType === 'dirt') {
-                    // Translated from User's Top=1, Right=2, Bottom=4, Left=8
-                    // to Engine's Top=8, Right=1, Bottom=2, Left=4
+                    // Mapping based on a sheet with 48x48 tiles (12 cols, 13 rows)
                     const DIRT_TILE_MAP: Record<number, {x: number, y: number}> = {
-                      0:  { x: 256, y: 512 }, // Isolated
-                      8:  { x: 256, y: 384 }, // Top Cap
-                      1:  { x: 0,   y: 64  }, // Right Cap
-                      2:  { x: 256, y: 256 }, // Bottom Cap
-                      4:  { x: 128, y: 64  }, // Left Cap
-                      10: { x: 256, y: 320 }, // Vertical Path
-                      5:  { x: 64,  y: 64  }, // Horizontal Path
-                      9:  { x: 0,   y: 640 }, // Bottom-Left Corner
-                      3:  { x: 0,   y: 512 }, // Top-Left Corner
-                      12: { x: 128, y: 640 }, // Bottom-Right Corner
-                      6:  { x: 128, y: 512 }, // Top-Right Corner
-                      11: { x: 0,   y: 576 }, // Left Edge
-                      13: { x: 64,  y: 640 }, // Bottom Edge
-                      14: { x: 128, y: 576 }, // Right Edge
-                      7:  { x: 64,  y: 512 }, // Top Edge
-                      15: { x: 64,  y: 576 }  // Full Center
+                      0:  { x: 6 * TILE_SIZE, y: 5 * TILE_SIZE }, // Isolated 
+                      8:  { x: 4 * TILE_SIZE, y: 5 * TILE_SIZE }, // Top neighbor (Bottom Cap)
+                      1:  { x: 5 * TILE_SIZE, y: 4 * TILE_SIZE }, // Right neighbor (Left Cap)
+                      2:  { x: 4 * TILE_SIZE, y: 1 * TILE_SIZE }, // Bottom neighbor (Top Cap)
+                      4:  { x: 8 * TILE_SIZE, y: 4 * TILE_SIZE }, // Left neighbor (Right Cap)
+                      10: { x: 4 * TILE_SIZE, y: 3 * TILE_SIZE }, // Top+Bottom (Vertical Straight)
+                      5:  { x: 6 * TILE_SIZE, y: 4 * TILE_SIZE }, // Left+Right (Horizontal Straight)
+                      9:  { x: 5 * TILE_SIZE, y: 5 * TILE_SIZE }, // Top+Right (Bottom-Left Corner)
+                      3:  { x: 5 * TILE_SIZE, y: 2 * TILE_SIZE }, // Right+Bottom (Top-Left Corner)
+                      6:  { x: 8 * TILE_SIZE, y: 2 * TILE_SIZE }, // Bottom+Left (Top-Right Corner)
+                      12: { x: 8 * TILE_SIZE, y: 5 * TILE_SIZE }, // Left+Top (Bottom-Right Corner)
+                      11: { x: 5 * TILE_SIZE, y: 3 * TILE_SIZE }, // Top+Right+Bottom (Left Edge / T-Left)
+                      7:  { x: 6 * TILE_SIZE, y: 2 * TILE_SIZE }, // Right+Bottom+Left (Top Edge / T-Up)
+                      14: { x: 8 * TILE_SIZE, y: 3 * TILE_SIZE }, // Bottom+Left+Top (Right Edge / T-Right)
+                      13: { x: 6 * TILE_SIZE, y: 6 * TILE_SIZE }, // Left+Top+Right (Bottom Edge / T-Down)
+                      15: { x: 6 * TILE_SIZE, y: 3 * TILE_SIZE }  // All 4 (Crossroads)
                     };
                     
                     const mapping = DIRT_TILE_MAP[bitmask] || DIRT_TILE_MAP[0];
                     bgX = -mapping.x;
                     bgY = -mapping.y;
-                    bgSize = '768px 768px';
+                    bgSize = `${12 * TILE_SIZE}px ${13 * TILE_SIZE}px`; // 576px 624px for 48px tiles
+                } else if (effectiveSmartType === 'grass') {
+                    // 9x9 Randomizer Brush
+                    // Use a simple coordinate-based hash for stable randomness
+                    const variantSeed = Math.abs((tile.x * 73856093) ^ (tile.y * 19349663)) % 81;
+                    const col = variantSeed % 9;
+                    const row = Math.floor(variantSeed / 9);
+                    
+                    bgX = -(col * TILE_SIZE);
+                    bgY = -(row * TILE_SIZE);
+                    bgSize = `${9 * TILE_SIZE}px ${9 * TILE_SIZE}px`; // 432px 432px for 48px tiles
                 } else {
                     const typeOffsets = terrainOffsets[effectiveSmartType] || terrainOffsets['grass'];
                     const stateOffsets = elevation === 1 ? typeOffsets.raised : typeOffsets.flat;
@@ -127,12 +228,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 }
 
                 return (
-                   <div key={tile.id} style={{ position: 'absolute', left, top, width: TILE_SIZE, height: TILE_SIZE, zIndex }}>
-                      {/* Water Base (Bottom Layer) */}
-                      {waterBaseTile?.url && (
-                        <img src={waterBaseTile.url} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ imageRendering: 'pixelated', zIndex: -1 }} />
-                      )}
-                      
+                  <React.Fragment key={`${tile.id}-auto-frag`}>
+                  {foamElement}
+                   <div key={tile.id} style={{ position: 'absolute', left, top, width: TILE_SIZE, height: TILE_SIZE, zIndex, transform: rotationTransform }}>
                       {/* Auto-Tile Block */}
                       <div 
                          style={{
@@ -143,39 +241,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             imageRendering: 'pixelated'
                          }}
                       />
-                      
-                      {/* Foam Overlay */}
-                      {isFoamEnabled && foamStripTile?.url && (tile.foamBitmask || 0) > 0 && (
-                          <div 
-                             className={`foam-overlay ${foamStripTile.isSpritesheet && foamStripTile.frameCount && foamStripTile.frameCount > 1 ? 'spritesheet-animated-foam' : ''}`}
-                             style={{
-                                position: 'absolute', inset: 0,
-                                backgroundImage: `url(${foamStripTile.url})`,
-                                backgroundPosition: `-${((tile.foamBitmask || 0) % 4) * TILE_SIZE}px -${Math.floor((tile.foamBitmask || 0) / 4) * TILE_SIZE}px`,
-                                backgroundSize: foamStripTile.isSpritesheet && foamStripTile.frameCount ? 
-                                  `${foamStripTile.frameCount * 100}% 100%` : '400% 400%',
-                                imageRendering: 'pixelated',
-                                // @ts-ignore
-                                '--foam-frame-count': foamStripTile.frameCount || 1,
-                                '--foam-animation-speed': `${foamStripTile.animationSpeed || 1}s`,
-                                '--foam-frame-width': `${foamStripTile.frameWidth || TILE_SIZE}px`,
-                                '--foam-frame-height': `${foamStripTile.frameHeight || TILE_SIZE}px`,
-                             } as React.CSSProperties}
-                          />
-                      )}
                    </div>
+                  </React.Fragment>
                 );
             }
         }
 
-        if (tile.isSpritesheet && tile.frameCount && tile.frameCount > 1) {
-          const frameCount = tile.frameCount;
-          const speed = tile.animationSpeed || 1;
-
+        if (isSpritesheet && frameCount && frameCount > 1) {
           return (
+            <React.Fragment key={`${tile.id}-frag`}>
+            {foamElement}
             <div
               key={tile.id}
-              onMouseDown={(e) => tile.layer === 1 && onPropMouseDown?.(tile.id, e)}
+              onMouseDown={(e) => (tileLayer === 1 || tileLayer === 2) && onPropMouseDown?.(tile.id, e)}
               style={{
                 position: 'absolute',
                 left,
@@ -184,8 +262,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 height: displayHeight,
                 overflow: 'hidden',
                 zIndex,
-                pointerEvents: tile.layer === 1 ? 'auto' : 'none',
-                cursor: tile.layer === 1 ? 'move' : 'default'
+                transform: rotationTransform,
+                pointerEvents: (tileLayer === 1 || tileLayer === 2) ? 'auto' : 'none',
+                cursor: (tileLayer === 1 || tileLayer === 2) ? 'move' : 'default'
               }}
             >
               <div
@@ -202,34 +281,48 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 } as any}
               />
             </div>
+            </React.Fragment>
           );
         }
 
-        return (
-          <img
+          return (
+          <React.Fragment key={`${tile.id}-frag`}>
+          {foamElement}
+          <div
             key={tile.id}
-            src={tile.imageUrl}
-            alt=""
-            onMouseDown={(e) => tile.layer === 1 && onPropMouseDown?.(tile.id, e)}
+            onMouseDown={(e) => (tileLayer === 1 || tileLayer === 2) && onPropMouseDown?.(tile.id, e)}
             style={{
               position: 'absolute',
               left,
               top,
               width: displayWidth,
               height: displayHeight,
-              pointerEvents: tile.layer === 1 ? 'auto' : 'none',
-              imageRendering: 'pixelated',
+              pointerEvents: (tileLayer === 1 || tileLayer === 2) ? 'auto' : 'none',
               zIndex,
-              cursor: tile.layer === 1 ? 'move' : 'default'
+              transform: rotationTransform,
+              cursor: (tileLayer === 1 || tileLayer === 2) ? 'move' : 'default'
             }}
-          />
+          >
+            <div
+              style={{ 
+                width: '100%', 
+                height: '100%',
+                backgroundImage: `url(${tile.imageUrl})`,
+                backgroundSize: 'auto 100%',
+                backgroundPosition: '0 0',
+                backgroundRepeat: 'no-repeat',
+                imageRendering: 'pixelated'
+              }}
+            />
+          </div>
+          </React.Fragment>
         );
       })}
       
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes foam-pulse {
-          0%, 100% { opacity: 0.9; transform: scale(1.0); }
-          50% { opacity: 0.6; transform: scale(1.02); }
+          0%, 100% { opacity: 0.9; }
+          50% { opacity: 0.6; }
         }
         .foam-overlay {
           animation: foam-pulse 2s infinite ease-in-out;

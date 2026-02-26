@@ -4,14 +4,19 @@ import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'reac
 import { useMapStore, NodeType, Tile } from '@/lib/store/mapStore';
 import { MapCanvas } from './MapCanvas';
 import { MapSidebar } from './MapSidebar';
+import { MapDataSidebar } from './MapDataSidebar';
 import { createNoise2D } from 'simplex-noise';
-import { Plus, Minus, Maximize, Grid, Zap, Loader2, Target, Map as MapIcon, User, Sword, Box, Globe, Search } from 'lucide-react';
+import { 
+  Plus, Minus, Maximize, Grid, Zap, Loader2, Target, Map as MapIcon, 
+  User, Sword, Box, Globe, Search, MousePointer2, Eraser, Wand2, 
+  GripVertical, Copy, Square, CheckSquare, Pipette, X
+} from 'lucide-react';
 import { generateAsset } from '@/lib/services/mapGeminiService';
 import NodeEditModal, { NodeFormData } from '../NodeEditModal';
 import { supabase } from '@/lib/supabase';
 
 const WORLD_SIZE = 128000; 
-const TILE_SIZE = 64;
+const TILE_SIZE = 48;
 
 interface WorldMapEngineProps {
   shopItems?: any[];
@@ -27,8 +32,39 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     loadTilesFromSupabase, tiles, isDraggingTile, draggingTileId, 
     setDraggingTile, moveTile, removeTileById,
     isSmartMode, isRaiseMode, isFoamEnabled, autoTileSheetUrl,
-    selectedSmartType, waterBaseTile, foamStripTile // UPDATED: use selectors
+    selectedSmartType, waterBaseTile, foamStripTile, setTool,
+    sidebarWidth, setSidebarWidth, rightSidebarWidth, setRightSidebarWidth,
+    favorites, setFavorite, selectTile
   } = useMapStore();
+  
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [isResizingRight, setIsResizingRight] = useState(false);
+
+  // Resize Handlers
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isResizingLeft) {
+        const newWidth = Math.max(200, Math.min(600, e.clientX));
+        setSidebarWidth(newWidth);
+      }
+      if (isResizingRight) {
+        const newWidth = Math.max(200, Math.min(600, window.innerWidth - e.clientX));
+        setRightSidebarWidth(newWidth);
+      }
+    };
+    const handleMouseUp = () => {
+      setIsResizingLeft(false);
+      setIsResizingRight(false);
+    };
+    if (isResizingLeft || isResizingRight) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingLeft, isResizingRight, setSidebarWidth, setRightSidebarWidth]);
   
   const [isGenerating, setIsGenerating] = useState(false);
   const [seed, setSeed] = useState<string>(Math.random().toString(36).substring(7));
@@ -73,6 +109,25 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Copy (Ctrl+C)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        handleCopySelection();
+        return;
+      }
+      // Paste (Ctrl+V) - using current cursor coords
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        handlePasteStamp(cursorCoords.x, cursorCoords.y);
+        return;
+      }
+
+      // Favorites Hotbar (1-9)
+      if (e.key >= '1' && e.key <= '9') {
+        const index = parseInt(e.key) - 1;
+        const tileId = favorites[index];
+        if (tileId) selectTile(tileId);
+        return;
+      }
+
       // Undo logic (Ctrl+Z or Cmd+Z)
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
@@ -250,7 +305,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
       scene_npc_sprite_url: node.properties?.scene?.scene_npc_sprite_url || '',
       npc_is_spritesheet: node.properties?.scene?.npc_is_spritesheet || false,
       npc_frame_count: node.properties?.scene?.npc_frame_count || 4,
-      npc_frame_size: node.properties?.scene?.npc_frame_size || 64,
+      npc_frame_size: node.properties?.scene?.npc_frame_size || 48,
       dialogue_script: node.properties?.dialogue_script || [],
       action_buttons: node.properties?.action_buttons || [],
     });
@@ -473,12 +528,21 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
     // Only update if changed
     if (tile.bitmask !== newBitmask || tile.foamBitmask !== newFoamBitmask) {
-       await addTileSimple(
+       // Perform a fast synchronous local state update first to prevent race conditions
+       useMapStore.setState((state) => ({
+         tiles: state.tiles.map(t => 
+           t.id === tile.id ? { ...t, bitmask: newBitmask, foamBitmask: newFoamBitmask } : t
+         )
+       }));
+
+       // Then sync to Supabase in the background
+     // Run them sequentially so the store state settles
+       addTileSimple(
          tx, ty, tile.type, tile.imageUrl, tile.isSpritesheet, 
          tile.frameCount, tile.frameWidth, tile.frameHeight, tile.animationSpeed, 
          tile.layer, tile.offsetX, tile.offsetY, tile.isWalkable, tile.snapToGrid, tile.isAutoFill,
          true, newBitmask, elevation, useMapStore.getState().isFoamEnabled, newFoamBitmask,
-         tile.smartType
+         tile.smartType, tile.rotation || 0
        );
     }
   };
@@ -491,7 +555,9 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
      await calculateAndUpdateTile(tx, ty - 1);
   };
 
-  const handleMapInteraction = async (clientX: number, clientY: number, isMove = false, isShift = false) => {
+  const [isSelecting, setIsSelecting] = useState(false);
+
+  const handleMapInteraction = async (clientX: number, clientY: number, isMove = false, isShift = false, forceErase = false, isAlt = false) => {
     if (!transformComponentRef.current || !dropTargetRef.current || (isSpacePressed && !isMove)) return;
     const { positionX, positionY, scale } = transformComponentRef.current.instance.transformState;
     const rect = dropTargetRef.current.getBoundingClientRect();
@@ -500,10 +566,59 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     const gx = Math.floor((worldX - WORLD_SIZE / 2) / TILE_SIZE);
     const gy = Math.floor((worldY - WORLD_SIZE / 2) / TILE_SIZE);
 
+    const tool = forceErase ? 'erase' : selectedTool;
+    const state = useMapStore.getState();
+
+    // 0. Respect Layer Locks
+    if (tool === 'paint' || tool === 'erase') {
+      const targetLayer = selectedTileId ? (customTiles.find(t => t.id === selectedTileId)?.layer || 0) : 0;
+      if (state.layerSettings[targetLayer]?.locked) return;
+    }
+
+    if ((isAlt || tool === 'eyedropper') && !isMove) {
+      // Eyedropper Logic
+      const tileAtPos = state.tiles
+        .filter(t => t.x === gx && t.y === gy)
+        .sort((a, b) => (b.layer || 0) - (a.layer || 0))[0]; // Get top layer
+
+      if (tileAtPos) {
+        if (tileAtPos.isAutoTile && tileAtPos.smartType) {
+          useMapStore.getState().setSelectedSmartType(tileAtPos.smartType);
+          setTool('paint');
+        } else {
+          // Find custom tile ID by matching image URL
+          const customTile = state.customTiles.find(ct => ct.url === tileAtPos.imageUrl);
+          if (customTile) {
+            selectTile(customTile.id);
+            setTool('paint');
+          }
+        }
+      }
+      return;
+    }
+
+    if (tool === 'stamp') {
+      if (isMove) {
+        if (isSelecting && state.selection) {
+          useMapStore.getState().setSelection({ ...state.selection, end: { x: gx, y: gy } });
+        }
+        setCursorCoords({ x: gx, y: gy });
+      } else {
+        // If we have a stamp and no selection is in progress, Left Click pastes it. Hold shift to create a new selection.
+        if (state.currentStamp && !isShift) {
+          handlePasteStamp(gx, gy);
+        } else {
+          // Mouse Down logic for selection
+          useMapStore.getState().setSelection({ start: { x: gx, y: gy }, end: { x: gx, y: gy } });
+          setIsSelecting(true);
+        }
+      }
+      return;
+    }
+
     if (isMove) {
       setCursorCoords({ x: gx, y: gy });
       
-      const state = useMapStore.getState();
       if (state.isDraggingTile && state.draggingTileId) {
         const draggingTile = state.tiles.find(t => t.id === state.draggingTileId);
         
@@ -531,24 +646,25 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
       return;
     }
 
-    if (selectedTool === 'select') {
+    if (tool === 'select') {
       return;
     }
 
-    if (selectedTool === 'paint' && selectedTileId) {
+    if (tool === 'paint' && selectedTileId) {
       const tile = customTiles.find(t => t.id === selectedTileId);
       if (tile) {
         let offsetX = 0;
         let offsetY = 0;
         
-        // If painting a PROP (layer 1), calculate exact sub-grid offset based on click position
-        if (tile.layer === 1 && !tile.snapToGrid) {
+        // If painting a PROP (layer 2) or ROAD (layer 1), calculate exact sub-grid offset based on click position
+        // Roads might also want offsets for slight variations, but props definitely do.
+        if ((tile.layer === 1 || tile.layer === 2) && !tile.snapToGrid) {
           const exactX = worldX - WORLD_SIZE / 2;
           const exactY = worldY - WORLD_SIZE / 2;
           
           // Center X of prop at mouse
           offsetX = Math.round(exactX - (gx * TILE_SIZE + TILE_SIZE / 2));
-          // Bottom Y of prop at mouse (standard for top-down games, so trees sit on the click point)
+          // Bottom Y of prop at mouse
           offsetY = Math.round(exactY - (gy * TILE_SIZE + TILE_SIZE));
         }
 
@@ -579,25 +695,59 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           previousTile: prevTile || null
         }]);
         
+        // --- 3x3 Brush for Grass ---
+        if (selectedSmartType === 'grass') {
+          const tilesToPaint = [];
+          for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+              tilesToPaint.push({
+                x: gx + dx,
+                y: gy + dy,
+                type: 'custom',
+                imageUrl: tile.url,
+                isSpritesheet: tile.isSpritesheet,
+                frameCount: tile.frameCount,
+                frameWidth: tile.frameWidth,
+                frameHeight: tile.frameHeight,
+                animationSpeed: tile.animationSpeed,
+                layer: tile.layer || 0,
+                offsetX: 0,
+                offsetY: 0,
+                isWalkable: tile.isWalkable,
+                snapToGrid: tile.snapToGrid,
+                isAutoFill: tile.isAutoFill,
+                isAutoTile: true,
+                bitmask: 0,
+                elevation: elevation,
+                hasFoam: hasFoam,
+                foamBitmask: 0,
+                smartType: 'grass',
+                rotation: tile.rotation || 0
+              });
+            }
+          }
+          await useMapStore.getState().batchAddTiles(tilesToPaint);
+        } else {
         await addTileSimple(
           gx, gy, 'custom', tile.url, tile.isSpritesheet, tile.frameCount, 
           tile.frameWidth, tile.frameHeight, tile.animationSpeed, tile.layer, 
           offsetX, offsetY, tile.isWalkable, tile.snapToGrid, tile.isAutoFill,
-          isAutoTile, bitmask, elevation, hasFoam, foamBitmask, smartType
+          isAutoTile, bitmask, elevation, hasFoam, foamBitmask, smartType, tile.rotation || 0
         );
 
-        // Trigger Auto-Tile Update for neighbors
-        if (isAutoTile) {
-           await updateTileAndNeighbors(gx, gy);
+          // Trigger Auto-Tile Update for neighbors
+          if (isAutoTile) {
+             await updateTileAndNeighbors(gx, gy);
+          }
         }
       }
-    } else if (selectedTool === 'node' && activeNodeType) {
+    } else if (tool === 'node' && activeNodeType) {
       const exists = nodes.find(n => n.x === gx && n.y === gy);
       if (!exists) {
         setUndoStack(prev => [...prev, { action: 'node_add', x: gx, y: gy }]);
         addNode({ x: gx, y: gy, type: activeNodeType, name: `New ${activeNodeType}`, iconUrl: '' });
       }
-    } else if (selectedTool === 'erase') {
+    } else if (tool === 'erase') {
       const removedTile = await removeTileAt(gx, gy);
       if (removedTile) {
         setUndoStack(prev => [...prev, {
@@ -607,6 +757,11 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           layer: removedTile.layer || 0,
           previousTile: removedTile
         }]);
+
+        // Trigger neighbor update if it was an auto-tile
+        if (removedTile.isAutoTile) {
+           await updateTileAndNeighbors(gx, gy);
+        }
       }
       
       const n = nodes.find(node => node.x === gx && node.y === gy);
@@ -620,7 +775,20 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const handlePropMouseDown = (tileId: string, e: React.MouseEvent) => {
     if (isSpacePressed) return;
     
-    if (selectedTool === 'select') {
+    if (e.button === 2 || selectedTool === 'erase') {
+      e.stopPropagation();
+      const tile = tiles.find(t => t.id === tileId);
+      if (tile) {
+        setUndoStack(prev => [...prev, {
+          action: 'erase_tile',
+          x: tile.x,
+          y: tile.y,
+          layer: tile.layer || 0,
+          previousTile: tile
+        }]);
+        removeTileById(tileId);
+      }
+    } else if (selectedTool === 'select') {
       e.stopPropagation();
       const tile = tiles.find(t => t.id === tileId);
       if (tile) {
@@ -644,34 +812,40 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         
         setDraggingTile(tileId);
       }
-    } else if (selectedTool === 'erase') {
-      e.stopPropagation();
-      const tile = tiles.find(t => t.id === tileId);
-      if (tile) {
-        setUndoStack(prev => [...prev, {
-          action: 'erase_tile',
-          x: tile.x,
-          y: tile.y,
-          layer: tile.layer || 0,
-          previousTile: tile
-        }]);
-        removeTileById(tileId);
-      }
     }
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 2) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey, true, e.altKey);
+      return;
+    }
     if (e.button !== 0) return;
     if (!isSpacePressed) {
-      if (selectedTool !== 'select') {
+      // Eyedropper (Alt + Click) should ALWAYS work
+      if (e.altKey) {
         e.stopPropagation();
-        handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey);
+        handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey, false, true);
+        return;
+      }
+
+      if (selectedTool !== 'select' && selectedTool !== 'stamp') {
+        e.stopPropagation();
+        handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey, false, false);
       }
     }
   };
 
   const handleMouseUp = async () => {
     const state = useMapStore.getState();
+
+    if (selectedTool === 'stamp' && isSelecting) {
+      setIsSelecting(false);
+      return;
+    }
+
     if (state.isDraggingTile && state.draggingTileId) {
       const tile = state.tiles.find(t => t.id === state.draggingTileId);
       if (tile) {
@@ -683,11 +857,47 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     }
   };
 
+  const handleCopySelection = () => {
+    const state = useMapStore.getState();
+    if (!state.selection) return;
+
+    const startX = Math.min(state.selection.start.x, state.selection.end.x);
+    const endX = Math.max(state.selection.start.x, state.selection.end.x);
+    const startY = Math.min(state.selection.start.y, state.selection.end.y);
+    const endY = Math.max(state.selection.start.y, state.selection.end.y);
+
+    const capturedTiles = state.tiles.filter(t => 
+      t.x >= startX && t.x <= endX && t.y >= startY && t.y <= endY
+    ).map(t => ({ ...t, x: t.x - startX, y: t.y - startY })); // Relative to selection top-left
+
+    state.setCurrentStamp(capturedTiles);
+    state.setSelection(null);
+  };
+
+  const handlePasteStamp = async (gx: number, gy: number) => {
+    const state = useMapStore.getState();
+    if (!state.currentStamp) return;
+
+    const newTiles = state.currentStamp.map(t => ({
+      ...t,
+      x: gx + t.x,
+      y: gy + t.y
+    }));
+
+    await useMapStore.getState().batchAddTiles(newTiles);
+  };
+
   const handleMouseMove = (e: React.MouseEvent) => {
-    handleMapInteraction(e.clientX, e.clientY, true);
-    if (selectedTool !== 'select' && e.buttons === 1 && !isSpacePressed) {
+    handleMapInteraction(e.clientX, e.clientY, true, e.shiftKey, false, e.altKey);
+    
+    if (isSpacePressed) return;
+
+    if (e.buttons & 2) { // Right click held
       e.stopPropagation();
-      handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey);
+      handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey, true, e.altKey);
+    } else if (e.buttons & 1 && selectedTool !== 'select') {
+      e.stopPropagation();
+      handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey, false, e.altKey);
     }
   };
 
@@ -697,7 +907,44 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     const lastAction = undoStack[undoStack.length - 1];
     setUndoStack(prev => prev.slice(0, -1)); // pop
 
-    const { action, x, y, layer, previousTile, nodeData } = lastAction;
+    const { action, x, y, layer, previousTile, nodeData, previousFullTiles } = lastAction;
+
+    if (action === 'autofill' && previousFullTiles) {
+      // Revert local state
+      useMapStore.setState({ tiles: previousFullTiles });
+      
+      // Clear the chunks on Supabase that were modified by the autofill
+      // We'll iterate through the chunks in the area that was filled
+      const chunkCoords = new Set<string>();
+      const GRID_RADIUS = 30; 
+      for (let x = -GRID_RADIUS; x <= GRID_RADIUS; x++) {
+        for (let y = -GRID_RADIUS; y <= GRID_RADIUS; y++) {
+          chunkCoords.add(`${Math.floor(x / 16)},${Math.floor(y / 16)}`);
+        }
+      }
+
+      // Restore each chunk from the snapshot
+      for (const coord of chunkCoords) {
+        const [cx, cy] = coord.split(',').map(Number);
+        const chunkTiles = previousFullTiles.filter(t => Math.floor(t.x / 16) === cx && Math.floor(t.y / 16) === cy);
+        
+        // This is a bit slow but ensures consistency
+        supabase.from('map_chunks').upsert({
+          chunk_x: cx,
+          chunk_y: cy,
+          tile_data: chunkTiles.map(t => {
+            const { id, ...rest } = t;
+            return rest;
+          }),
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'chunk_x,chunk_y' }).then(({ error }) => {
+          if (error) console.error("Error reverting chunk during undo", error);
+        });
+      }
+      
+      alert("Autofill undone and synced to database.");
+      return;
+    }
 
     if (action === 'paint') {
       // Revert a paint action
@@ -717,7 +964,8 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           previousTile.elevation,
           previousTile.hasFoam,
           previousTile.foamBitmask,
-          previousTile.smartType
+          previousTile.smartType,
+          previousTile.rotation || 0
         );
       } else {
         // If there was no tile before, we just need to remove the one we just painted.
@@ -756,7 +1004,8 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           previousTile.elevation,
           previousTile.hasFoam,
           previousTile.foamBitmask,
-          previousTile.smartType
+          previousTile.smartType,
+          previousTile.rotation || 0
         );
       }
     } else if (action === 'node_add') {
@@ -803,14 +1052,23 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         const newTiles: Omit<Tile, 'id'>[] = [];
         const GRID_RADIUS = 30; 
         
+        // Save state for undo BEFORE autofill
+        const snapshotBefore = useMapStore.getState().tiles;
+        setUndoStack(prev => [...prev, {
+          action: 'autofill',
+          previousFullTiles: snapshotBefore
+        }]);
+
         // Filter tiles to ONLY those that have isAutoFill enabled (defaults to true)
         const autoFillTiles = customTiles.filter(t => t.isAutoFill !== false);
         
-        const groundTiles = autoFillTiles.filter(t => !t.layer || t.layer === 0);
-        const propTiles = autoFillTiles.filter(t => t.layer === 1);
+        const waterTiles = autoFillTiles.filter(t => (t.layer || 0) < 0 || t.category === 'water_base');
+        const groundTiles = autoFillTiles.filter(t => (!t.layer || t.layer === 0) && t.category !== 'water_base' && t.category !== 'foam_strip');
+        const roadTiles = autoFillTiles.filter(t => t.layer === 1 || t.category === 'road');
+        const propTiles = autoFillTiles.filter(t => t.layer >= 2 || t.category === 'prop');
 
         const tilesByType: Record<string, typeof groundTiles> = {
-          water: groundTiles.filter(t => t.type === 'water' || t.name.toLowerCase().includes('water')),
+          water: waterTiles,
           grassland: groundTiles.filter(t => t.type === 'grassland' || t.name.toLowerCase().includes('grass')),
           hill: groundTiles.filter(t => t.type === 'hill' || t.name.toLowerCase().includes('hill')),
           soil: groundTiles.filter(t => t.type === 'soil' || t.name.toLowerCase().includes('soil') || t.name.toLowerCase().includes('dirt')),
@@ -819,46 +1077,68 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         const getTileForType = (type: string) => {
           const candidates = tilesByType[type];
           if (candidates && candidates.length > 0) return candidates[Math.floor(Math.random() * candidates.length)];
-          if (groundTiles.length > 0) return groundTiles[Math.floor(Math.random() * groundTiles.length)];
-          // Final fallback to any ground tile if possible, even if it has isAutoFill=false
-          const allGround = customTiles.filter(t => !t.layer || t.layer === 0);
-          return allGround[Math.floor(Math.random() * allGround.length)] || customTiles[0];
+          
+          if (type === 'water') {
+             if (waterTiles.length > 0) return waterTiles[Math.floor(Math.random() * waterTiles.length)];
+          } else {
+             if (groundTiles.length > 0) return groundTiles[Math.floor(Math.random() * groundTiles.length)];
+          }
+          
+          // Final fallback: only use tiles that have Auto-Fill enabled
+          return groundTiles[Math.floor(Math.random() * groundTiles.length)] || waterTiles[0] || autoFillTiles[0];
         };
 
-        if (customTiles.length === 0) return;
+        if (autoFillTiles.length === 0) {
+          alert("No tiles have 'Auto-Fill' enabled!");
+          return;
+        }
+
+        const currentTiles = useMapStore.getState().tiles;
 
         for (let x = -GRID_RADIUS; x <= GRID_RADIUS; x++) {
           for (let y = -GRID_RADIUS; y <= GRID_RADIUS; y++) {
             const elevation = noise2D(x / 12, y / 12);
             let tileType = 'grassland';
-            if (elevation < -0.3) tileType = 'water';
-            else if (elevation > 0.6) tileType = 'hill';
-            else if (elevation <= 0.1) tileType = 'soil';
-            
-            const selectedTile = getTileForType(tileType);
-            
-            // 1. Add Ground Tile
-            newTiles.push({ 
-              x, 
-              y, 
-              imageUrl: selectedTile.url, 
-              type: tileType as any,
-              isSpritesheet: selectedTile.isSpritesheet,
-              frameCount: selectedTile.frameCount,
-              frameWidth: selectedTile.frameWidth,
-              frameHeight: selectedTile.frameHeight,
-              animationSpeed: selectedTile.animationSpeed,
-              isWalkable: selectedTile.isWalkable,
-              layer: 0,
-              snapToGrid: selectedTile.snapToGrid,
-              isAutoFill: selectedTile.isAutoFill,
-              isAutoTile: selectedTile.isAutoTile
-            });
+            let targetLayer = 0;
 
-            // 2. Randomly add a Prop Tile (e.g. trees on grass, rocks on dirt)
+            if (elevation < -0.3) {
+              tileType = 'water';
+              targetLayer = -1;
+            } else if (elevation > 0.6) {
+              tileType = 'hill';
+            } else if (elevation <= 0.1) {
+              tileType = 'soil';
+            }
+            
+            // 1. Ground/Water Layer: ONLY place if nothing exists at this (x, y) on this layer
+            const groundExists = currentTiles.some(t => t.x === x && t.y === y && (t.layer || 0) === targetLayer);
+            if (!groundExists) {
+              const selectedTile = getTileForType(tileType);
+              if (selectedTile) {
+                newTiles.push({ 
+                  x, 
+                  y, 
+                  imageUrl: selectedTile.url, 
+                  type: (selectedTile.type || tileType) as any,
+                  isSpritesheet: selectedTile.isSpritesheet,
+                  frameCount: selectedTile.frameCount,
+                  frameWidth: selectedTile.frameWidth,
+                  frameHeight: selectedTile.frameHeight,
+                  animationSpeed: selectedTile.animationSpeed,
+                  isWalkable: selectedTile.isWalkable,
+                  layer: targetLayer,
+                  snapToGrid: selectedTile.snapToGrid,
+                  isAutoFill: selectedTile.isAutoFill,
+                  isAutoTile: selectedTile.isAutoTile,
+                  rotation: selectedTile.rotation || 0
+                });
+              }
+            }
+
+            // 2. Prop Layer: ONLY place if tileType isn't water AND nothing exists at this (x, y) on layer 2+
             if (propTiles.length > 0 && tileType !== 'water') {
-              // 8% chance to spawn a prop
-              if (Math.random() < 0.08) {
+              const propExists = currentTiles.some(t => t.x === x && t.y === y && (t.layer || 0) >= 2);
+              if (!propExists && Math.random() < 0.08) {
                 let validProps = propTiles;
                 
                 if (tileType === 'grassland') {
@@ -871,32 +1151,34 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
                 const selectedProp = validProps[Math.floor(Math.random() * validProps.length)];
                 
-                // Add slight randomness to position for organic look, unless snap is enforced
-                let propOffsetX = 0;
-                let propOffsetY = 0;
-                if (!selectedProp.snapToGrid) {
-                  propOffsetX = Math.floor(Math.random() * 24) - 12; // -12px to +12px offset
-                  propOffsetY = Math.floor(Math.random() * 24) - 12;
-                }
+                if (selectedProp) {
+                  let propOffsetX = 0;
+                  let propOffsetY = 0;
+                  if (!selectedProp.snapToGrid) {
+                    propOffsetX = Math.floor(Math.random() * 24) - 12;
+                    propOffsetY = Math.floor(Math.random() * 24) - 12;
+                  }
 
-                newTiles.push({
-                  x,
-                  y,
-                  imageUrl: selectedProp.url,
-                  type: 'object',
-                  isSpritesheet: selectedProp.isSpritesheet,
-                  frameCount: selectedProp.frameCount,
-                  frameWidth: selectedProp.frameWidth,
-                  frameHeight: selectedProp.frameHeight,
-                  animationSpeed: selectedProp.animationSpeed,
-                  layer: 1,
-                  offsetX: propOffsetX,
-                  offsetY: propOffsetY,
-                  isWalkable: selectedProp.isWalkable ?? false,
-                  snapToGrid: selectedProp.snapToGrid ?? false,
-                  isAutoFill: selectedProp.isAutoFill,
-                  isAutoTile: selectedProp.isAutoTile
-                });
+                  newTiles.push({
+                    x,
+                    y,
+                    imageUrl: selectedProp.url,
+                    type: 'object',
+                    isSpritesheet: selectedProp.isSpritesheet,
+                    frameCount: selectedProp.frameCount,
+                    frameWidth: selectedProp.frameWidth,
+                    frameHeight: selectedProp.frameHeight,
+                    animationSpeed: selectedProp.animationSpeed,
+                    layer: selectedProp.layer || 2,
+                    offsetX: propOffsetX,
+                    offsetY: propOffsetY,
+                    isWalkable: selectedProp.isWalkable ?? false,
+                    snapToGrid: selectedProp.snapToGrid ?? false,
+                    isAutoFill: selectedProp.isAutoFill,
+                    isAutoTile: selectedProp.isAutoTile,
+                    rotation: selectedProp.rotation || 0
+                  });
+                }
               }
             }
           }
@@ -917,30 +1199,70 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     <div className="flex w-full h-full bg-[#0a0a0a] overflow-hidden font-mono text-slate-300">
       <MapSidebar onEditNode={handleEditNodeProperties} onGoToNode={goToNode} />
       
-      <div className="flex-1 relative flex flex-col">
+      {/* Resizer Left */}
+      <div 
+        onMouseDown={(e) => { e.preventDefault(); setIsResizingLeft(true); }}
+        className={`w-1 z-30 cursor-col-resize hover:bg-cyan-500/50 transition-colors ${isResizingLeft ? 'bg-cyan-500' : 'bg-slate-800'}`}
+      />
+
+      <div className="flex-1 relative flex flex-col min-w-0">
         {/* Toolbar */}
-        <div className="absolute top-4 left-4 z-10 flex gap-2 items-center">
-          <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-1.5 flex gap-1 shadow-2xl">
-            <button onClick={() => transformComponentRef.current?.zoomIn()} className="p-2.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Plus size={20} /></button>
-            <button onClick={() => transformComponentRef.current?.zoomOut()} className="p-2.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Minus size={20} /></button>
-            <button onClick={() => transformComponentRef.current?.centerView()} className="p-2.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Maximize size={20} /></button>
-          </div>
-          <div className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-2 shadow-2xl">
-            <input type="text" value={seed} onChange={(e) => setSeed(e.target.value)} className="w-24 bg-black/50 border border-slate-700 rounded px-2 py-1 text-[10px] text-cyan-400 outline-none font-bold" />
-            <button onClick={handleAutoFill} disabled={isGenerating} className="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg text-xs font-black flex items-center gap-2 uppercase tracking-tighter">
-              {isGenerating ? <Loader2 className="animate-spin" size={14} /> : <Globe size={14} />} Auto-Fill
+        <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
+          <div className="flex gap-2 items-center pointer-events-auto">
+            <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-1.5 flex gap-1 shadow-2xl">
+              <button onClick={() => transformComponentRef.current?.zoomIn()} className="p-2.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Plus size={20} /></button>
+              <button onClick={() => transformComponentRef.current?.zoomOut()} className="p-2.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Minus size={20} /></button>
+              <button onClick={() => transformComponentRef.current?.centerView()} className="p-2.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Maximize size={20} /></button>
+            </div>
+            
+            <div className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-2 shadow-2xl">
+              <input type="text" value={seed} onChange={(e) => setSeed(e.target.value)} className="w-24 bg-black/50 border border-slate-700 rounded px-2 py-1 text-[10px] text-cyan-400 outline-none font-bold" />
+              <button onClick={handleAutoFill} disabled={isGenerating} className="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg text-xs font-black flex items-center gap-2 uppercase tracking-tighter shadow-lg shadow-cyan-900/20">
+                {isGenerating ? <Loader2 className="animate-spin" size={14} /> : <Globe size={14} />} Auto-Fill
+              </button>
+              {undoStack.length > 0 && undoStack[undoStack.length - 1].action === 'autofill' && (
+                <button 
+                  onClick={handleUndo} 
+                  className="bg-red-600 hover:bg-red-500 text-white px-3 py-2 rounded-lg text-[10px] font-black flex items-center gap-2 uppercase tracking-tighter shadow-lg animate-in fade-in slide-in-from-left-2"
+                >
+                  Undo Fill
+                </button>
+              )}
+            </div>
+
+            <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-1.5 flex gap-1 shadow-2xl">
+              <button onClick={() => setTool('select')} className={`p-2 rounded-lg transition-all ${selectedTool === 'select' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Select Tool (V)">
+                <MousePointer2 size={20} />
+              </button>
+            <button onClick={() => setTool('erase')} className={`p-2 rounded-lg transition-all ${selectedTool === 'erase' ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Eraser Tool (E)">
+              <Eraser size={20} />
             </button>
+            <button onClick={() => setTool('eyedropper')} className={`p-2 rounded-lg transition-all ${selectedTool === 'eyedropper' ? 'bg-orange-500 text-white shadow-lg shadow-orange-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Eyedropper Tool (Alt + Click)">
+              <Pipette size={20} />
+            </button>
+            <button onClick={() => setTool('stamp')} className={`p-2 rounded-lg transition-all ${selectedTool === 'stamp' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Stamp Tool (S)">
+                <Copy size={20} />
+              </button>
+            </div>
           </div>
-          <div className={`px-3 py-2 rounded-lg border text-[10px] font-black uppercase flex items-center gap-4 transition-all ${isSpacePressed ? 'bg-green-900/30 border-green-500 text-green-400' : 'bg-slate-900/90 border-slate-800 text-slate-500'}`}>
+
+          <div className={`px-3 py-2 rounded-lg border text-[10px] font-black uppercase flex items-center gap-4 transition-all pointer-events-auto ${isSpacePressed ? 'bg-green-900/30 border-green-500 text-green-400' : 'bg-slate-900/90 border-slate-800 text-slate-500 shadow-2xl'}`}>
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${isSpacePressed ? 'bg-green-500 animate-pulse' : 'bg-slate-700'}`} />
               {isSpacePressed ? 'Panning Mode' : 'Space: Pan'}
             </div>
+            
+            {/* SMART BRUSH INDICATOR */}
+            {selectedSmartType !== 'off' && (
+              <div className="flex items-center gap-2 border-l border-slate-700 pl-4 text-purple-400">
+                <Wand2 size={12} className="animate-pulse" />
+                <span>Smart Brush: {selectedSmartType.toUpperCase()}</span>
+                {isRaiseMode && <span className="bg-purple-900/50 px-1 rounded text-[8px] border border-purple-500/50">RAISE</span>}
+              </div>
+            )}
+
             <div className="flex items-center gap-2 border-l border-slate-700 pl-4 font-mono text-cyan-400">
               X: {cursorCoords.x} Y: {cursorCoords.y}
-            </div>
-            <div className="flex items-center gap-2 border-l border-slate-700 pl-4 font-mono text-slate-400">
-              Scale: {scale.toFixed(2)}x
             </div>
           </div>
         </div>
@@ -982,6 +1304,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
                 onMouseLeave={handleMouseUp}
+                onContextMenu={(e) => e.preventDefault()}
               >
                 <MapCanvas 
                   width={WORLD_SIZE} 
@@ -989,8 +1312,8 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                   scale={scale} 
                   viewport={viewport} 
                   onPropMouseDown={handlePropMouseDown} 
-                  waterBaseTile={waterBaseTile()} // UPDATED
-                  foamStripTile={foamStripTile()} // UPDATED
+                  waterBaseTile={waterBaseTile()}
+                  foamStripTile={foamStripTile()}
                 />
                 
                 {/* High-Visibility Black Grid Overlay */}
@@ -999,15 +1322,43 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                   style={{
                     zIndex: 50,
                     backgroundImage: `
-                      linear-gradient(to right, rgba(0,0,0,0.2) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1))),
-                      linear-gradient(to bottom, rgba(0,0,0,0.2) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1))),
-                      linear-gradient(to right, rgba(0,0,0,0.5) calc(2px / var(--zoom-scale, 1)), transparent calc(2px / var(--zoom-scale, 1))),
-                      linear-gradient(to bottom, rgba(0,0,0,0.5) calc(2px / var(--zoom-scale, 1)), transparent calc(2px / var(--zoom-scale, 1)))
+                      linear-gradient(to right, rgba(0,0,0,0.1) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1))),
+                      linear-gradient(to bottom, rgba(0,0,0,0.1) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1))),
+                      linear-gradient(to right, rgba(0,0,0,0.25) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1))),
+                      linear-gradient(to bottom, rgba(0,0,0,0.25) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1)))
                     `,
                     backgroundSize: `${TILE_SIZE}px ${TILE_SIZE}px, ${TILE_SIZE}px ${TILE_SIZE}px, ${TILE_SIZE * 10}px ${TILE_SIZE * 10}px, ${TILE_SIZE * 10}px ${TILE_SIZE * 10}px`,
-                    backgroundPosition: '0 0'
+                    backgroundPosition: `${WORLD_SIZE / 2}px ${WORLD_SIZE / 2}px`
                   }}
                 />
+
+                {/* Ghost Tile Preview */}
+                {!isSpacePressed && selectedTool === 'paint' && selectedTileId && (
+                  (() => {
+                    const tile = customTiles.find(t => t.id === selectedTileId);
+                    if (!tile) return null;
+                    const displayWidth = tile.frameWidth || TILE_SIZE;
+                    const displayHeight = tile.frameHeight || TILE_SIZE;
+                    return (
+                      <div 
+                        className="absolute pointer-events-none opacity-50 z-[60]"
+                        style={{
+                          left: cursorCoords.x * TILE_SIZE + WORLD_SIZE / 2 - (displayWidth - TILE_SIZE) / 2,
+                          top: cursorCoords.y * TILE_SIZE + WORLD_SIZE / 2 - (displayHeight - TILE_SIZE),
+                          width: displayWidth,
+                          height: displayHeight,
+                          backgroundImage: `url(${tile.url})`,
+                          backgroundSize: 'auto 100%',
+                          backgroundPosition: '0 0',
+                          backgroundRepeat: 'no-repeat',
+                          imageRendering: 'pixelated',
+                          transform: `rotate(${tile.rotation || 0}deg)`,
+                          transformOrigin: 'center center'
+                        }}
+                      />
+                    );
+                  })()
+                )}
                 
                 {nodes.filter(node => {
                   const x = node.x * TILE_SIZE + WORLD_SIZE / 2;
@@ -1034,9 +1385,9 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      zIndex: 100
+                      zIndex: 10 // Above MapCanvas (which is 1)
                     }} 
-                    className={`group transition-transform hover:scale-125 ${selectedNodeId === node.id ? 'z-[200]' : ''}`}
+                    className={`group transition-transform hover:scale-125 ${selectedNodeId === node.id ? 'z-[20]' : ''}`}
                   >
                     <div className={`w-10 h-10 rounded-full shadow-2xl flex items-center justify-center border-2 transition-all ${selectedNodeId === node.id ? 'bg-cyan-500 border-white scale-110' : 'bg-slate-900 border-slate-600 hover:border-cyan-400'}`}>
                       {node.type === 'spawn' && <Target size={20} className="text-white" />}
@@ -1054,7 +1405,52 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
             </TransformComponent>
           </TransformWrapper>
         </div>
+
+        {/* Hotbar */}
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex gap-2 p-2 bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-2xl shadow-2xl">
+          {favorites.map((tileId, idx) => {
+            const tile = customTiles.find(t => t.id === tileId);
+            return (
+              <button 
+                key={idx}
+                onClick={() => tileId && selectTile(tileId)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  if (selectedTileId) setFavorite(idx, selectedTileId);
+                }}
+                className={`w-12 h-12 rounded-xl border-2 flex flex-col items-center justify-center relative transition-all group ${tileId ? 'bg-slate-800 border-slate-600 hover:border-cyan-400' : 'bg-slate-950 border-slate-800 border-dashed hover:border-slate-600'}`}
+              >
+                {tile ? (
+                  <div 
+                    className="w-8 h-8"
+                    style={{
+                      backgroundImage: `url(${tile.url})`,
+                      backgroundSize: tile.isSpritesheet && tile.frameCount ? `${tile.frameCount * 100}% 100%` : 'contain',
+                      backgroundPosition: 'center',
+                      backgroundRepeat: 'no-repeat',
+                      imageRendering: 'pixelated'
+                    }}
+                  />
+                ) : (
+                  <span className="text-[10px] text-slate-700 font-bold">{idx + 1}</span>
+                )}
+                <div className="absolute -top-2 -right-2 w-4 h-4 bg-slate-800 rounded-full border border-slate-600 flex items-center justify-center text-[8px] font-bold text-slate-400">
+                  {idx + 1}
+                </div>
+                {!tileId && <Plus size={10} className="absolute inset-0 m-auto text-slate-800 opacity-0 group-hover:opacity-100" />}
+              </button>
+            );
+          })}
+        </div>
       </div>
+
+      {/* Resizer Right */}
+      <div 
+        onMouseDown={(e) => { e.preventDefault(); setIsResizingRight(true); }}
+        className={`w-1 z-30 cursor-col-resize hover:bg-cyan-500/50 transition-colors ${isResizingRight ? 'bg-cyan-500' : 'bg-slate-800'}`}
+      />
+
+      <MapDataSidebar onEditNode={handleEditNodeProperties} onGoToNode={goToNode} />
 
       {showNodeModal && nodeFormData && (
         <NodeEditModal

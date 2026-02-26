@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Modal, ScrollView, ActivityIndicator, Alert, StatusBar, Animated } from 'react-native';
 import { Image } from 'expo-image';
 import { InteractionModal } from '@/components/modals/InteractionModal';
@@ -24,10 +24,11 @@ import { usePets } from '@/hooks/usePets';
 import { useActivePet } from '@/contexts/ActivePetContext';
 import Reanimated, { useAnimatedRef } from 'react-native-reanimated';
 import { useTransition } from '@/context/TransitionContext';
-import { makeImageFromView, SkImage } from '@shopify/react-native-skia';
+import { makeImageFromView, SkImage, Canvas, RadialGradient, vec, Rect as SkiaRect, Text as SkiaText, useFont, Blur, Skia, Paint, MaskFilter } from '@shopify/react-native-skia';
 import { mapNodeIcon } from '@/utils/assetMapper';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Circle, G, Rect, Line, Polygon } from 'react-native-svg';
+import Svg, { Path, Circle, G, Rect, Line, Polygon, Text as SvgText } from 'react-native-svg';
+import { SkiaWorldMap } from '../components/world-map/SkiaWorldMap';
 
 // --- SVGs ---
 const TargetCrosshairIcon = ({ color = '#ff4444', size = 28 }) => (
@@ -64,11 +65,11 @@ const WalkingIcon = ({ color = '#00E5FF', size = 56 }) => (
 );
 
 // --- Reusable Holographic Glass Wrapper ---
-const HolographicGlass = ({ children, style, contentStyle }: { children: React.ReactNode, style?: any, contentStyle?: any }) => {
+const HolographicGlass = ({ children, style, contentStyle, hideGlow }: { children: React.ReactNode, style?: any, contentStyle?: any, hideGlow?: boolean }) => {
   return (
     <View style={[styles.glassWrapper, style]}>
-      {/* 1. Background glow */}
-      <View style={styles.glowShadow} />
+      {/* 1. Background glow - only if not hidden */}
+      {!hideGlow && <View style={styles.glowShadow} />}
       
       {/* 2. Glass Blur Background */}
       <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
@@ -88,14 +89,25 @@ const HolographicGlass = ({ children, style, contentStyle }: { children: React.R
   );
 };
 
+// --- Custom Step Counter with Fixed Android Glow ---
+// The "rectangle glow" bug on Android happens because the text shadow is clipped 
+// to the exact bounding box of the Text component. By adding padding, we push the 
+// bounding box outwards, giving the shadow room to fade naturally.
+const GlowingStepCounter = ({ steps }: { steps: number }) => {
+  const text = steps.toLocaleString();
+  
+  return (
+    <View style={styles.topPillTextWrapper}>
+      <Text style={styles.topPillText}>
+        {text}
+      </Text>
+    </View>
+  );
+};
+
 
 const { width, height } = Dimensions.get('window');
-const TILE_SIZE = width / 5; // Grid is 5 tiles wide
-
-// 📐 ASPECT RATIO MATH (9:16 Vertical)
-// We set width to 2000px virtual size. Height is calculated to match 9:16 ratio.
-const MAP_WIDTH = 2000;
-const MAP_HEIGHT = MAP_WIDTH * (16 / 9);
+const TILE_SIZE = 48; // Standardized to match web editor
 
 export const WorldMapScreen = () => {
   const navigation = useNavigation<any>();
@@ -104,8 +116,8 @@ export const WorldMapScreen = () => {
   const { pets } = usePets();
   const { activePetId } = useActivePet();
   const activePet = pets.find(p => p.id === activePetId) ?? (pets.length > 0 ? pets[0] : null);
-  const [activeMapUrl, setActiveMapUrl] = useState<string | null>(null);
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
+  const [mapSettings, setMapSettings] = useState<any>(null);
 
   // 📷 TRANSITION LOGIC
   const viewRef = useAnimatedRef<View>();
@@ -169,7 +181,8 @@ export const WorldMapScreen = () => {
     autoTravelReport,
     setAutoTravelReport,
     checkpointAlert,
-    setCheckpointAlert
+    setCheckpointAlert,
+    loading: movingOnMap // Use this to track movement state
   } = useExploration(setEncounter, setInteractionVisible, setActiveRaid, setRaidModalVisible, activeMapId);
 
   const { pendingSteps, setPendingSteps } = useStepTracker();
@@ -224,20 +237,20 @@ export const WorldMapScreen = () => {
     setLoadingMap(true);
     setMapError(null);
     try {
-      const { data, error } = await supabase
-        .from('maps')
-        .select('id, image_url')
-        .eq('is_active', true)
-        .single();
+      const [mapRes, settingsRes] = await Promise.all([
+        supabase.from('maps').select('id').eq('is_active', true).single(),
+        supabase.from('world_map_settings').select('*').eq('id', 1).single()
+      ]);
 
-      if (error) throw error;
-      if (data) {
-        setActiveMapUrl(data.image_url);
-        setActiveMapId(data.id);
+      if (mapRes.data) {
+        setActiveMapId(mapRes.data.id);
+      }
+      if (settingsRes.data) {
+        setMapSettings(settingsRes.data);
       }
       
       if (user) {
-        await refreshVision(user.world_x || 0, user.world_y || 0);
+        await refreshVision(user.world_x || 0, user.world_y || 0, true);
       }
     } catch (err) {
       console.error("Error loading world data:", err);
@@ -394,7 +407,7 @@ export const WorldMapScreen = () => {
       steps_banked: newSteps
     });
 
-    refreshVision(newX, newY);
+    refreshVision(newX, newY, true);
   };
 
   const handleSystemChoice = async (choice: 'AUTO' | 'MANUAL') => {
@@ -403,9 +416,6 @@ export const WorldMapScreen = () => {
     if (choice === 'AUTO') await fastTravel(steps);
     else await bankSteps(steps);
   };
-
-  const mapLeft = -(MAP_WIDTH / 2) - ((user?.world_x || 0) * TILE_SIZE) + (width / 2);
-  const mapTop = -(MAP_HEIGHT / 2) + ((user?.world_y || 0) * TILE_SIZE) + (height / 2);
 
   const startTestBattle = async () => {
     try {
@@ -511,145 +521,135 @@ export const WorldMapScreen = () => {
         )}
 
         {/* 1. THE MAP LAYER (Moving Background or Fallback Color) */}
-        <MotiView 
-          style={[styles.mapLayer, { backgroundColor: '#6b705c' }]}
-          animate={{ 
-            translateX: mapLeft, 
-            translateY: mapTop 
-          }}
-          transition={{
-            type: 'timing',
-            duration: 300,
-          }}
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1a1c0e' }]} />
+
+        {/* 2. THE MAP: Powered by Skia */}
+        <SkiaWorldMap
+          visionGrid={visionGrid}
+          mapSettings={mapSettings}
+          user={user}
+          tileSize={TILE_SIZE}
         >
-          {activeMapUrl && (
-            <Image
-              source={{ uri: activeMapUrl }}
-              style={{
-                width: MAP_WIDTH,
-                height: MAP_HEIGHT,
-                position: 'absolute',
-                top: 0,
-                left: 0,
-              }}
-              resizeMode="cover"
-            />
-          )}
-        </MotiView>
-
-        {/* 2. THE GRID LAYER (Stationary Grid) */}
-        <View style={styles.gridLayer} pointerEvents="box-none">
-          {visionGrid.map((tile) => {
-            const isPlayer = tile.x === user?.world_x && tile.y === user?.world_y;
-            
-            // Calculate absolute position relative to screen center
-            const tileLeft = (tile.x - (user?.world_x || 0)) * TILE_SIZE + (width / 2) - (TILE_SIZE / 2);
-            const tileTop = -((tile.y - (user?.world_y || 0)) * TILE_SIZE) + (height / 2) - (TILE_SIZE / 2);
-
-            return (
-              <MotiView 
-                key={`${tile.x},${tile.y}`}
-                style={[styles.tile, { width: TILE_SIZE, height: TILE_SIZE, position: 'absolute' }]}
-                animate={{ 
-                  left: tileLeft, 
-                  top: tileTop 
-                }}
-                transition={{
-                  type: 'timing',
-                  duration: 300,
-                }}
+          {/* We place Nodes, Player, and Party here so they sit between the ground and foreground props */}
+          <View 
+            style={[
+              StyleSheet.absoluteFill, 
+              { transform: [{ translateX: width / 2 }, { translateY: height / 2 }] }
+            ]} 
+            pointerEvents="box-none"
+          >
+            {/* Map Group inside Native View to apply the same transform as Skia Canvas */}
+            <View 
+              style={{ 
+                transform: [
+                  { translateX: -(user?.world_x || 0) * TILE_SIZE }, 
+                  { translateY: -(user?.world_y || 0) * TILE_SIZE }
+                ] 
+              }} 
+              pointerEvents="box-none"
+            >
+              {/* STATIC PLAYER AVATAR (Centered, Persistent) */}
+              {user && (
+                <View 
+                  style={[
+                    styles.playerContainer, 
+                    { 
+                      position: 'absolute', 
+                      left: (user?.world_x || 0) * TILE_SIZE - (TILE_SIZE / 2),
+                      top: (user?.world_y || 0) * TILE_SIZE - (TILE_SIZE / 2),
+                      width: TILE_SIZE, 
+                      height: TILE_SIZE,
+                      zIndex: 10000 
+                    }
+                  ]}
+                pointerEvents="box-none" // Allow clicks to pass through empty areas if needed
               >
-                {/* 1a. TILE BACKGROUND (If chunk data exists) */}
-                {tile.imageUrl && (
-                  <Image
-                    source={{ uri: tile.imageUrl }}
-                    style={{ width: TILE_SIZE, height: TILE_SIZE, position: 'absolute' }}
-                    contentFit="cover"
-                  />
-                )}
-
-                {/* 1b. LOCATIONS */}
-                {tile.node && (
-                  <View style={styles.nodeContainer}>
-                    <Image 
-                      source={mapNodeIcon(tile.node.icon_url)} 
-                      style={styles.nodeIcon} 
-                      contentFit="contain"
-                    />
-                    <Text style={styles.nodeLabel}>{tile.node.name}</Text>
+                <View style={styles.playerAvatar}>
+                  <LayeredAvatar user={user} size={72} isMoving={movingOnMap} />
+                </View>
+                {activePet?.pet_details && (
+                  <View style={styles.petAvatarOnMap} pointerEvents="none">
+                    <PetLayeredAvatar petDetails={activePet.pet_details} size={34} square hideBackground />
                   </View>
                 )}
+              </View>
+            )}
 
-                {/* 2. PLAYER AVATAR (Centered) */}
-                {isPlayer && user && (
-                  <View style={styles.playerContainer}>
-                    <View style={styles.playerAvatar}>
-                      <LayeredAvatar user={user} size={72} />
+            {visionGrid.map((tile) => {
+              // const isPlayer = tile.x === user?.world_x && tile.y === user?.world_y; // REMOVED
+              // If using absolute position, the group is centered, so the coordinates themselves just place them
+              // relative to 0,0 center.
+              const tileLeft = Math.round(tile.x * TILE_SIZE) - (TILE_SIZE / 2);
+              const tileTop = Math.round(tile.y * TILE_SIZE) - (TILE_SIZE / 2);
+
+              if (!tile.node) return null; // Only render Nodes here now
+
+              return (
+                <MotiView 
+                  key={`obj-${tile.x},${tile.y}`}
+                  style={[
+                    styles.tile, 
+                    { 
+                      width: TILE_SIZE, 
+                      height: TILE_SIZE, 
+                      position: 'absolute',
+                      zIndex: (1000 - tile.y)
+                    }
+                  ]}
+                  animate={{ left: tileLeft, top: tileTop }}
+                  transition={{ type: 'timing', duration: 300 }}
+                >
+                  {/* Locations */}
+                  {tile.node && (
+                    <View style={styles.nodeContainer}>
+                      <Image 
+                        source={mapNodeIcon(tile.node.icon_url)} 
+                        style={styles.nodeIcon} 
+                        contentFit="contain"
+                      />
+                      <Text style={styles.nodeLabel}>{tile.node.name}</Text>
                     </View>
-                    {activePet?.pet_details && (
-                      <View style={styles.petAvatarOnMap} pointerEvents="none">
-                        <PetLayeredAvatar petDetails={activePet.pet_details} size={34} square hideBackground />
-                      </View>
-                    )}
-                  </View>
-                )}
-              </MotiView>
-            );
-          })}
-        </View>
+                  )}
+                </MotiView>
+              );
+            })}
 
-        {/* 3. PARTY MEMBERS LAYER - Other players in party */}
-        {user?.current_party_id && partyMembersOnline.size > 0 && (
-          <View style={styles.partyLayer} pointerEvents="box-none">
-            {Array.from(partyMembersOnline.values()).map((member) => {
-              // Calculate position relative to screen center (same math as tiles)
-              const memberLeft = (member.world_x - (user?.world_x || 0)) * TILE_SIZE + (width / 2) - (TILE_SIZE / 2);
-              const memberTop = -((member.world_y - (user?.world_y || 0)) * TILE_SIZE) + (height / 2) - (TILE_SIZE / 2);
+            {/* PARTY MEMBERS */}
+            {user?.current_party_id && partyMembersOnline.size > 0 && Array.from(partyMembersOnline.values()).map((member) => {
+              const memberLeft = member.world_x * TILE_SIZE - (TILE_SIZE / 2);
+              const memberTop = member.world_y * TILE_SIZE - (TILE_SIZE / 2);
               
               return (
                 <MotiView
-                  key={member.id}
-                  style={[styles.partyMemberContainer, { position: 'absolute' }]}
-                  animate={{
-                    left: memberLeft,
-                    top: memberTop,
-                  }}
-                  transition={{
-                    type: 'timing',
-                    duration: 500,
-                  }}
+                  key={`party-${member.id}`}
+                  style={[styles.partyMemberContainer, { position: 'absolute', left: memberLeft, top: memberTop, zIndex: 1000 - member.world_y }]}
+                  animate={{ left: memberLeft, top: memberTop }}
+                  transition={{ type: 'timing', duration: 500 }}
                 >
                   <View style={styles.partyMemberAvatar}>
                     <LayeredAvatar 
-                      user={{
-                        id: member.id,
-                        name: member.hunter_name,
-                        hunter_name: member.hunter_name,
-                        avatar_url: member.avatar_url,
-                        base_body_url: member.base_body_url,
-                        base_body_silhouette_url: member.base_body_silhouette_url,
-                        base_body_tint_hex: member.base_body_tint_hex,
-                        gender: member.gender,
-                        cosmetics: member.cosmetics,
-                      } as any} 
+                      user={member} 
                       size={56} 
+                      allShopItems={allShopItems}
                     />
                   </View>
                   <View style={styles.partyMemberLabel}>
-                    <Text style={styles.partyMemberName}>{member.hunter_name}</Text>
                     <View style={styles.partyMemberIndicator} />
+                    <Text style={styles.partyMemberName}>{member.hunter_name}</Text>
                   </View>
                 </MotiView>
               );
             })}
+            </View>
           </View>
-        )}
+        </SkiaWorldMap>
 
         {/* 4. HUD & CONTROLS */}
 
         <Animated.View style={[styles.hudTop, { transform: [{ translateY: floatAnim }] }]}>
-          <HolographicGlass style={styles.topPill} contentStyle={styles.topPillContent}>
-            <FootprintsIcon /><Text style={styles.topPillText}>{user?.steps_banked || 0}</Text>
+          <HolographicGlass style={styles.topPill} contentStyle={styles.topPillContent} hideGlow>
+            <FootprintsIcon />
+            <GlowingStepCounter steps={user?.steps_banked || 0} />
           </HolographicGlass>
           {/* Advancement trial available notification */}
           {canAttemptAdvancement && (
@@ -921,12 +921,13 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
 
-  tile: { justifyContent: 'center', alignItems: 'center' },
+  tile: { position: 'absolute' },
 
   playerContainer: {
-    zIndex: 10,
+    zIndex: 100,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'visible',
   },
 
   playerAvatar: {
@@ -938,13 +939,13 @@ const styles = StyleSheet.create({
     borderColor: '#3b82f6',
     justifyContent: 'center',
     alignItems: 'center',
-    overflow: 'hidden',
+    overflow: 'hidden', // Restore hidden to keep the circle shape
   },
 
   petAvatarOnMap: {
     position: 'absolute',
-    right: -10,
-    bottom: -8,
+    right: -20, // Moved slightly further right to avoid getting cut off by the circle
+    bottom: -15, // Moved slightly further down
     zIndex: 12,
   },
 
@@ -1220,12 +1221,22 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50, // Set a fixed height
+    minWidth: 80,
+  },
+  topPillTextWrapper: {
+    marginLeft: -6, // originally 10 - 16 padding = -6
+    marginRight: -16,
+    marginVertical: -12,
   },
   topPillText: {
     color: '#00E5FF',
     fontSize: 20,
     fontWeight: 'bold',
-    marginLeft: 10,
+    // Generous padding prevents the Android text shadow "rectangle" clipping bug
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     textShadowColor: 'rgba(0, 229, 255, 0.8)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
