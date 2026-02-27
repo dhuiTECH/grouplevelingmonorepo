@@ -808,6 +808,7 @@ export default function AssetForgePage() {
                         className="w-full bg-surface border border-border p-2 pr-8 text-xs text-gray-300 focus:border-system/50 outline-none appearance-none font-mono rounded-sm transition-colors"
                       >
                         <option value="gemini-3-pro-image-preview">GEMINI 3.0 PRO (HIGH FIDELITY)</option>
+                        <option value="gemini-3.1-flash-image">NANO BANANA 2 (LATEST)</option>
                         <option value="gemini-2.5-flash-image">GEMINI 2.5 FLASH (FAST)</option>
                       </select>
                       <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
@@ -910,7 +911,7 @@ export default function AssetForgePage() {
                    <p>&gt; SYSTEM READY</p>
                    <p>&gt; DB: {references.length} UNITS LOADED</p>
                    <p>&gt; CATEGORY: {category.toUpperCase()}</p>
-                   <p>&gt; CORE: {model === 'gemini-3-pro-image-preview' ? '3.0 PRO' : '2.5 FLASH'}</p>
+                   <p>&gt; CORE: {model === 'gemini-3.1-flash-image' ? 'NANO BANANA 2' : model === 'gemini-3-pro-image-preview' ? '3.0 PRO' : '2.5 FLASH'}</p>
                    <p>&gt; BATCH SIZE: {batchSize}</p>
                    {baseBodyType !== 'none' && <p>&gt; ANATOMY OVERLAY: {baseBodyType.toUpperCase()} MESH</p>}
                    <p>&gt; OUTPUT MODE: {assetType === 'spritesheet' ? (isSkillCategory ? 'SKILL VFX' : 'CHAR ANIM') : 'STATIC'}</p>
