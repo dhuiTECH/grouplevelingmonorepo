@@ -158,7 +158,7 @@ interface MapState {
   exportMap: () => string;
 }
 
-const syncQueue: Record<string, Promise<void>> = {};
+const syncQueue: Record<string, Promise<void> | undefined> = {};
 
 export const useMapStore = create<MapState>((set, get) => ({
   tiles: [],
