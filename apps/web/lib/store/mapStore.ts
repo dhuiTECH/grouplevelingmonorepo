@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../supabase';
+import { calculateBitmask } from '../../components/admin/WorldMap/mapUtils';
 
 export type NodeType = 'spawn' | 'poi' | 'enemy' | 'npc' | 'loot';
 
@@ -59,7 +60,7 @@ export interface CustomTile {
   isAutoFill?: boolean;
   isAutoTile?: boolean;
   smartType?: string;
-  category?: 'water_base' | 'foam_strip' | 'tile' | 'prop' | 'road';
+  category?: 'water_base' | 'foam_strip' | 'tile' | 'prop' | 'road' | 'structure' | 'mountain' | 'big_structure';
   rotation?: number; // Default rotation
 }
 
@@ -133,6 +134,10 @@ interface MapState {
   waterBaseTile: () => CustomTile | undefined; // NEW SELECTOR
   foamStripTile: () => CustomTile | undefined; // NEW SELECTOR
   
+  // Debug modal state
+  showDebugModal: boolean;
+  setShowDebugModal: (show: boolean) => void;
+  
   setTiles: (tiles: Tile[]) => void;
   setNodes: (nodes: MapNode[]) => void;
   setCustomTiles: (tiles: CustomTile[]) => void;
@@ -155,6 +160,7 @@ interface MapState {
   removeTileAt: (x: number, y: number) => Promise<Tile | null>;
   removeTileById: (id: string) => Promise<void>;
   moveTile: (tileId: string, newX: number, newY: number, newOffsetX: number, newOffsetY: number) => Promise<void>;
+  updateTileAndNeighbors: (x: number, y: number, layer: number, isRemoving?: boolean) => Promise<void>; // NEW
   exportMap: () => string;
 }
 
@@ -230,12 +236,14 @@ export const useMapStore = create<MapState>((set, get) => ({
   dirtSheetUrl: null,
   selectedWaterBaseId: null, // NEW
   selectedFoamStripId: null, // NEW
+  showDebugModal: false,
 
   setSmartMode: (isSmartMode) => set({ isSmartMode }),
   setSelectedSmartType: (selectedSmartType) => set({ selectedSmartType, isSmartMode: selectedSmartType !== 'off' }),
   setSelectedBlock: (selectedBlockCol, selectedBlockRow) => set({ selectedBlockCol, selectedBlockRow }),
   setRaiseMode: (isRaiseMode) => set({ isRaiseMode }),
   setFoamEnabled: (isFoamEnabled) => set({ isFoamEnabled }),
+  setShowDebugModal: (showDebugModal) => set({ showDebugModal }),
   setAutoTileSheetUrl: async (url) => {
     set({ autoTileSheetUrl: url });
     await supabase.from('world_map_settings').upsert({ id: 1, autotile_sheet_url: url }, { onConflict: 'id' });
@@ -579,6 +587,11 @@ export const useMapStore = create<MapState>((set, get) => ({
 
     syncQueue[chunkKey] = sync();
     await syncQueue[chunkKey];
+
+    // Trigger Autotile Update if needed
+    if (isAutoTile || get().isSmartMode) {
+      await get().updateTileAndNeighbors(x, y, layer || 0, false);
+    }
   },
 
   batchAddTiles: async (newTiles) => {
@@ -797,5 +810,93 @@ export const useMapStore = create<MapState>((set, get) => ({
       nodes: state.nodes,
       spawnPoint: state.spawnPoint
     }, null, 2);
+  },
+
+  updateTileAndNeighbors: async (x, y, layer, isRemoving = false) => {
+    // 1. We must recalculate the bitmasks on the state directly.
+    const getTileSig = (tiles: Tile[], tx: number, ty: number) => {
+      const t = tiles.find(t => t.x === tx && t.y === ty && (t.layer || 0) === layer);
+      return t && t.isAutoTile ? `${t.smartType}-${t.blockCol}-${t.blockRow}` : null;
+    };
+
+    const touchedChunks = new Set<string>();
+
+    set((state) => {
+      let newTiles = [...state.tiles];
+      
+      const updateSingleTile = (tx: number, ty: number) => {
+        const tileIndex = newTiles.findIndex(t => t.x === tx && t.y === ty && (t.layer || 0) === layer);
+        if (tileIndex === -1) return;
+        const tile = newTiles[tileIndex];
+        if (!tile.isAutoTile) return;
+
+        const mySig = `${tile.smartType}-${tile.blockCol}-${tile.blockRow}`;
+        const grid: Record<string, string> = {};
+        
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const neighborSig = getTileSig(newTiles, tx + dx, ty + dy);
+            if (neighborSig) grid[`${tx+dx},${ty+dy}`] = neighborSig;
+          }
+        }
+
+        const newMask = calculateBitmask(tx, ty, grid, mySig);
+        if (tile.bitmask !== newMask) {
+          newTiles[tileIndex] = { ...tile, bitmask: newMask };
+          touchedChunks.add(`${Math.floor(tx / CHUNK_SIZE)},${Math.floor(ty / CHUNK_SIZE)}`);
+        }
+      };
+
+      // If we are adding, update the center tile first so neighbors see it
+      if (!isRemoving) {
+        updateSingleTile(x, y);
+      }
+
+      // Then update all neighbors
+      updateSingleTile(x, y - 1);
+      updateSingleTile(x + 1, y - 1);
+      updateSingleTile(x + 1, y);
+      updateSingleTile(x + 1, y + 1);
+      updateSingleTile(x, y + 1);
+      updateSingleTile(x - 1, y + 1);
+      updateSingleTile(x - 1, y);
+      updateSingleTile(x - 1, y - 1);
+
+      return { tiles: newTiles };
+    });
+
+    // 2. Batch sync the chunks that actually changed
+    if (touchedChunks.size === 0) return;
+
+    const currentTiles = get().tiles;
+    const syncPromises = Array.from(touchedChunks).map(async (key) => {
+      const [cx, cy] = key.split(',').map(Number);
+      const sync = async () => {
+        if (syncQueue[key]) await syncQueue[key];
+
+        const chunkTiles = currentTiles
+          .filter(t => Math.floor(t.x / CHUNK_SIZE) === cx && Math.floor(t.y / CHUNK_SIZE) === cy)
+          .map(t => {
+            const { id, ...rest } = t;
+            return {
+              ...rest,
+              block_col: t.blockCol || 0,
+              block_row: t.blockRow || 0
+            };
+          });
+
+        await supabase.from('map_chunks').upsert({
+          chunk_x: cx,
+          chunk_y: cy,
+          tile_data: chunkTiles,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'chunk_x,chunk_y' });
+      };
+
+      syncQueue[key] = sync();
+      return syncQueue[key];
+    });
+
+    await Promise.all(syncPromises);
   }
 }));

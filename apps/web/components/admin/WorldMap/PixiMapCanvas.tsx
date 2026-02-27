@@ -3,7 +3,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Application, extend, useTick } from '@pixi/react';
 import * as PIXI from 'pixi.js';
 import { useMapStore, Tile, CustomTile } from '@/lib/store/mapStore';
-import { getA2SubTileCoordinates } from './mapUtils';
+import { getPixiTextureCoords } from './mapUtils';
 
 // Register PixiJS components for use in JSX
 extend({
@@ -93,10 +93,7 @@ const PixiTile = React.memo(({
       {/* Foam Layer */}
       {foamQuarterTextures ? (
         <PixiContainer alpha={0.8}>
-          {foamQuarterTextures[0] && <PixiSprite texture={foamQuarterTextures[0]} x={0} y={0} width={24} height={24} />}
-          {foamQuarterTextures[1] && <PixiSprite texture={foamQuarterTextures[1]} x={24} y={0} width={24} height={24} />}
-          {foamQuarterTextures[2] && <PixiSprite texture={foamQuarterTextures[2]} x={0} y={24} width={24} height={24} />}
-          {foamQuarterTextures[3] && <PixiSprite texture={foamQuarterTextures[3]} x={24} y={24} width={24} height={24} />}
+          {foamQuarterTextures[0] && <PixiSprite texture={foamQuarterTextures[0]} x={0} y={0} width={width} height={height} />}
         </PixiContainer>
       ) : foamTexture && (
         <PixiSprite texture={foamTexture} x={0} y={0} width={48} height={48} alpha={0.8} />
@@ -109,10 +106,7 @@ const PixiTile = React.memo(({
           onpointerdown={onMouseDown} 
           cursor={isInteractive ? 'move' : 'default'}
         >
-          {quarterTextures[0] && <PixiSprite texture={quarterTextures[0]} x={0} y={0} width={24} height={24} />}
-          {quarterTextures[1] && <PixiSprite texture={quarterTextures[1]} x={24} y={0} width={24} height={24} />}
-          {quarterTextures[2] && <PixiSprite texture={quarterTextures[2]} x={0} y={24} width={24} height={24} />}
-          {quarterTextures[3] && <PixiSprite texture={quarterTextures[3]} x={24} y={24} width={24} height={24} />}
+          {quarterTextures[0] && <PixiSprite texture={quarterTextures[0]} x={0} y={0} width={width} height={height} />}
         </PixiContainer>
       ) : texture ? (
         <PixiSprite 
@@ -162,10 +156,10 @@ const SmartPixiTile = React.memo(({
 
   const quarterTextures = useMemo(() => {
     if (!mainTextureBase || !mainTextureBase.source || !tile.isAutoTile || tileLayer !== 0) return null;
-    const quarters = getA2SubTileCoordinates(tile.bitmask || 0, tile.blockCol || 0, tile.blockRow || 0);
+    const coords = getPixiTextureCoords(tile.bitmask || 0, tile.blockCol || 0, tile.blockRow || 0);
     try {
       const source = mainTextureBase.source;
-      return quarters.map(q => new PIXI.Texture({
+      return coords.map(q => new PIXI.Texture({
         source,
         frame: new PIXI.Rectangle(q.sourceX, q.sourceY, q.sourceWidth, q.sourceHeight)
       }));
@@ -174,10 +168,10 @@ const SmartPixiTile = React.memo(({
 
   const foamQuarterTextures = useMemo(() => {
     if (!foamTextureBase || !foamTextureBase.source || (tile.foamBitmask || 0) === 0) return null;
-    const quarters = getA2SubTileCoordinates(tile.foamBitmask || 0, 0, 0); 
+    const coords = getPixiTextureCoords(tile.foamBitmask || 0, 0, 0); 
     try {
       const source = foamTextureBase.source;
-      return quarters.map(q => new PIXI.Texture({
+      return coords.map(q => new PIXI.Texture({
         source,
         frame: new PIXI.Rectangle(q.sourceX, q.sourceY, q.sourceWidth, q.sourceHeight)
       }));

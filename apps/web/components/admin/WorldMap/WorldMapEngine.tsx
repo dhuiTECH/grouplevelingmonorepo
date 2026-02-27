@@ -10,8 +10,10 @@ import { createNoise2D } from 'simplex-noise';
 import { 
   Plus, Minus, Maximize, Grid, Zap, Loader2, Target, Map as MapIcon, 
   User, Sword, Box, Globe, Search, MousePointer2, Eraser, Wand2, 
-  GripVertical, Copy, Square, CheckSquare, Pipette, X
+  GripVertical, Copy, Square, CheckSquare, Pipette, X, Paintbrush, Bug
 } from 'lucide-react';
+import { WinluPalette } from './WinluPalette';
+import { WinluDebugOverlay } from './WinluDebugOverlay';
 import { generateAsset } from '@/lib/services/mapGeminiService';
 import NodeEditModal, { NodeFormData } from '../NodeEditModal';
 import { supabase } from '@/lib/supabase';
@@ -33,10 +35,10 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     loadTilesFromSupabase, isDraggingTile, draggingTileId, 
     setDraggingTile, moveTile, removeTileById,
     isSmartMode, isRaiseMode, isFoamEnabled, autoTileSheetUrl,
-    selectedSmartType, waterBaseTile, foamStripTile, setTool,
+    selectedSmartType, setSelectedSmartType, setRaiseMode, waterBaseTile, foamStripTile, setTool,
     sidebarWidth, setSidebarWidth, rightSidebarWidth, setRightSidebarWidth,
     favorites, setFavorite, selectTile, incrementTick,
-    isLoadingTiles, tiles, nodes
+    isLoadingTiles, tiles, nodes, showDebugModal, setShowDebugModal
   } = useMapStore();
   
   const [isResizingLeft, setIsResizingLeft] = useState(false);
@@ -181,6 +183,26 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
       if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
         if (e.key.toLowerCase() === 'f' || e.key === '0') {
           zoomToFit();
+          return;
+        }
+        if (e.key.toLowerCase() === 'v') {
+          setTool('select');
+          return;
+        }
+        if (e.key.toLowerCase() === 'b') {
+          setTool('paint');
+          return;
+        }
+        if (e.key.toLowerCase() === 'e') {
+          setTool('erase');
+          return;
+        }
+        if (e.key.toLowerCase() === 'i') {
+          setTool('eyedropper');
+          return;
+        }
+        if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey) {
+          setTool('stamp');
           return;
         }
       }
@@ -1313,17 +1335,58 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
               )}
             </div>
 
-            <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-1.5 flex gap-1 shadow-2xl">
+            <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-1.5 flex gap-1 shadow-2xl items-center">
               <button onClick={() => setTool('select')} className={`p-2 rounded-lg transition-all ${selectedTool === 'select' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Select Tool (V)">
                 <MousePointer2 size={20} />
               </button>
-            <button onClick={() => setTool('erase')} className={`p-2 rounded-lg transition-all ${selectedTool === 'erase' ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Eraser Tool (E)">
-              <Eraser size={20} />
-            </button>
-            <button onClick={() => setTool('eyedropper')} className={`p-2 rounded-lg transition-all ${selectedTool === 'eyedropper' ? 'bg-orange-500 text-white shadow-lg shadow-orange-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Eyedropper Tool (Alt + Click)">
-              <Pipette size={20} />
-            </button>
-            <button onClick={() => setTool('stamp')} className={`p-2 rounded-lg transition-all ${selectedTool === 'stamp' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Stamp Tool (S)">
+              <button onClick={() => setTool('paint')} className={`p-2 rounded-lg transition-all ${selectedTool === 'paint' ? 'bg-green-600 text-white shadow-lg shadow-green-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Paint Tool (B)">
+                <Paintbrush size={20} />
+              </button>
+              
+              <div className="h-8 w-px bg-slate-700 mx-1" />
+              
+              <div className="flex gap-1.5 px-1">
+                 <WinluPalette compact />
+              </div>
+
+              <div className="h-8 w-px bg-slate-700 mx-1" />
+
+              <div className="flex gap-1 px-1">
+                <button 
+                  onClick={() => setSelectedSmartType(selectedSmartType === 'off' ? 'grass' : 'off')}
+                  className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${selectedSmartType !== 'off' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-400 hover:bg-slate-800'}`}
+                  title="Toggle Smart Brush (Z)"
+                >
+                  <Zap size={18} className={selectedSmartType !== 'off' ? "fill-white" : ""} />
+                  <span className="text-[10px] font-black uppercase">Smart</span>
+                </button>
+                <button 
+                  onClick={() => setRaiseMode(!isRaiseMode)}
+                  className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${isRaiseMode ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/40' : 'text-slate-400 hover:bg-slate-800'}`}
+                  title="Toggle Raise Mode (R)"
+                >
+                  <Box size={18} />
+                  <span className="text-[10px] font-black uppercase">Raise</span>
+                </button>
+                <button 
+                  onClick={() => setShowDebugModal(true)}
+                  className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-slate-400 hover:bg-slate-800"
+                  title="Open Bitmask Debugger"
+                >
+                  <Bug size={18} />
+                  <span className="text-[10px] font-black uppercase">Debug</span>
+                </button>
+              </div>
+
+              <div className="h-8 w-px bg-slate-700 mx-1" />
+
+              <button onClick={() => setTool('erase')} className={`p-2 rounded-lg transition-all ${selectedTool === 'erase' ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Eraser Tool (E)">
+                <Eraser size={20} />
+              </button>
+              <button onClick={() => setTool('eyedropper')} className={`p-2 rounded-lg transition-all ${selectedTool === 'eyedropper' ? 'bg-orange-500 text-white shadow-lg shadow-orange-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Eyedropper Tool (Alt + Click)">
+                <Pipette size={20} />
+              </button>
+              <button onClick={() => setTool('stamp')} className={`p-2 rounded-lg transition-all ${selectedTool === 'stamp' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Stamp Tool (S)">
                 <Copy size={20} />
               </button>
             </div>
@@ -1574,6 +1637,13 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           uploadingDialogueImageLine={uploadingDialogueImageLine}
           onRequestUploadVoiceLine={(idx) => { currentUploadIdx.current = idx; dialogueVoiceLineInputRef.current?.click(); }}
           uploadingVoiceLineLine={uploadingVoiceLineLine}
+        />
+      )}
+
+      {showDebugModal && (
+        <WinluDebugOverlay 
+          sheetUrl={autoTileSheetUrl || '/A2 - Terrain and Misc.jpg'} 
+          onClose={() => setShowDebugModal(false)} 
         />
       )}
 

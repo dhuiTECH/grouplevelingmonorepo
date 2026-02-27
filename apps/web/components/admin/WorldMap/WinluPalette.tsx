@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { useMapStore } from '@/lib/store/mapStore';
-import { Grid, Bug } from 'lucide-react';
-import { WinluDebugOverlay } from './WinluDebugOverlay';
+import { Grid, Bug, ChevronDown } from 'lucide-react';
 
-export const WinluPalette = () => {
-  const { setSelectedBlock, setTool, selectedBlockCol, selectedBlockRow, autoTileSheetUrl } = useMapStore();
-  const [showDebug, setShowDebug] = useState(false);
+export const WinluPalette = ({ compact = false }: { compact?: boolean }) => {
+  const { setSelectedBlock, setTool, selectedBlockCol, selectedBlockRow, autoTileSheetUrl, selectedSmartType, setSelectedSmartType, setShowDebugModal } = useMapStore();
+  const [showDropdown, setShowDropdown] = useState(false);
 
   const SHEET_URL = autoTileSheetUrl || '/A2 - Terrain and Misc.jpg';
 
@@ -29,18 +28,16 @@ export const WinluPalette = () => {
             onClick={() => {
               setSelectedBlock(c, r);
               setTool('paint');
+              setShowDropdown(false);
             }}
             className={`
-              relative overflow-hidden border rounded-sm transition-all
-              ${isSelected ? 'border-green-500 ring-1 ring-green-500 shadow-md scale-105 z-10' : 'border-slate-700 hover:border-slate-500 hover:scale-105 opacity-80 hover:opacity-100'}
+              relative overflow-hidden border rounded-sm transition-all aspect-square
+              ${isSelected ? 'border-cyan-500 ring-2 ring-cyan-500 shadow-md scale-105 z-10' : 'border-slate-700 hover:border-slate-500 hover:scale-105 opacity-80 hover:opacity-100'}
             `}
             style={{
               width: '100%',
-              height: '32px', // Slightly larger for better visibility
               backgroundImage: `url('${SHEET_URL}')`,
               backgroundPosition: `${bgPosX}% ${bgPosY}%`,
-              // The image consists of COLS columns and ROWS rows, so we scale it by COLS*100% and ROWS*100%
-              // e.g. 4 columns -> 400% width, 8 rows -> 800% height
               backgroundSize: `${COLS * 100}% ${ROWS * 100}%`,
               imageRendering: 'pixelated'
             }}
@@ -51,6 +48,48 @@ export const WinluPalette = () => {
     }
     return buttons;
   };
+
+  if (compact) {
+    return (
+      <div className="relative">
+        <div className="flex items-center gap-1.5 bg-slate-950/50 p-1 rounded-lg border border-slate-700/50">
+           {/* Current Selection Preview */}
+           <div 
+             className="w-10 h-10 rounded border border-slate-700 relative overflow-hidden cursor-pointer hover:border-cyan-400 transition-colors"
+             onClick={() => setShowDropdown(!showDropdown)}
+             style={{
+               backgroundImage: `url('${SHEET_URL}')`,
+               backgroundPosition: `${selectedBlockCol * (100 / (COLS - 1 || 1))}% ${selectedBlockRow * (100 / (ROWS - 1 || 1))}%`,
+               backgroundSize: `${COLS * 100}% ${ROWS * 100}%`,
+               imageRendering: 'pixelated'
+             }}
+           >
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-center pb-0.5">
+                <ChevronDown size={10} className="text-white" />
+              </div>
+           </div>
+        </div>
+
+        {/* Floating Dropdown Grid */}
+        {showDropdown && (
+          <>
+            <div className="fixed inset-0 z-[100]" onClick={() => setShowDropdown(false)} />
+            <div className="absolute top-full left-0 mt-2 bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-xl shadow-2xl p-3 z-[101] animate-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between mb-3 px-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <Grid size={12} className="text-cyan-500" /> Choose Biome
+                </label>
+                <div className="text-[9px] text-slate-500 font-mono">4x8 GRID</div>
+              </div>
+              <div className="grid grid-cols-4 gap-2 w-[220px]">
+                {renderButtons()}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
 
   if (!autoTileSheetUrl) {
     return (
@@ -69,23 +108,10 @@ export const WinluPalette = () => {
           <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
             <Grid size={10} /> Winlu Biomes (A2)
           </label>
-          <button 
-            onClick={() => setShowDebug(true)}
-            className="text-[9px] flex items-center gap-1 px-1.5 py-0.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded transition-colors"
-          >
-            <Bug size={8} /> DEBUG
-          </button>
        </div>
        <div className="grid grid-cols-4 gap-1.5 bg-slate-900/50 p-1.5 rounded border border-slate-800/50">
          {renderButtons()}
        </div>
-
-       {showDebug && (
-         <WinluDebugOverlay 
-           sheetUrl={SHEET_URL} 
-           onClose={() => setShowDebug(false)} 
-         />
-       )}
     </div>
   );
 };
