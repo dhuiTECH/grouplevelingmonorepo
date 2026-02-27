@@ -12,15 +12,9 @@ extend({
   Graphics: PIXI.Graphics,
 });
 
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      pixiContainer: any;
-      pixiSprite: any;
-      pixiGraphics: any;
-    }
-  }
-}
+const PixiContainer = 'pixiContainer' as any;
+const PixiSprite = 'pixiSprite' as any;
+const PixiGraphics = 'pixiGraphics' as any;
 
 interface PixiMapCanvasProps {
   width: number; 
@@ -95,40 +89,40 @@ const PixiTile = React.memo(({
   }, [width, height]);
 
   return (
-    <pixiContainer x={x} y={y} rotation={rotation * (Math.PI / 180)}>
+    <PixiContainer x={x} y={y} rotation={rotation * (Math.PI / 180)}>
       {/* Foam Layer */}
       {foamQuarterTextures ? (
-        <pixiContainer alpha={0.8}>
-          {foamQuarterTextures[0] && <pixiSprite texture={foamQuarterTextures[0]} x={0} y={0} width={24} height={24} />}
-          {foamQuarterTextures[1] && <pixiSprite texture={foamQuarterTextures[1]} x={24} y={0} width={24} height={24} />}
-          {foamQuarterTextures[2] && <pixiSprite texture={foamQuarterTextures[2]} x={0} y={24} width={24} height={24} />}
-          {foamQuarterTextures[3] && <pixiSprite texture={foamQuarterTextures[3]} x={24} y={24} width={24} height={24} />}
-        </pixiContainer>
+        <PixiContainer alpha={0.8}>
+          {foamQuarterTextures[0] && <PixiSprite texture={foamQuarterTextures[0]} x={0} y={0} width={24} height={24} />}
+          {foamQuarterTextures[1] && <PixiSprite texture={foamQuarterTextures[1]} x={24} y={0} width={24} height={24} />}
+          {foamQuarterTextures[2] && <PixiSprite texture={foamQuarterTextures[2]} x={0} y={24} width={24} height={24} />}
+          {foamQuarterTextures[3] && <PixiSprite texture={foamQuarterTextures[3]} x={24} y={24} width={24} height={24} />}
+        </PixiContainer>
       ) : foamTexture && (
-        <pixiSprite texture={foamTexture} x={0} y={0} width={48} height={48} alpha={0.8} />
+        <PixiSprite texture={foamTexture} x={0} y={0} width={48} height={48} alpha={0.8} />
       )}
       
       {/* Main Texture Layer */}
       {quarterTextures ? (
-        <pixiContainer 
+        <PixiContainer 
           eventMode={isInteractive ? 'static' : 'none'} 
           onpointerdown={onMouseDown} 
           cursor={isInteractive ? 'move' : 'default'}
         >
-          {quarterTextures[0] && <pixiSprite texture={quarterTextures[0]} x={0} y={0} width={24} height={24} />}
-          {quarterTextures[1] && <pixiSprite texture={quarterTextures[1]} x={24} y={0} width={24} height={24} />}
-          {quarterTextures[2] && <pixiSprite texture={quarterTextures[2]} x={0} y={24} width={24} height={24} />}
-          {quarterTextures[3] && <pixiSprite texture={quarterTextures[3]} x={24} y={24} width={24} height={24} />}
-        </pixiContainer>
+          {quarterTextures[0] && <PixiSprite texture={quarterTextures[0]} x={0} y={0} width={24} height={24} />}
+          {quarterTextures[1] && <PixiSprite texture={quarterTextures[1]} x={24} y={0} width={24} height={24} />}
+          {quarterTextures[2] && <PixiSprite texture={quarterTextures[2]} x={0} y={24} width={24} height={24} />}
+          {quarterTextures[3] && <PixiSprite texture={quarterTextures[3]} x={24} y={24} width={24} height={24} />}
+        </PixiContainer>
       ) : texture ? (
-        <pixiSprite 
+        <PixiSprite 
           texture={texture} width={width} height={height}
           eventMode={isInteractive ? 'static' : 'none'} onpointerdown={onMouseDown} cursor={isInteractive ? 'move' : 'default'}
         />
       ) : (
-        <pixiGraphics draw={drawPinkSquare} />
+        <PixiGraphics draw={drawPinkSquare} />
       )}
-    </pixiContainer>
+    </PixiContainer>
   );
 });
 
@@ -304,7 +298,7 @@ export const PixiMapCanvas: React.FC<PixiMapCanvasProps> = ({
         width={width || 800} height={height || 600} backgroundColor={0x000000} backgroundAlpha={0}      
         antialias={false} resolution={window.devicePixelRatio || 1} autoDensity={true}
       >
-        <pixiContainer x={transform.x} y={transform.y} scale={transform.scale}>
+        <PixiContainer x={transform.x} y={transform.y} scale={transform.scale}>
           
           {sortedTiles.map(tile => (
             <SmartPixiTile
@@ -314,8 +308,8 @@ export const PixiMapCanvas: React.FC<PixiMapCanvasProps> = ({
             />
           ))}
           
-          <pixiGraphics ref={selectionRef} />
-        </pixiContainer>
+          <PixiGraphics ref={selectionRef} />
+        </PixiContainer>
       </Application>
     </div>
   );
