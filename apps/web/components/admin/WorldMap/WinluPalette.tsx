@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useMapStore } from '@/lib/store/mapStore';
-import { Grid } from 'lucide-react';
+import { Grid, Bug } from 'lucide-react';
+import { WinluDebugOverlay } from './WinluDebugOverlay';
 
 export const WinluPalette = () => {
   const { setSelectedBlock, setTool, selectedBlockCol, selectedBlockRow, autoTileSheetUrl } = useMapStore();
+  const [showDebug, setShowDebug] = useState(false);
 
   const SHEET_URL = autoTileSheetUrl || '/A2 - Terrain and Misc.jpg';
 
@@ -67,10 +69,23 @@ export const WinluPalette = () => {
           <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
             <Grid size={10} /> Winlu Biomes (A2)
           </label>
+          <button 
+            onClick={() => setShowDebug(true)}
+            className="text-[9px] flex items-center gap-1 px-1.5 py-0.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded transition-colors"
+          >
+            <Bug size={8} /> DEBUG
+          </button>
        </div>
        <div className="grid grid-cols-4 gap-1.5 bg-slate-900/50 p-1.5 rounded border border-slate-800/50">
          {renderButtons()}
        </div>
+
+       {showDebug && (
+         <WinluDebugOverlay 
+           sheetUrl={SHEET_URL} 
+           onClose={() => setShowDebug(false)} 
+         />
+       )}
     </div>
   );
 };

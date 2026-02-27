@@ -116,10 +116,6 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
 
       try {
         const dimensions = await getImageDimensions(file);
-        if (dimensions.width % 48 !== 0 || dimensions.height % 48 !== 0) {
-          alert(`Skipping ${file.name}: Dimensions (${dimensions.width}x${dimensions.height}) must be divisible by 48.`);
-          continue;
-        }
 
         const publicUrl = await handleUploadAsset(file, 'tiles');
         if (publicUrl) {

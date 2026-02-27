@@ -83,7 +83,10 @@ interface MapState {
   isDraggingNode: boolean;
   isDraggingTile: boolean;
   draggingTileId: string | null;
+  isLoadingTiles: boolean;
   spawnPoint: { x: number; y: number } | null;
+  globalTick: number; // For shared animations
+  incrementTick: () => void;
   
   // Layout state
   sidebarWidth: number;
@@ -155,6 +158,8 @@ interface MapState {
   exportMap: () => string;
 }
 
+const syncQueue: Record<string, Promise<void>> = {};
+
 export const useMapStore = create<MapState>((set, get) => ({
   tiles: [],
   nodes: [],
@@ -166,7 +171,10 @@ export const useMapStore = create<MapState>((set, get) => ({
   isDraggingNode: false,
   isDraggingTile: false,
   draggingTileId: null,
+  isLoadingTiles: false,
   spawnPoint: null,
+  globalTick: 0,
+  incrementTick: () => set((state) => ({ globalTick: (state.globalTick + 1) % 1000 })),
 
   // Layout initial state
   sidebarWidth: 320,
@@ -267,6 +275,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   setCustomTiles: (customTiles) => set({ customTiles }),
 
   loadTilesFromSupabase: async () => {
+    set({ isLoadingTiles: true });
     // Load Global Settings
     const { data: settingsData } = await supabase.from('world_map_settings').select('*').eq('id', 1).maybeSingle();
     let initialWaterBaseId = null;
@@ -374,6 +383,7 @@ export const useMapStore = create<MapState>((set, get) => ({
         }))
       });
     }
+    set({ isLoadingTiles: false });
   },
 
   addNode: async (node) => {
@@ -538,57 +548,46 @@ export const useMapStore = create<MapState>((set, get) => ({
       }]
     }));
 
-    // 2. Sync Chunk to Supabase (Strip the bloat!)
-    const { data: existingChunk } = await supabase
-      .from('map_chunks')
-      .select('tile_data')
-      .eq('chunk_x', chunkX)
-      .eq('chunk_y', chunkY)
-      .maybeSingle();
-
-    let newTileData = existingChunk?.tile_data || [];
-    if (!Array.isArray(newTileData)) newTileData = [];
+    // 2. Sync Chunk to Supabase from the latest state (serialized to prevent race conditions)
+    const chunkKey = `${chunkX},${chunkY}`;
     
-    // Remove existing tile at this pos AND layer within chunk data
-    newTileData = newTileData.filter((t: any) => !(t.x === x && t.y === y && (t.layer || 0) === (layer || 0)));
-    
-    // Add new lightweight tile
-    newTileData.push({ 
-      x, 
-      y, 
-      imageUrl, 
-      layer: layer || 0, 
-      offsetX: offsetX || 0, 
-      offsetY: offsetY || 0, 
-      isAutoTile, 
-      bitmask, 
-      elevation, 
-      foamBitmask, 
-      smartType, 
-      blockCol: blockCol || 0,
-      blockRow: blockRow || 0,
-      block_col: blockCol || 0, // Fallback for old data
-      block_row: blockRow || 0, // Fallback for old data
-      rotation: rotation || 0
-    });
+    const sync = async () => {
+      // Wait for any existing sync for this chunk to finish
+      if (syncQueue[chunkKey]) {
+        await syncQueue[chunkKey];
+      }
 
-    await supabase.from('map_chunks').upsert({
-      chunk_x: chunkX,
-      chunk_y: chunkY,
-      tile_data: newTileData,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'chunk_x,chunk_y' });
+      const allTiles = get().tiles;
+      const chunkTiles = allTiles
+        .filter(t => Math.floor(t.x / CHUNK_SIZE) === chunkX && Math.floor(t.y / CHUNK_SIZE) === chunkY)
+        .map(t => {
+          const { id, ...rest } = t;
+          return {
+            ...rest,
+            block_col: t.blockCol || 0,
+            block_row: t.blockRow || 0
+          };
+        });
+
+      await supabase.from('map_chunks').upsert({
+        chunk_x: chunkX,
+        chunk_y: chunkY,
+        tile_data: chunkTiles,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'chunk_x,chunk_y' });
+    };
+
+    syncQueue[chunkKey] = sync();
+    await syncQueue[chunkKey];
   },
 
   batchAddTiles: async (newTiles) => {
     // Group tiles by chunk
-    const chunks: Record<string, any[]> = {};
+    const chunkKeys = new Set<string>();
     newTiles.forEach(tile => {
       const cx = Math.floor(tile.x / CHUNK_SIZE);
       const cy = Math.floor(tile.y / CHUNK_SIZE);
-      const key = `${cx},${cy}`;
-      if (!chunks[key]) chunks[key] = [];
-      chunks[key].push(tile);
+      chunkKeys.add(`${cx},${cy}`);
     });
 
     // 1. Update local state with full data
@@ -600,56 +599,44 @@ export const useMapStore = create<MapState>((set, get) => ({
       return { tiles: Array.from(tileMap.values()) };
     });
 
-    // 2. Update chunks in Supabase (Strip the bloat!)
-    for (const [key, tiles] of Object.entries(chunks)) {
+    // 2. Update all affected chunks in Supabase (serialized)
+    const allTiles = get().tiles;
+    const syncPromises = Array.from(chunkKeys).map(async (key) => {
       const [cx, cy] = key.split(',').map(Number);
       
-      const { data: existingChunk } = await supabase
-        .from('map_chunks')
-        .select('tile_data')
-        .eq('chunk_x', cx)
-        .eq('chunk_y', cy)
-        .maybeSingle();
+      const sync = async () => {
+        if (syncQueue[key]) await syncQueue[key];
 
-      let tileData = existingChunk?.tile_data || [];
-      if (!Array.isArray(tileData)) tileData = [];
+        const chunkTiles = allTiles
+          .filter(t => Math.floor(t.x / CHUNK_SIZE) === cx && Math.floor(t.y / CHUNK_SIZE) === cy)
+          .map(t => {
+            const { id, ...rest } = t;
+            return {
+              ...rest,
+              block_col: t.blockCol || 0,
+              block_row: t.blockRow || 0
+            };
+          });
 
-      tiles.forEach(newTile => {
-        tileData = tileData.filter((t: any) => !(t.x === newTile.x && t.y === newTile.y && (t.layer || 0) === (newTile.layer || 0)));
-        
-        // Push only lightweight tile
-        tileData.push({
-          x: newTile.x,
-          y: newTile.y,
-          imageUrl: newTile.imageUrl,
-          layer: newTile.layer || 0,
-          offsetX: newTile.offsetX || 0,
-          offsetY: newTile.offsetY || 0,
-          isAutoTile: newTile.isAutoTile,
-          bitmask: newTile.bitmask,
-          elevation: newTile.elevation,
-          foamBitmask: newTile.foamBitmask,
-          smartType: newTile.smartType,
-          blockCol: newTile.blockCol || 0,
-          blockRow: newTile.blockRow || 0,
-          block_col: newTile.blockCol || 0,
-          block_row: newTile.blockRow || 0,
-          rotation: newTile.rotation || 0
-        });
-      });
+        await supabase.from('map_chunks').upsert({
+          chunk_x: cx,
+          chunk_y: cy,
+          tile_data: chunkTiles,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'chunk_x,chunk_y' });
+      };
 
-      await supabase.from('map_chunks').upsert({
-        chunk_x: cx,
-        chunk_y: cy,
-        tile_data: tileData,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'chunk_x,chunk_y' });
-    }
+      syncQueue[key] = sync();
+      return syncQueue[key];
+    });
+
+    await Promise.all(syncPromises);
   },
 
   removeTileAt: async (x, y) => {
     const chunkX = Math.floor(x / CHUNK_SIZE);
     const chunkY = Math.floor(y / CHUNK_SIZE);
+    const chunkKey = `${chunkX},${chunkY}`;
 
     let removedTile: Tile | null = null;
     let targetLayer: number | undefined;
@@ -668,22 +655,32 @@ export const useMapStore = create<MapState>((set, get) => ({
       tiles: state.tiles.filter(t => !(t.x === x && t.y === y && (t.layer || 0) === targetLayer))
     }));
 
-    const { data: existingChunk } = await supabase
-      .from('map_chunks')
-      .select('tile_data')
-      .eq('chunk_x', chunkX)
-      .eq('chunk_y', chunkY)
-      .maybeSingle();
+    // Sync Chunk to Supabase (serialized)
+    const sync = async () => {
+      if (syncQueue[chunkKey]) await syncQueue[chunkKey];
 
-    if (existingChunk?.tile_data) {
-      const newTileData = existingChunk.tile_data.filter((t: any) => !(t.x === x && t.y === y && (t.layer || 0) === targetLayer));
+      const allTiles = get().tiles;
+      const chunkTiles = allTiles
+        .filter(t => Math.floor(t.x / CHUNK_SIZE) === chunkX && Math.floor(t.y / CHUNK_SIZE) === chunkY)
+        .map(t => {
+          const { id, ...rest } = t;
+          return {
+            ...rest,
+            block_col: t.blockCol || 0,
+            block_row: t.blockRow || 0
+          };
+        });
+
       await supabase.from('map_chunks').upsert({
         chunk_x: chunkX,
         chunk_y: chunkY,
-        tile_data: newTileData,
+        tile_data: chunkTiles,
         updated_at: new Date().toISOString()
       }, { onConflict: 'chunk_x,chunk_y' });
-    }
+    };
+
+    syncQueue[chunkKey] = sync();
+    await syncQueue[chunkKey];
 
     return removedTile;
   },
@@ -693,30 +690,41 @@ export const useMapStore = create<MapState>((set, get) => ({
     const tile = state.tiles.find(t => t.id === id);
     if (!tile) return;
 
-    const { x, y, layer } = tile;
+    const { x, y } = tile;
     const chunkX = Math.floor(x / CHUNK_SIZE);
     const chunkY = Math.floor(y / CHUNK_SIZE);
+    const chunkKey = `${chunkX},${chunkY}`;
 
     set((state) => ({
       tiles: state.tiles.filter(t => t.id !== id)
     }));
 
-    const { data: existingChunk } = await supabase
-      .from('map_chunks')
-      .select('tile_data')
-      .eq('chunk_x', chunkX)
-      .eq('chunk_y', chunkY)
-      .maybeSingle();
+    // Sync Chunk to Supabase (serialized)
+    const sync = async () => {
+      if (syncQueue[chunkKey]) await syncQueue[chunkKey];
 
-    if (existingChunk?.tile_data) {
-      const newTileData = existingChunk.tile_data.filter((t: any) => !(t.x === x && t.y === y && (t.layer || 0) === (layer || 0)));
+      const allTiles = get().tiles;
+      const chunkTiles = allTiles
+        .filter(t => Math.floor(t.x / CHUNK_SIZE) === chunkX && Math.floor(t.y / CHUNK_SIZE) === chunkY)
+        .map(t => {
+          const { id, ...rest } = t;
+          return {
+            ...rest,
+            block_col: t.blockCol || 0,
+            block_row: t.blockRow || 0
+          };
+        });
+
       await supabase.from('map_chunks').upsert({
         chunk_x: chunkX,
         chunk_y: chunkY,
-        tile_data: newTileData,
+        tile_data: chunkTiles,
         updated_at: new Date().toISOString()
       }, { onConflict: 'chunk_x,chunk_y' });
-    }
+    };
+
+    syncQueue[chunkKey] = sync();
+    await syncQueue[chunkKey];
   },
 
   moveTile: async (tileId, newX, newY, newOffsetX, newOffsetY) => {
@@ -726,7 +734,6 @@ export const useMapStore = create<MapState>((set, get) => ({
 
     const oldX = tile.x;
     const oldY = tile.y;
-    const layer = tile.layer || 0;
 
     // 1. Update local state with full data
     set((state) => ({
@@ -745,51 +752,41 @@ export const useMapStore = create<MapState>((set, get) => ({
     const newChunkX = Math.floor(newX / CHUNK_SIZE);
     const newChunkY = Math.floor(newY / CHUNK_SIZE);
 
-    // Remove from old chunk
-    const { data: oldChunk } = await supabase.from('map_chunks').select('tile_data').eq('chunk_x', oldChunkX).eq('chunk_y', oldChunkY).maybeSingle();
-    if (oldChunk?.tile_data) {
-      const updatedOldTileData = oldChunk.tile_data.filter((t: any) => !(t.x === oldX && t.y === oldY && (t.layer || 0) === layer));
-      await supabase.from('map_chunks').upsert({
-        chunk_x: oldChunkX,
-        chunk_y: oldChunkY,
-        tile_data: updatedOldTileData,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'chunk_x,chunk_y' });
+    const oldChunkKey = `${oldChunkX},${oldChunkY}`;
+    const newChunkKey = `${newChunkX},${newChunkY}`;
+
+    const syncChunk = async (cx: number, cy: number, key: string) => {
+      const sync = async () => {
+        if (syncQueue[key]) await syncQueue[key];
+
+        const allTiles = get().tiles;
+        const chunkTiles = allTiles
+          .filter(t => Math.floor(t.x / CHUNK_SIZE) === cx && Math.floor(t.y / CHUNK_SIZE) === cy)
+          .map(t => {
+            const { id, ...rest } = t;
+            return {
+              ...rest,
+              block_col: t.blockCol || 0,
+              block_row: t.blockRow || 0
+            };
+          });
+
+        await supabase.from('map_chunks').upsert({
+          chunk_x: cx,
+          chunk_y: cy,
+          tile_data: chunkTiles,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'chunk_x,chunk_y' });
+      };
+
+      syncQueue[key] = sync();
+      await syncQueue[key];
+    };
+
+    await syncChunk(oldChunkX, oldChunkY, oldChunkKey);
+    if (oldChunkKey !== newChunkKey) {
+      await syncChunk(newChunkX, newChunkY, newChunkKey);
     }
-
-    // Add to new chunk (Strip the bloat!)
-    const { data: newChunk } = await supabase.from('map_chunks').select('tile_data').eq('chunk_x', newChunkX).eq('chunk_y', newChunkY).maybeSingle();
-    let newTileData = newChunk?.tile_data || [];
-    if (!Array.isArray(newTileData)) newTileData = [];
-    
-    // Ensure we don't duplicate if it moved within the same chunk
-    newTileData = newTileData.filter((t: any) => !(t.x === newX && t.y === newY && (t.layer || 0) === layer));
-    
-    newTileData.push({ 
-      x: newX, 
-      y: newY, 
-      imageUrl: tile.imageUrl, 
-      layer: layer, 
-      offsetX: newOffsetX, 
-      offsetY: newOffsetY,
-      isAutoTile: tile.isAutoTile,
-      bitmask: tile.bitmask,
-      elevation: tile.elevation,
-      foamBitmask: tile.foamBitmask,
-      smartType: tile.smartType,
-      blockCol: tile.blockCol || 0,
-      blockRow: tile.blockRow || 0,
-      block_col: tile.blockCol || 0,
-      block_row: tile.blockRow || 0,
-      rotation: tile.rotation || 0
-    });
-
-    await supabase.from('map_chunks').upsert({
-      chunk_x: newChunkX,
-      chunk_y: newChunkY,
-      tile_data: newTileData,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'chunk_x,chunk_y' });
   },
 
   exportMap: () => {

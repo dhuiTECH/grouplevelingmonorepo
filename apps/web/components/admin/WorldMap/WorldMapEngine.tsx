@@ -16,7 +16,7 @@ import { generateAsset } from '@/lib/services/mapGeminiService';
 import NodeEditModal, { NodeFormData } from '../NodeEditModal';
 import { supabase } from '@/lib/supabase';
 
-const WORLD_SIZE = 128000; 
+const WORLD_SIZE = 100000; 
 const TILE_SIZE = 48;
 
 interface WorldMapEngineProps {
@@ -27,15 +27,16 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const transformComponentRef = useRef<ReactZoomPanPinchRef>(null);
   const dropTargetRef = useRef<HTMLDivElement>(null);
   const { 
-    nodes, addNode, updateNode, selectNode, selectedNodeId, 
+    addNode, updateNode, selectNode, selectedNodeId, 
     addTileSimple, selectedTileId, customTiles, selectedTool, 
     activeNodeType, removeTileAt, removeNode, batchAddTiles, 
-    loadTilesFromSupabase, tiles, isDraggingTile, draggingTileId, 
+    loadTilesFromSupabase, isDraggingTile, draggingTileId, 
     setDraggingTile, moveTile, removeTileById,
     isSmartMode, isRaiseMode, isFoamEnabled, autoTileSheetUrl,
     selectedSmartType, waterBaseTile, foamStripTile, setTool,
     sidebarWidth, setSidebarWidth, rightSidebarWidth, setRightSidebarWidth,
-    favorites, setFavorite, selectTile
+    favorites, setFavorite, selectTile, incrementTick,
+    isLoadingTiles, tiles, nodes
   } = useMapStore();
   
   const [isResizingLeft, setIsResizingLeft] = useState(false);
@@ -67,32 +68,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     };
   }, [isResizingLeft, isResizingRight, setSidebarWidth, setRightSidebarWidth]);
 
-  // Resize Handlers
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isResizingLeft) {
-        const newWidth = Math.max(200, Math.min(600, e.clientX));
-        setSidebarWidth(newWidth);
-      }
-      if (isResizingRight) {
-        const newWidth = Math.max(200, Math.min(600, window.innerWidth - e.clientX));
-        setRightSidebarWidth(newWidth);
-      }
-    };
-    const handleMouseUp = () => {
-      setIsResizingLeft(false);
-      setIsResizingRight(false);
-    };
-    if (isResizingLeft || isResizingRight) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isResizingLeft, isResizingRight, setSidebarWidth, setRightSidebarWidth]);
-  
   const [isGenerating, setIsGenerating] = useState(false);
   const [seed, setSeed] = useState<string>(Math.random().toString(36).substring(7));
   
@@ -100,7 +75,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const [scale, setScale] = useState(1);
   const [positionX, setPositionX] = useState(0);
   const [positionY, setPositionY] = useState(0);
-  const [viewport, setViewport] = useState({ width: 0, height: 0 }); // Container dimensions
+  const [viewport, setViewport] = useState({ width: 1200, height: 800 }); // Reasonable default
 
   const [isSpacePressed, setIsSpacePressed] = useState(false);
 
@@ -139,8 +114,76 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const [undoStack, setUndoStack] = useState<any[]>([]);
   const [dragGrabOffset, setDragGrabOffset] = useState<{ x: number, y: number } | null>(null);
 
+  // Zoom to Fit Logic
+  const zoomToFit = useCallback((animate = true) => {
+    if (!transformComponentRef.current) return;
+
+    const allTiles = useMapStore.getState().tiles;
+    const allNodes = useMapStore.getState().nodes;
+
+    if (allTiles.length === 0 && allNodes.length === 0) {
+      transformComponentRef.current.centerView(animate ? 400 : 0);
+      return;
+    }
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+    allTiles.forEach(t => {
+      if (typeof t.x === 'number' && typeof t.y === 'number') {
+        minX = Math.min(minX, t.x);
+        minY = Math.min(minY, t.y);
+        maxX = Math.max(maxX, t.x);
+        maxY = Math.max(maxY, t.y);
+      }
+    });
+
+    allNodes.forEach(n => {
+      if (typeof n.x === 'number' && typeof n.y === 'number') {
+        minX = Math.min(minX, n.x);
+        minY = Math.min(minY, n.y);
+        maxX = Math.max(maxX, n.x);
+        maxY = Math.max(maxY, n.y);
+      }
+    });
+
+    if (minX === Infinity || minY === Infinity) {
+      transformComponentRef.current.centerView(animate ? 400 : 0);
+      return;
+    }
+
+    // Padding
+    minX -= 5; minY -= 5; maxX += 5; maxY += 5;
+
+    const contentWidth = (maxX - minX + 1) * TILE_SIZE;
+    const contentHeight = (maxY - minY + 1) * TILE_SIZE;
+
+    const containerW = dropTargetRef.current?.clientWidth || viewport.width;
+    const containerH = dropTargetRef.current?.clientHeight || viewport.height;
+
+    if (containerW <= 0 || containerH <= 0) return;
+
+    const scaleX = containerW / contentWidth;
+    const scaleY = containerH / contentHeight;
+    const targetScale = Math.max(0.005, Math.min(scaleX, scaleY, 0.8));
+
+    const centerX = ((minX + maxX + 1) / 2) * TILE_SIZE + WORLD_SIZE / 2;
+    const centerY = ((minY + maxY + 1) / 2) * TILE_SIZE + WORLD_SIZE / 2;
+
+    const targetPosX = containerW / 2 - centerX * targetScale;
+    const targetPosY = containerH / 2 - centerY * targetScale;
+
+    transformComponentRef.current.setTransform(targetPosX, targetPosY, targetScale, animate ? 400 : 0, 'easeOut');
+  }, [tiles.length, nodes.length]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Zoom to Fit (F or 0)
+      if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        if (e.key.toLowerCase() === 'f' || e.key === '0') {
+          zoomToFit();
+          return;
+        }
+      }
       // Copy (Ctrl+C)
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         handleCopySelection();
@@ -186,6 +229,20 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   }, [undoStack]); // Added undoStack to dependencies
 
   const [cursorCoords, setCursorCoords] = useState({ x: 0, y: 0 });
+  const [smoothCursorCoords, setSmoothCursorCoords] = useState({ x: 0, y: 0 });
+
+
+  const hasInitialZoomed = useRef(false);
+
+  useEffect(() => {
+    if (!isLoadingTiles && !hasInitialZoomed.current && (tiles.length > 0 || nodes.length > 0)) {
+      const timer = setTimeout(() => {
+        zoomToFit(false);
+        hasInitialZoomed.current = true;
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoadingTiles, zoomToFit, tiles.length, nodes.length]);
 
   useEffect(() => {
     if (dropTargetRef.current) {
@@ -196,18 +253,22 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
       fetchSupportData();
       fetchIconGallery();
       
-      // Initialize viewport
-      if (dropTargetRef.current) {
-        const clientWidth = dropTargetRef.current.clientWidth;
-        const clientHeight = dropTargetRef.current.clientHeight;
-        setViewport({
-          width: clientWidth,
-          height: clientHeight
-        });
-      }
+      const updateViewportSize = () => {
+        if (dropTargetRef.current) {
+          setViewport({
+            width: dropTargetRef.current.clientWidth,
+            height: dropTargetRef.current.clientHeight
+          });
+        }
+      };
+
+      updateViewportSize();
+      window.addEventListener('resize', updateViewportSize);
+
+      return () => window.removeEventListener('resize', updateViewportSize);
     };
     init();
-  }, [loadTilesFromSupabase]);
+  }, [loadTilesFromSupabase, sidebarWidth, rightSidebarWidth]);
 
   useEffect(() => {
     // Initialize zoom scale for CSS
@@ -520,25 +581,68 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     const elevation = tile.elevation || 0;
     
     const getBitmaskFresh = (x: number, y: number, elev: number) => {
-        const check = (dx: number, dy: number, val: number) => {
-          const n = currentTiles.find(t => t.x === x + dx && t.y === y + dy && (t.layer || 0) === 0);
-          return (n?.elevation === elev && n?.smartType === tile.smartType) ? val : 0;
-        };
-        return check(0, -1, 8) | check(1, 0, 1) | check(0, 1, 2) | check(-1, 0, 4);
+      const has = (dx: number, dy: number) => {
+        // FRESH STATE EVERY TIME — this fixes horizontal detection
+        const currentTiles = useMapStore.getState().tiles;
+        const n = currentTiles.find(t => t.x === x + dx && t.y === y + dy && (t.layer || 0) === 0);
+        return (n?.elevation === elev && n?.smartType === tile.smartType);
+      };
+    
+      const N = has(0, -1);
+      const E = has(1, 0);
+      const S = has(0, 1);
+      const W = has(-1, 0);
+    
+      const NE = N && E && has(1, -1);
+      const SE = S && E && has(1, 1);
+      const SW = S && W && has(-1, 1);
+      const NW = N && W && has(-1, -1);
+    
+      let mask = 0;
+      if (N) mask |= 1;
+      if (NE) mask |= 2;
+      if (E) mask |= 4;
+      if (SE) mask |= 8;
+      if (S) mask |= 16;
+      if (SW) mask |= 32;
+      if (W) mask |= 64;
+      if (NW) mask |= 128;
+    
+      // Debug (remove after testing)
+      console.log(`Bitmask @ (${x},${y}): ${mask} (binary: ${mask.toString(2).padStart(8, '0')})`);
+    
+      return mask;
     };
 
     const newBitmask = getBitmaskFresh(tx, ty, elevation);
     
     let newFoamBitmask = 0;
     if (useMapStore.getState().isFoamEnabled && elevation === 1) {
-       const getFoamFresh = (x: number, y: number) => {
-          const check = (dx: number, dy: number, val: number) => {
-             const n = currentTiles.find(t => t.x === x + dx && t.y === y + dy && (t.layer || 0) === 0);
-             return (n?.elevation !== 1) ? val : 0;
-          };
-          return check(0, -1, 8) | check(1, 0, 1) | check(0, 1, 2) | check(-1, 0, 4);
+       const hasFoam = (dx: number, dy: number) => {
+          const n = currentTiles.find(t => t.x === tx + dx && t.y === ty + dy && (t.layer || 0) === 0);
+          return (n?.elevation !== 1);
        };
-       newFoamBitmask = getFoamFresh(tx, ty);
+
+       const N = hasFoam(0, -1);
+       const E = hasFoam(1, 0);
+       const S = hasFoam(0, 1);
+       const W = hasFoam(-1, 0);
+       
+       const NE = N && E && hasFoam(1, -1);
+       const SE = S && E && hasFoam(1, 1);
+       const SW = S && W && hasFoam(-1, 1);
+       const NW = N && W && hasFoam(-1, -1);
+
+       let fmask = 0;
+       if (N) fmask |= 1;
+       if (NE) fmask |= 2;
+       if (E) fmask |= 4;
+       if (SE) fmask |= 8;
+       if (S) fmask |= 16;
+       if (SW) fmask |= 32;
+       if (W) fmask |= 64;
+       if (NW) fmask |= 128;
+       newFoamBitmask = fmask;
     }
 
     if (tile.bitmask !== newBitmask || tile.foamBitmask !== newFoamBitmask) {
@@ -548,22 +652,34 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
          )
        }));
 
-       addTileSimple(
-         tx, ty, tile.type, tile.imageUrl, tile.isSpritesheet, 
-         tile.frameCount, tile.frameWidth, tile.frameHeight, tile.animationSpeed, 
-         tile.layer, tile.offsetX, tile.offsetY, tile.isWalkable, tile.snapToGrid, tile.isAutoFill,
-         true, newBitmask, elevation, useMapStore.getState().isFoamEnabled, newFoamBitmask,
-         tile.smartType, tile.rotation || 0
-       );
+      addTileSimple(
+        tx, ty, tile.type, tile.imageUrl, tile.isSpritesheet, 
+        tile.frameCount, tile.frameWidth, tile.frameHeight, tile.animationSpeed, 
+        tile.layer, tile.offsetX, tile.offsetY, tile.isWalkable, tile.snapToGrid, tile.isAutoFill,
+        true, newBitmask, elevation, useMapStore.getState().isFoamEnabled, newFoamBitmask,
+        tile.smartType, tile.rotation || 0,
+        tile.blockCol, tile.blockRow
+      );
     }
   };
 
   const updateTileAndNeighbors = async (tx: number, ty: number) => {
-     await calculateAndUpdateTile(tx, ty);
-     await calculateAndUpdateTile(tx + 1, ty);
-     await calculateAndUpdateTile(tx - 1, ty);
-     await calculateAndUpdateTile(tx, ty + 1);
-     await calculateAndUpdateTile(tx, ty - 1);
+     // Standard 8-direction update for Winlu A2 Autotiling
+     const neighbors = [
+       { x: tx, y: ty },     // Center
+       { x: tx, y: ty - 1 }, // N
+       { x: tx + 1, y: ty }, // E
+       { x: tx, y: ty + 1 }, // S
+       { x: tx - 1, y: ty }, // W
+       { x: tx + 1, y: ty - 1 }, // NE
+       { x: tx + 1, y: ty + 1 }, // SE
+       { x: tx - 1, y: ty + 1 }, // SW
+       { x: tx - 1, y: ty - 1 }  // NW
+     ];
+
+     for (const pos of neighbors) {
+       await calculateAndUpdateTile(pos.x, pos.y);
+     }
   };
 
   const [isSelecting, setIsSelecting] = useState(false);
@@ -632,6 +748,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
     if (isMove) {
       setCursorCoords({ x: gx, y: gy });
+      setSmoothCursorCoords({ x: worldX - WORLD_SIZE / 2, y: worldY - WORLD_SIZE / 2 });
       
       if (state.isDraggingTile && state.draggingTileId) {
         const draggingTile = state.tiles.find(t => t.id === state.draggingTileId);
@@ -643,12 +760,8 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           const exactX = worldX - WORLD_SIZE / 2;
           const exactY = worldY - WORLD_SIZE / 2;
           
-        const targetLogicalX = exactX - (dragGrabOffset?.x || 0);
-        const targetLogicalY = exactY - (dragGrabOffset?.y || 0);
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/e3253593-de95-4d0a-9242-349fb357def6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WorldMapEngine.tsx:621',message:'Drag Math',data:{exactX, exactY, targetLogicalX, targetLogicalY},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
+          const targetLogicalX = exactX - (dragGrabOffset?.x || 0);
+          const targetLogicalY = exactY - (dragGrabOffset?.y || 0);
           
           offsetX = Math.round(targetLogicalX - (gx * TILE_SIZE + TILE_SIZE / 2));
           offsetY = Math.round(targetLogicalY - (gy * TILE_SIZE + TILE_SIZE));
@@ -671,7 +784,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         let offsetX = 0;
         let offsetY = 0;
         
-        if ((tile.layer === 1 || tile.layer === 2) && !tile.snapToGrid) {
+        if (!tile.snapToGrid) {
           const exactX = worldX - WORLD_SIZE / 2;
           const exactY = worldY - WORLD_SIZE / 2;
           
@@ -702,40 +815,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           previousTile: prevTile || null
         }]);
         
-        if (selectedSmartType === 'grass') {
-          const tilesToPaint = [];
-          for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-              tilesToPaint.push({
-                x: gx + dx,
-                y: gy + dy,
-                type: 'custom',
-                imageUrl: tile.url,
-                isSpritesheet: tile.isSpritesheet,
-                frameCount: tile.frameCount,
-                frameWidth: tile.frameWidth,
-                frameHeight: tile.frameHeight,
-                animationSpeed: tile.animationSpeed,
-                layer: tile.layer || 0,
-                offsetX: 0,
-                offsetY: 0,
-                isWalkable: tile.isWalkable,
-                snapToGrid: tile.snapToGrid,
-                isAutoFill: tile.isAutoFill,
-                isAutoTile: true,
-                bitmask: 0,
-                elevation: elevation,
-                hasFoam: hasFoam,
-                foamBitmask: 0,
-                smartType: 'grass',
-                blockCol: state.selectedBlockCol,
-                blockRow: state.selectedBlockRow,
-                rotation: tile.rotation || 0
-              });
-            }
-          }
-          await useMapStore.getState().batchAddTiles(tilesToPaint);
-        } else {
         await addTileSimple(
           gx, gy, 'custom', tile.url, tile.isSpritesheet, tile.frameCount, 
           tile.frameWidth, tile.frameHeight, tile.animationSpeed, tile.layer, 
@@ -744,9 +823,8 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           state.selectedBlockCol, state.selectedBlockRow
         );
 
-          if (isAutoTile) {
-             await updateTileAndNeighbors(gx, gy);
-          }
+        if (isAutoTile) {
+           await updateTileAndNeighbors(gx, gy);
         }
       }
     } else if (tool === 'node' && activeNodeType) {
@@ -766,6 +844,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           previousTile: removedTile
         }]);
 
+        // Recalculate neighbors after erasing an autotile
         if (removedTile.isAutoTile) {
            await updateTileAndNeighbors(gx, gy);
         }
@@ -1062,10 +1141,10 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
         const autoFillTiles = customTiles.filter(t => t.isAutoFill !== false);
         
-        const waterTiles = autoFillTiles.filter(t => (t.layer || 0) < 0 || t.category === 'water_base');
-        const groundTiles = autoFillTiles.filter(t => (!t.layer || t.layer === 0) && t.category !== 'water_base' && t.category !== 'foam_strip');
-        const roadTiles = autoFillTiles.filter(t => t.layer === 1 || t.category === 'road');
-        const propTiles = autoFillTiles.filter(t => t.layer >= 2 || t.category === 'prop');
+        const waterTiles = autoFillTiles.filter(t => (t.layer ?? 0) < 0 || t.category === 'water_base');
+        const groundTiles = autoFillTiles.filter(t => (t.layer ?? 0) === 0 && t.category !== 'water_base' && t.category !== 'foam_strip');
+        const roadTiles = autoFillTiles.filter(t => (t.layer ?? 0) === 1 || t.category === 'road');
+        const propTiles = autoFillTiles.filter(t => (t.layer ?? 0) >= 2 || t.category === 'prop');
 
         const tilesByType: Record<string, typeof groundTiles> = {
           water: waterTiles,
@@ -1192,6 +1271,13 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const onAddStockItemSync = (itemId: string) => onAddStockItem(itemId);
   const onRemoveStockItemSync = (exclusiveId: string) => onRemoveStockItem(exclusiveId);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      incrementTick();
+    }, 100); // 10 ticks per second
+    return () => clearInterval(interval);
+  }, [incrementTick]);
+
   return (
     <div className="flex w-full h-full bg-[#0a0a0a] overflow-hidden font-mono text-slate-300">
       <MapSidebar onEditNode={handleEditNodeProperties} onGoToNode={goToNode} />
@@ -1209,7 +1295,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
             <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-1.5 flex gap-1 shadow-2xl">
               <button onClick={() => transformComponentRef.current?.zoomIn()} className="p-2.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Plus size={20} /></button>
               <button onClick={() => transformComponentRef.current?.zoomOut()} className="p-2.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Minus size={20} /></button>
-              <button onClick={() => transformComponentRef.current?.centerView()} className="p-2.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Maximize size={20} /></button>
+              <button onClick={() => zoomToFit()} className="p-2.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all" title="Zoom to Fit (F)"><Maximize size={20} /></button>
             </div>
             
             <div className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-2 shadow-2xl">
@@ -1281,28 +1367,27 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
           <TransformWrapper 
             ref={transformComponentRef} 
-            initialScale={1.0} 
-            minScale={0.1} 
+            initialScale={0.5} 
+            minScale={0.001} 
             maxScale={10} 
-            centerOnInit
+            centerOnInit={false}
+            initialPositionX={-(WORLD_SIZE / 2 * 0.5) + (viewport.width / 2)}
+            initialPositionY={-(WORLD_SIZE / 2 * 0.5) + (viewport.height / 2)}
             onTransformed={(p) => {
               setScale(p.state.scale);
               setPositionX(p.state.positionX);
               setPositionY(p.state.positionY);
               
               if (dropTargetRef.current) {
-                const clientWidth = dropTargetRef.current.clientWidth;
-                const clientHeight = dropTargetRef.current.clientHeight;
-                setViewport({
-                  width: clientWidth,
-                  height: clientHeight
-                });
                 dropTargetRef.current.style.setProperty('--zoom-scale', p.state.scale.toString());
               }
             }}
             limitToBounds={false} 
             wheel={{ step: 0.2 }} 
-            panning={{ disabled: !isSpacePressed && (selectedTool !== 'select' || isDraggingTile) }}
+            panning={{ 
+              disabled: !isSpacePressed && (selectedTool !== 'select' || isDraggingTile),
+              velocityDisabled: true // Prevent "flinging" feel
+            }}
           >
             <TransformComponent wrapperClass="w-full h-full">
               <div 
@@ -1335,19 +1420,27 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                   }}
                 />
 
-                {/* Ghost Tile Preview */}
                 {!isSpacePressed && selectedTool === 'paint' && selectedTileId && (
                   (() => {
                     const tile = customTiles.find(t => t.id === selectedTileId);
                     if (!tile) return null;
                     const displayWidth = tile.frameWidth || TILE_SIZE;
                     const displayHeight = tile.frameHeight || TILE_SIZE;
+
+                    const left = tile.snapToGrid 
+                      ? cursorCoords.x * TILE_SIZE + WORLD_SIZE / 2 - (displayWidth - TILE_SIZE) / 2
+                      : smoothCursorCoords.x + WORLD_SIZE / 2 - (displayWidth / 2);
+                    
+                    const top = tile.snapToGrid
+                      ? cursorCoords.y * TILE_SIZE + WORLD_SIZE / 2 - (displayHeight - TILE_SIZE)
+                      : smoothCursorCoords.y + WORLD_SIZE / 2 - (displayHeight);
+
                     return (
                       <div 
                         className="absolute pointer-events-none opacity-50 z-[60]"
                         style={{
-                          left: cursorCoords.x * TILE_SIZE + WORLD_SIZE / 2 - (displayWidth - TILE_SIZE) / 2,
-                          top: cursorCoords.y * TILE_SIZE + WORLD_SIZE / 2 - (displayHeight - TILE_SIZE),
+                          left,
+                          top,
                           width: displayWidth,
                           height: displayHeight,
                           backgroundImage: `url(${tile.url})`,
@@ -1363,24 +1456,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                   })()
                 )}
                 
-                {nodes.filter(node => {
-                  const x = node.x * TILE_SIZE + WORLD_SIZE / 2;
-                  const y = node.y * TILE_SIZE + WORLD_SIZE / 2;
-                  
-                  // Calculate visible bounds manually for DOM culling
-                  const visibleLeft = -positionX / scale;
-                  const visibleTop = -positionY / scale;
-                  const visibleRight = visibleLeft + (viewport.width / scale);
-                  const visibleBottom = visibleTop + (viewport.height / scale);
-                  
-                  const BUFFER = 200;
-                  return (
-                    x + TILE_SIZE >= visibleLeft - BUFFER &&
-                    x <= visibleRight + BUFFER &&
-                    y + TILE_SIZE >= visibleTop - BUFFER &&
-                    y <= visibleBottom + BUFFER
-                  );
-                }).map(node => (
+                {nodes.map(node => (
                   <div 
                     key={node.id} 
                     id={`node-${node.id}`} 

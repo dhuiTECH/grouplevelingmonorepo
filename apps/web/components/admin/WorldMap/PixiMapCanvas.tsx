@@ -1,14 +1,17 @@
 'use client';
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Application, extend, useTick } from '@pixi/react';
 import * as PIXI from 'pixi.js';
 import { useMapStore, Tile, CustomTile } from '@/lib/store/mapStore';
 import { getA2SubTileCoordinates } from './mapUtils';
 
 // Register PixiJS components for use in JSX
-extend(PIXI);
+extend({
+  Container: PIXI.Container,
+  Sprite: PIXI.Sprite,
+  Graphics: PIXI.Graphics,
+});
 
-// Declare the pixi elements for TypeScript
 declare global {
   namespace JSX {
     interface IntrinsicElements {
@@ -20,16 +23,23 @@ declare global {
 }
 
 interface PixiMapCanvasProps {
-  width: number; // Viewport/Container width
-  height: number; // Viewport/Container height
-  worldSize: number; // Total world size (e.g. 128000)
-  transform: { x: number; y: number; scale: number }; // From react-zoom-pan-pinch
+  width: number; 
+  height: number; 
+  worldSize: number; 
+  transform: { x: number; y: number; scale: number }; 
   onPropMouseDown?: (tileId: string, e: any) => void;
   waterBaseTile?: CustomTile;
   foamStripTile?: CustomTile;
 }
 
 const TILE_SIZE = 48;
+const WORLD_SIZE = 100000;
+
+// --- Helper to normalize URLs for comparison (ignoring query params) ---
+const normalizeUrl = (url: string | undefined | null) => {
+  if (!url) return '';
+  return url.split('?')[0];
+};
 
 // --- Hook for Async Texture Loading ---
 const useTexture = (url: string | undefined | null) => {
@@ -71,27 +81,13 @@ const useTexture = (url: string | undefined | null) => {
 
 // --- Sub-component for individual Tile Rendering ---
 const PixiTile = React.memo(({ 
-  texture, 
-  x, 
-  y, 
-  width, 
-  height, 
-  rotation, 
-  onMouseDown, 
-  isInteractive,
-  foamTexture,
-  foamOpacity
+  texture, x, y, width, height, rotation, onMouseDown, isInteractive, foamTexture, quarterTextures, foamQuarterTextures
 }: { 
-  texture: PIXI.Texture | null; 
-  x: number; 
-  y: number; 
-  width: number; 
-  height: number; 
-  rotation: number;
-  onMouseDown?: (e: any) => void;
-  isInteractive: boolean;
-  foamTexture?: PIXI.Texture | null;
-  foamOpacity?: number;
+  texture: PIXI.Texture | null; x: number; y: number; width: number; height: number; 
+  rotation: number; onMouseDown?: (e: any) => void; isInteractive: boolean; 
+  foamTexture?: PIXI.Texture | null; 
+  quarterTextures?: (PIXI.Texture | null)[];
+  foamQuarterTextures?: (PIXI.Texture | null)[];
 }) => {
   const drawPinkSquare = React.useCallback((g: PIXI.Graphics) => {
     g.clear();
@@ -99,26 +95,35 @@ const PixiTile = React.memo(({
   }, [width, height]);
 
   return (
-    <pixiContainer position={[x, y]} rotation={rotation * (Math.PI / 180)}>
-      {foamTexture && (
-        <pixiSprite 
-          texture={foamTexture}
-          x={0} 
-          y={0} 
-          width={48}
-          height={48}
-          alpha={foamOpacity || 0.8}
-        />
+    <pixiContainer x={x} y={y} rotation={rotation * (Math.PI / 180)}>
+      {/* Foam Layer */}
+      {foamQuarterTextures ? (
+        <pixiContainer alpha={0.8}>
+          {foamQuarterTextures[0] && <pixiSprite texture={foamQuarterTextures[0]} x={0} y={0} width={24} height={24} />}
+          {foamQuarterTextures[1] && <pixiSprite texture={foamQuarterTextures[1]} x={24} y={0} width={24} height={24} />}
+          {foamQuarterTextures[2] && <pixiSprite texture={foamQuarterTextures[2]} x={0} y={24} width={24} height={24} />}
+          {foamQuarterTextures[3] && <pixiSprite texture={foamQuarterTextures[3]} x={24} y={24} width={24} height={24} />}
+        </pixiContainer>
+      ) : foamTexture && (
+        <pixiSprite texture={foamTexture} x={0} y={0} width={48} height={48} alpha={0.8} />
       )}
       
-      {texture ? (
-        <pixiSprite 
-          texture={texture} 
-          width={width} 
-          height={height}
-          eventMode={isInteractive ? 'static' : 'none'}
-          onpointerdown={onMouseDown}
+      {/* Main Texture Layer */}
+      {quarterTextures ? (
+        <pixiContainer 
+          eventMode={isInteractive ? 'static' : 'none'} 
+          onpointerdown={onMouseDown} 
           cursor={isInteractive ? 'move' : 'default'}
+        >
+          {quarterTextures[0] && <pixiSprite texture={quarterTextures[0]} x={0} y={0} width={24} height={24} />}
+          {quarterTextures[1] && <pixiSprite texture={quarterTextures[1]} x={24} y={0} width={24} height={24} />}
+          {quarterTextures[2] && <pixiSprite texture={quarterTextures[2]} x={0} y={24} width={24} height={24} />}
+          {quarterTextures[3] && <pixiSprite texture={quarterTextures[3]} x={24} y={24} width={24} height={24} />}
+        </pixiContainer>
+      ) : texture ? (
+        <pixiSprite 
+          texture={texture} width={width} height={height}
+          eventMode={isInteractive ? 'static' : 'none'} onpointerdown={onMouseDown} cursor={isInteractive ? 'move' : 'default'}
         />
       ) : (
         <pixiGraphics draw={drawPinkSquare} />
@@ -129,88 +134,97 @@ const PixiTile = React.memo(({
 
 PixiTile.displayName = 'PixiTile';
 
-// --- Smart Tile Component that handles its own logic/loading ---
+// --- Smart Tile Component ---
 const SmartPixiTile = React.memo(({ 
-  tile, 
-  customTiles, 
-  autoTileSheetUrl, 
-  dirtSheetUrl, 
-  isFoamEnabled, 
-  foamStripTile, 
-  worldSize, 
-  foamOpacity,
-  onPropMouseDown
+  tile, customTiles, autoTileSheetUrl, dirtSheetUrl, isFoamEnabled, foamStripTile, worldSize, onPropMouseDown
 }: {
-  tile: Tile;
-  customTiles: CustomTile[];
-  autoTileSheetUrl?: string | null;
-  dirtSheetUrl?: string | null;
-  isFoamEnabled: boolean;
-  foamStripTile?: CustomTile;
-  worldSize: number;
-  foamOpacity: number;
-  onPropMouseDown?: (tileId: string, e: any) => void;
+  tile: Tile; customTiles: CustomTile[]; autoTileSheetUrl?: string | null; dirtSheetUrl?: string | null;
+  isFoamEnabled: boolean; foamStripTile?: CustomTile; worldSize: number; onPropMouseDown?: (tileId: string, e: any) => void;
 }) => {
-  const liveCustomTile = customTiles.find(ct => ct.url === tile.imageUrl);
+  const globalTick = useMapStore(state => state.globalTick);
+  const liveCustomTile = customTiles.find(ct => normalizeUrl(ct.url) === normalizeUrl(tile.imageUrl));
   const tileLayer = tile.layer || 0;
   
   let mainUrl = tile.imageUrl;
   let effectiveSmartType = tile.smartType || 'grass';
   
   if (tile.isAutoTile && tileLayer === 0) {
-    if (effectiveSmartType === 'dirt' && dirtSheetUrl) {
-      mainUrl = dirtSheetUrl;
-    } else if (autoTileSheetUrl) {
-      mainUrl = autoTileSheetUrl;
-    }
+    if (effectiveSmartType === 'dirt' && dirtSheetUrl) mainUrl = dirtSheetUrl;
+    else if (autoTileSheetUrl) mainUrl = autoTileSheetUrl;
   }
 
   const mainTextureBase = useTexture(mainUrl);
   const foamUrl = (isFoamEnabled && foamStripTile?.url && (tile.foamBitmask || 0) > 0) ? foamStripTile.url : null;
   const foamTextureBase = useTexture(foamUrl);
 
-  const displayWidth = liveCustomTile?.frameWidth || tile.frameWidth || TILE_SIZE;
-  const displayHeight = liveCustomTile?.frameHeight || tile.frameHeight || TILE_SIZE;
+  const displayWidth = (tile.isAutoTile && tileLayer === 0) ? TILE_SIZE : (liveCustomTile?.frameWidth || tile.frameWidth || TILE_SIZE);
+  const displayHeight = (tile.isAutoTile && tileLayer === 0) ? TILE_SIZE : (liveCustomTile?.frameHeight || tile.frameHeight || TILE_SIZE);
+
+  // ANIMATION LOGIC
+  const frameCount = liveCustomTile?.frameCount || tile.frameCount || 1;
+  const isAnimated = (liveCustomTile?.isSpritesheet || tile.isSpritesheet) && frameCount > 1;
+  const speed = Number(liveCustomTile?.animationSpeed || tile.animationSpeed || 1);
+  const currentFrame = isAnimated ? Math.floor(globalTick * speed) % frameCount : 0;
+
+  const quarterTextures = useMemo(() => {
+    if (!mainTextureBase || !mainTextureBase.source || !tile.isAutoTile || tileLayer !== 0) return null;
+    const quarters = getA2SubTileCoordinates(tile.bitmask || 0, tile.blockCol || 0, tile.blockRow || 0);
+    try {
+      const source = mainTextureBase.source;
+      return quarters.map(q => new PIXI.Texture({
+        source,
+        frame: new PIXI.Rectangle(q.sourceX, q.sourceY, q.sourceWidth, q.sourceHeight)
+      }));
+    } catch(e) { return null; }
+  }, [mainTextureBase, tile.isAutoTile, tileLayer, tile.bitmask, tile.blockCol, tile.blockRow]);
+
+  const foamQuarterTextures = useMemo(() => {
+    if (!foamTextureBase || !foamTextureBase.source || (tile.foamBitmask || 0) === 0) return null;
+    const quarters = getA2SubTileCoordinates(tile.foamBitmask || 0, 0, 0); 
+    try {
+      const source = foamTextureBase.source;
+      return quarters.map(q => new PIXI.Texture({
+        source,
+        frame: new PIXI.Rectangle(q.sourceX, q.sourceY, q.sourceWidth, q.sourceHeight)
+      }));
+    } catch(e) { return null; }
+  }, [foamTextureBase, tile.foamBitmask]);
 
   const texture = useMemo(() => {
-    if (!mainTextureBase) return null;
+    if (quarterTextures) return null;
+    if (!mainTextureBase || !mainTextureBase.source) return null;
 
-    if (tile.isAutoTile && tileLayer === 0) {
-      const coords = getA2SubTileCoordinates(tile.bitmask || 0, tile.blockCol || 0, tile.blockRow || 0);
-      try {
-        const source = mainTextureBase.source;
-        if (source && source.width >= coords.sourceX + TILE_SIZE && source.height >= coords.sourceY + TILE_SIZE) {
-          return new PIXI.Texture({
-            source,
-            frame: new PIXI.Rectangle(coords.sourceX, coords.sourceY, TILE_SIZE, TILE_SIZE)
-          });
-        }
-      } catch(e) { return null; }
-    } else if (tile.isSpritesheet && tile.frameCount && tile.frameCount > 1) {
-       const speed = liveCustomTile?.animationSpeed || tile.animationSpeed || 1;
-       const frameTotal = liveCustomTile?.frameCount || tile.frameCount || 1;
-       const frameIdx = Math.floor((Date.now() / (speed * 1000) * frameTotal) % frameTotal);
+    if (isAnimated) {
        try {
           const source = mainTextureBase.source;
-          if (source && source.width >= (frameIdx + 1) * displayWidth && source.height >= displayHeight) {
+          const frameX = currentFrame * displayWidth;
+          return new PIXI.Texture({
+            source,
+            frame: new PIXI.Rectangle(source.width >= frameX + displayWidth ? frameX : 0, 0, displayWidth, displayHeight)
+          });
+       } catch(e) { return null; }
+    } else if ((liveCustomTile?.isSpritesheet || tile.isSpritesheet) && frameCount && frameCount > 1) {
+       try {
+          const source = mainTextureBase.source;
+          if (source.width >= displayWidth && source.height >= displayHeight) {
             return new PIXI.Texture({
               source,
-              frame: new PIXI.Rectangle(frameIdx * displayWidth, 0, displayWidth, displayHeight)
+              frame: new PIXI.Rectangle(0, 0, displayWidth, displayHeight)
             });
           }
        } catch(e) { return null; }
     }
     
     return mainTextureBase;
-  }, [mainTextureBase, tile.isAutoTile, tileLayer, tile.bitmask, tile.blockCol, tile.blockRow, tile.isSpritesheet, tile.frameCount, tile.animationSpeed, liveCustomTile, displayWidth, displayHeight]);
+  }, [mainTextureBase, quarterTextures, isAnimated, currentFrame, displayWidth, displayHeight, liveCustomTile, tile.isSpritesheet, frameCount]);
 
   const foamTexture = useMemo(() => {
-    if (!foamTextureBase) return null;
+    if (foamQuarterTextures || !foamTextureBase || !foamTextureBase.source) return null;
     const col = (tile.foamBitmask || 0) % 4;
     const row = Math.floor((tile.foamBitmask || 0) / 4);
     try {
       const source = foamTextureBase.source;
-      if (source && source.width >= (col + 1) * TILE_SIZE && source.height >= (row + 1) * TILE_SIZE) {
+      if (source.width >= (col + 1) * TILE_SIZE && source.height >= (row + 1) * TILE_SIZE) {
         return new PIXI.Texture({
           source,
           frame: new PIXI.Rectangle(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE)
@@ -218,80 +232,45 @@ const SmartPixiTile = React.memo(({
       }
     } catch(e) { return null; }
     return null;
-  }, [foamTextureBase, tile.foamBitmask]);
+  }, [foamTextureBase, foamQuarterTextures, tile.foamBitmask]);
 
   const x = tile.x * TILE_SIZE + worldSize / 2 + (tile.offsetX || 0) - (displayWidth - TILE_SIZE)/2;
   const y = tile.y * TILE_SIZE + worldSize / 2 + (tile.offsetY || 0) - (displayHeight - TILE_SIZE);
 
   return (
     <PixiTile
-      texture={texture}
-      x={x}
-      y={y}
-      width={displayWidth}
-      height={displayHeight}
-      rotation={tile.rotation || 0}
-      isInteractive={tileLayer === 1 || tileLayer === 2}
-      onMouseDown={(e) => onPropMouseDown?.(tile.id, e)}
+      texture={texture} x={x} y={y} width={displayWidth} height={displayHeight}
+      rotation={tile.rotation || 0} isInteractive={tileLayer === 1 || tileLayer === 2}
+      onMouseDown={(e) => onPropMouseDown?.(tile.id, e)} 
       foamTexture={foamTexture}
-      foamOpacity={foamOpacity}
+      quarterTextures={quarterTextures || undefined}
+      foamQuarterTextures={foamQuarterTextures || undefined}
     />
   );
 });
 
 SmartPixiTile.displayName = 'SmartPixiTile';
 
-const FoamAnimator = ({ onUpdate }: { onUpdate: (val: number) => void }) => {
-  useTick(() => {
-    const time = Date.now() / 1000;
-    const val = 0.75 + Math.sin(time * 2) * 0.15; 
-    onUpdate(val);
-  });
-  return null;
-};
-
 export const PixiMapCanvas: React.FC<PixiMapCanvasProps> = ({ 
   width, height, worldSize, transform, onPropMouseDown, waterBaseTile, foamStripTile 
 }) => {
-  const { tiles, isFoamEnabled, autoTileSheetUrl, dirtSheetUrl, layerSettings, selection, customTiles } = useMapStore();
-  const [foamOpacity, setFoamOpacity] = useState(0.8);
+  const { tiles, isFoamEnabled, autoTileSheetUrl, dirtSheetUrl, selection, customTiles } = useMapStore();
 
-  // Culling Logic
-  const visibleTiles = useMemo(() => {
-    const BUFFER = 1000 / transform.scale; 
-    const visibleLeft = -transform.x / transform.scale;
-    const visibleTop = -transform.y / transform.scale;
-    const visibleRight = visibleLeft + (width / transform.scale);
-    const visibleBottom = visibleTop + (height / transform.scale);
-
-    const filtered = tiles.filter(tile => {
-      if (layerSettings[tile.layer || 0]?.hidden) return false;
-
-      const liveCustomTile = customTiles.find(ct => ct.url === tile.imageUrl);
-      const displayWidth = liveCustomTile?.frameWidth || tile.frameWidth || TILE_SIZE;
-      const displayHeight = liveCustomTile?.frameHeight || tile.frameHeight || TILE_SIZE;
-
-      const x = tile.x * TILE_SIZE + worldSize / 2 + (tile.offsetX || 0) - (displayWidth - TILE_SIZE)/2;
-      const y = tile.y * TILE_SIZE + worldSize / 2 + (tile.offsetY || 0) - (displayHeight - TILE_SIZE);
-
-      return (
-        x + displayWidth >= visibleLeft - BUFFER &&
-        x <= visibleRight + BUFFER &&
-        y + displayHeight >= visibleTop - BUFFER &&
-        y <= visibleBottom + BUFFER
-      );
+  const sortedTiles = useMemo(() => {
+    return [...tiles].sort((a, b) => {
+      // Primary sort by layer
+      const layerA = a.layer || 0;
+      const layerB = b.layer || 0;
+      if (layerA !== layerB) return layerA - layerB;
+      
+      // Secondary sort by Y-coordinate for props/objects (Depth sorting)
+      // We only depth-sort for layers above ground (layer > 0)
+      if (layerA > 0) {
+        return (a.y + (a.offsetY || 0) / TILE_SIZE) - (b.y + (b.offsetY || 0) / TILE_SIZE);
+      }
+      return 0;
     });
-
-    return filtered.sort((a, b) => {
-      const layerDiff = (a.layer || 0) - (b.layer || 0);
-      if (layerDiff !== 0) return layerDiff;
-      return (a.y * TILE_SIZE + (a.offsetY || 0)) - (b.y * TILE_SIZE + (b.offsetY || 0));
-    });
-  }, [tiles, transform, width, height, layerSettings, worldSize, customTiles]);
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/e3253593-de95-4d0a-9242-349fb357def6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PixiMapCanvas.tsx:RENDER',message:'Render data',data:{width,height,transform,visibleTilesCount:visibleTiles.length},timestamp:Date.now(),runId:'post-fix',hypothesisId:'viewport-dimensions'})}).catch(()=>{});
-  // #endregion
+  }, [tiles]);
 
   const drawSelection = React.useCallback((g: PIXI.Graphics) => {
     g.clear();
@@ -308,9 +287,7 @@ export const PixiMapCanvas: React.FC<PixiMapCanvasProps> = ({
     const x = startX * TILE_SIZE + worldSize / 2;
     const y = startY * TILE_SIZE + worldSize / 2;
 
-    g.rect(x, y, selWidth, selHeight)
-     .fill({ color: 0x22d3ee, alpha: 0.2 })
-     .stroke({ width: 2 / transform.scale, color: 0x22d3ee });
+    g.rect(x, y, selWidth, selHeight).fill({ color: 0x22d3ee, alpha: 0.2 }).stroke({ width: 2 / transform.scale, color: 0x22d3ee });
   }, [selection, transform.scale, worldSize]);
 
   const selectionRef = React.useRef<PIXI.Graphics>(null);
@@ -322,60 +299,24 @@ export const PixiMapCanvas: React.FC<PixiMapCanvasProps> = ({
   }, [drawSelection]);
 
   return (
-    <Application 
-      width={width || 800} 
-      height={height || 600} 
-      backgroundColor={0xFF0000} 
-      backgroundAlpha={0.3}      
-      antialias={false}
-      resolution={window.devicePixelRatio || 1}
-      autoDensity={true}
-      style={{ 
-        position: 'absolute', 
-        top: 0, 
-        left: 0, 
-        width: '100%', 
-        height: '100%', 
-        pointerEvents: 'none', 
-        zIndex: 9999 
-      }}
-    >
-      <FoamAnimator onUpdate={setFoamOpacity} />
-      
-      <pixiContainer 
-        position={[transform.x, transform.y]} 
-        scale={transform.scale}
-        // #region agent log
-        onpointerdown={() => {
-          fetch('http://127.0.0.1:7242/ingest/e3253593-de95-4d0a-9242-349fb357def6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PixiMapCanvas.tsx:CONTAINER',message:'Container clicked',data:{x:transform.x,y:transform.y,scale:transform.scale},timestamp:Date.now(),runId:'post-fix'})}).catch(()=>{});
-        }}
-        // #endregion
+    <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 }}>
+      <Application 
+        width={width || 800} height={height || 600} backgroundColor={0x000000} backgroundAlpha={0}      
+        antialias={false} resolution={window.devicePixelRatio || 1} autoDensity={true}
       >
-        {/* Debug: World Center Box (pink) */}
-        <pixiGraphics 
-          draw={(g) => {
-            g.clear();
-            g.rect(worldSize / 2 - 50, worldSize / 2 - 50, 100, 100).fill({ color: 0xFF00FF, alpha: 0.5 });
-          }}
-        />
-
-        {tiles.map(tile => (
-          <SmartPixiTile
-            key={`${tile.id}-${tile.bitmask}-${tile.foamBitmask}`}
-            tile={tile}
-            customTiles={customTiles}
-            autoTileSheetUrl={autoTileSheetUrl}
-            dirtSheetUrl={dirtSheetUrl}
-            isFoamEnabled={isFoamEnabled}
-            foamStripTile={foamStripTile}
-            worldSize={worldSize}
-            foamOpacity={foamOpacity}
-            onPropMouseDown={onPropMouseDown}
-          />
-        ))}
-        
-        <pixiGraphics ref={selectionRef} />
-      </pixiContainer>
-    </Application>
+        <pixiContainer x={transform.x} y={transform.y} scale={transform.scale}>
+          
+          {sortedTiles.map(tile => (
+            <SmartPixiTile
+              key={`${tile.id}-${tile.bitmask}-${tile.foamBitmask}`} tile={tile} customTiles={customTiles}
+              autoTileSheetUrl={autoTileSheetUrl} dirtSheetUrl={dirtSheetUrl} isFoamEnabled={isFoamEnabled}
+              foamStripTile={foamStripTile} worldSize={worldSize} onPropMouseDown={onPropMouseDown}
+            />
+          ))}
+          
+          <pixiGraphics ref={selectionRef} />
+        </pixiContainer>
+      </Application>
+    </div>
   );
 };

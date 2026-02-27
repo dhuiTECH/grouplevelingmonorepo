@@ -255,7 +255,7 @@ export default function AdminDashboard() {
     try {
       console.log('📋 Loading users via API...');
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // Increased to 30 seconds
       
       // Get session token
       const { data: { session } } = await supabase.auth.getSession();
