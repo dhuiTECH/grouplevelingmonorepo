@@ -16,7 +16,7 @@ interface MapDataSidebarProps {
   onGoToNode?: (nodeId: string) => void;
 }
 
-export const MapDataSidebar: React.FC<MapDataSidebarProps> = ({ onEditNode, onGoToNode }) => {
+export const MapDataSidebar: React.FC<MapDataSidebarProps> = React.memo(({ onEditNode, onGoToNode }) => {
   const {
     nodes, selectedNodeId, updateNode, removeNode,
     setTool, selectedTool, activeNodeType, rightSidebarWidth,
@@ -163,4 +163,4 @@ export const MapDataSidebar: React.FC<MapDataSidebarProps> = ({ onEditNode, onGo
       </div>
     </div>
   );
-};
+});

@@ -1,7 +1,7 @@
 'use client';
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
-import { useMapStore, NodeType, Tile } from '@/lib/store/mapStore';
+import { useMapStore, useTickStore, NodeType, Tile } from '@/lib/store/mapStore';
 // import { MapCanvas } from './MapCanvas'; // Replaced by PixiMapCanvas
 import { PixiMapCanvas } from './PixiMapCanvas';
 import { MapSidebar } from './MapSidebar';
@@ -11,11 +11,10 @@ import {
   Plus, Minus, Maximize, Grid, Zap, Loader2, Target, Map as MapIcon,
   User, Sword, Box, Globe, Search, MousePointer2, Eraser, Wand2,
   GripVertical, Copy, Square, CheckSquare, Pipette, X, Paintbrush, Bug,
-  RotateCw
+  RotateCw, Lock, Unlock, Droplets
 } from 'lucide-react';
 import { WinluPalette } from './WinluPalette';
-import { WinluDebugOverlay } from './WinluDebugOverlay';
-import { WaterDebugOverlay } from './WaterDebugOverlay';
+import { DebugOverlay } from './DebugOverlay';
 import { generateAsset } from '@/lib/services/mapGeminiService';
 import NodeEditModal, { NodeFormData } from '../NodeEditModal';
 import { supabase } from '@/lib/supabase';
@@ -50,6 +49,8 @@ const BrushPreview = React.memo(({
   if (isSpacePressed || (selectedTool !== 'paint' && selectedTool !== 'erase') || (selectedTool === 'paint' && !selectedTileId)) return null;
   
   const tile = selectedTool === 'paint' ? customTiles.find((t: any) => t.id === selectedTileId) : null;
+  const isSnapOff = tile && !tile.snapToGrid;
+
   const half = brushMode ? Math.floor(brushSize / 2) : 0;
   const isEven = brushMode && brushSize % 2 === 0;
   const previewTiles = [];
@@ -60,12 +61,19 @@ const BrushPreview = React.memo(({
     }
   }
 
+  const leftPos = isSnapOff 
+    ? smoothCursorCoords.x + WORLD_SIZE / 2 
+    : cursorCoords.x * TILE_SIZE + WORLD_SIZE / 2;
+  const topPos = isSnapOff 
+    ? smoothCursorCoords.y + WORLD_SIZE / 2 
+    : cursorCoords.y * TILE_SIZE + WORLD_SIZE / 2;
+
   return (
     <div 
       className="absolute pointer-events-none z-[60]"
       style={{
-        left: cursorCoords.x * TILE_SIZE + WORLD_SIZE / 2,
-        top: cursorCoords.y * TILE_SIZE + WORLD_SIZE / 2,
+        left: leftPos,
+        top: topPos,
       }}
     >
       {previewTiles.map(({ dx, dy }, i) => {
@@ -85,16 +93,18 @@ const BrushPreview = React.memo(({
         }
 
         if (!tile) return null;
-        const displayWidth = tile.frameWidth || TILE_SIZE;
         const displayHeight = tile.frameHeight || TILE_SIZE;
+        const displayWidth = tile.frameWidth || displayHeight;
 
-        const left = tile.snapToGrid 
-          ? dx * TILE_SIZE - (displayWidth - TILE_SIZE) / 2
-          : dx * TILE_SIZE - (displayWidth / 2) + (TILE_SIZE / 2); // Approximation for non-snap
+        // If snap is off, leftPos/topPos is the mouse. We want the tile centered/bottom-aligned on it.
+        // If snap is on, leftPos/topPos is grid top-left. We want the tile centered/bottom-aligned on the grid cell.
+        const left = isSnapOff
+          ? dx * TILE_SIZE - (displayWidth / 2)
+          : dx * TILE_SIZE - (displayWidth - TILE_SIZE) / 2;
         
-        const top = tile.snapToGrid
-          ? dy * TILE_SIZE - (displayHeight - TILE_SIZE)
-          : dy * TILE_SIZE - (displayHeight) + (TILE_SIZE);
+        const top = isSnapOff
+          ? dy * TILE_SIZE - displayHeight
+          : dy * TILE_SIZE - (displayHeight - TILE_SIZE);
 
         return (
           <div 
@@ -131,10 +141,10 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     loadTilesFromSupabase, isDraggingTile, draggingTileId,
     setDraggingTile, isDraggingNode, draggingNodeId, setDraggingNode,
     moveTile, removeTileById, rotateTile,
-    isSmartMode, isRaiseMode, isFoamEnabled, autoTileSheetUrl, waterSheetUrl,
+    isSmartMode, isRaiseMode, smartBrushLock, setSmartBrushLock, isFoamEnabled, autoTileSheetUrl, waterSheetUrl,
     selectedSmartType, setSelectedSmartType, setSelectedBlock, smartBrushLayer, setSmartBrushLayer, setRaiseMode, waterBaseTile, foamStripTile, setTool,
     sidebarWidth, setSidebarWidth, rightSidebarWidth, setRightSidebarWidth,
-    favorites, setFavorite, selectTile, incrementTick,
+    favorites, setFavorite, selectTile,
     brushSize, setBrushSize, brushMode, setBrushMode,
     nodeSnapToGrid, setNodeSnapToGrid,
     isLoadingTiles, tiles, nodes, showDebugModal, setShowDebugModal, showDebugNumbers, setShowDebugNumbers, currentStamp,
@@ -180,6 +190,8 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const [viewport, setViewport] = useState({ width: 1200, height: 800 }); // Reasonable default
 
   const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [cursorCoords, setCursorCoords] = useState({ x: 0, y: 0 });
+  const [smoothCursorCoords, setSmoothCursorCoords] = useState({ x: 0, y: 0 });
 
   // Modal State
   const [showNodeModal, setShowNodeModal] = useState(false);
@@ -203,7 +215,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const [uploadingDialogueImageLine, setUploadingDialogueImageLine] = useState<number | null>(null);
   const [uploadingVoiceLineLine, setUploadingVoiceLineLine] = useState<number | null>(null);
   const [iconGalleryUrls, setIconGalleryUrls] = useState<string[]>([]);
-  const [showWaterDebugModal, setShowWaterDebugModal] = useState(false);
 
   const nodeIconInputRef = useRef<HTMLInputElement>(null);
   const sceneBgInputRef = useRef<HTMLInputElement>(null);
@@ -295,7 +306,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           setTool('select');
           return;
         }
-        if (e.key.toLowerCase() === 'b') {
+        if (e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'p') {
           setTool('paint');
           return;
         }
@@ -303,7 +314,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           setTool('erase');
           return;
         }
-        if (e.key.toLowerCase() === 'i') {
+        if (e.key.toLowerCase() === 'o') {
           setTool('eyedropper');
           return;
         }
@@ -316,11 +327,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           return;
         }
         if (e.key.toLowerCase() === 'd') {
-          if (e.shiftKey && waterSheetUrl) {
-            setShowWaterDebugModal(true);
-          } else {
-            setShowDebugModal(true);
-          }
+          setShowDebugModal(true);
           return;
         }
       }
@@ -366,11 +373,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [undoStack]); // Added undoStack to dependencies
-
-  const [cursorCoords, setCursorCoords] = useState({ x: 0, y: 0 });
-  const [smoothCursorCoords, setSmoothCursorCoords] = useState({ x: 0, y: 0 });
-
+  }, [zoomToFit, favorites, selectTile, cursorCoords.x, cursorCoords.y, setTool, undoStack]);
 
   const hasInitialZoomed = useRef(false);
 
@@ -501,7 +504,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     }
   };
 
-  const handleEditNodeProperties = async (nodeId: string) => {
+  const handleEditNodeProperties = useCallback(async (nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
 
@@ -539,7 +542,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
       action_buttons: node.properties?.action_buttons || [],
     });
     setShowNodeModal(true);
-  };
+  }, [nodes]);
 
   const handleSaveNodeDetails = async () => {
     if (!selectedNodeId || !nodeFormData) return;
@@ -930,9 +933,10 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         // Throttle store updates with requestAnimationFrame
         if (!dragRafRef.current) {
           dragRafRef.current = requestAnimationFrame(() => {
-            if (pendingDragUpdateRef.current && node.x !== pendingDragUpdateRef.current.x || node.y !== pendingDragUpdateRef.current.y) {
+            const pending = pendingDragUpdateRef.current;
+            if (pending && (node.x !== pending.x || node.y !== pending.y)) {
               useMapStore.setState(s => ({
-                nodes: s.nodes.map(n => n.id === node.id ? { ...n, x: pendingDragUpdateRef.current!.x, y: pendingDragUpdateRef.current!.y } : n)
+                nodes: s.nodes.map(n => n.id === node.id ? { ...n, x: pending.x, y: pending.y } : n)
               }));
             }
             dragRafRef.current = null;
@@ -949,11 +953,15 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     }
 
     // PERFORMANCE: Skip interaction if we are moving and haven't entered a new grid cell
-    // But allow continuous painting for brush mode
+    // But allow continuous painting for brush mode OR if snap-to-grid is OFF for the selected tile
     if (isMove && !isDraggingTile) {
-      const { brushMode: currentBrushMode, brushSize: currentBrushSize } = useMapStore.getState();
+      const { brushMode: currentBrushMode, brushSize: currentBrushSize } = state;
       const isBrushMode = (tool === 'paint' || tool === 'erase') && currentBrushMode && currentBrushSize > 1;
-      if (!isBrushMode && lastInteractionRef.current?.gx === gx && lastInteractionRef.current?.gy === gy && lastInteractionRef.current?.tool === tool) {
+      
+      const selectedTile = tool === 'paint' ? state.customTiles.find(t => t.id === state.selectedTileId) : null;
+      const isSnapOff = selectedTile && !selectedTile.snapToGrid;
+
+      if (!isBrushMode && !isSnapOff && lastInteractionRef.current?.gx === gx && lastInteractionRef.current?.gy === gy && lastInteractionRef.current?.tool === tool) {
         return;
       }
     }
@@ -1078,7 +1086,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         const ty = gy + dy;
 
         tasks.push((async () => {
-          const removedTile = await removeTileAt(tx, ty);
+          const removedTile = await removeTileAt(tx, ty, smartBrushLock);
           if (removedTile) {
             if (!isMove || (dx === 0 && dy === 0)) {
               setUndoStack(prev => [...prev, {
@@ -1655,11 +1663,12 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const onRemoveStockItemSync = (exclusiveId: string) => onRemoveStockItem(exclusiveId);
 
   useEffect(() => {
+    const incrementTick = useTickStore.getState().incrementTick;
     const interval = setInterval(() => {
       incrementTick();
     }, 100); // 10 ticks per second
     return () => clearInterval(interval);
-  }, [incrementTick]);
+  }, []);
 
   return (
     <div className="flex w-full h-full bg-[#0a0a0a] overflow-hidden font-mono text-slate-300">
@@ -1752,6 +1761,14 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                   <Zap size={18} className={selectedSmartType !== 'off' ? "fill-white" : ""} />
                   <span className="text-[10px] font-black uppercase">Smart</span>
                 </button>
+                <button
+                  onClick={() => setSmartBrushLock(!smartBrushLock)}
+                  className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${smartBrushLock ? 'bg-red-600/20 text-red-400 border border-red-500/50' : 'text-slate-400 hover:bg-slate-800'}`}
+                  title="Lock Smart Tiles: Prevent erasing smart tiles when active"
+                >
+                  {smartBrushLock ? <Lock size={18} /> : <Unlock size={18} />}
+                  <span className="text-[10px] font-black uppercase">Lock</span>
+                </button>
                 {selectedSmartType !== 'off' && (
                   <div className="flex items-center gap-1 bg-slate-800/50 px-2 py-1 rounded-lg">
                     <span className="text-[9px] text-slate-400 uppercase">Layer</span>
@@ -1779,7 +1796,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                 <button
                   onClick={() => setShowDebugModal(true)}
                   className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-slate-400 hover:bg-slate-800"
-                  title="Open Bitmask Debugger (D)"
+                  title="Open Autotile Debugger (D)"
                 >
                   <Bug size={18} />
                   <span className="text-[10px] font-black uppercase">Debug</span>
@@ -1792,16 +1809,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                   <div className="text-[10px] font-black font-mono">#</div>
                   <span className="text-[10px] font-black uppercase">Numbers</span>
                 </button>
-                {waterSheetUrl && (
-                  <button
-                    onClick={() => setShowWaterDebugModal(true)}
-                    className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-cyan-400 hover:bg-cyan-900/30 border border-cyan-800/50"
-                    title="Open Water Sheet Debugger (Shift+D)"
-                  >
-                    <Bug size={18} />
-                    <span className="text-[10px] font-black uppercase">Water</span>
-                  </button>
-                )}
               </div>
 
               <div className="h-8 w-px bg-slate-700 mx-1" />
@@ -1857,9 +1864,18 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
               worldSize={WORLD_SIZE}
               transform={{ x: positionX, y: positionY, scale }} 
               onPropMouseDown={handlePropMouseDown}
+              onNodeMouseDown={handleNodeMouseDown}
               waterBaseTile={waterBaseTile()}
               foamStripTile={foamStripTile()}
               showDebugNumbers={showDebugNumbers}
+              nodes={nodes}
+              cursorCoords={cursorCoords}
+              selectedTool={selectedTool}
+              isSpacePressed={isSpacePressed}
+              brushMode={brushMode}
+              brushSize={brushSize}
+              selectedTileId={selectedTileId}
+              customTiles={customTiles}
             />
           </div>
 
@@ -1909,22 +1925,35 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                 
                 {/* Layer 2: Grid Highlight */}
                 {!isSpacePressed && (selectedTool === 'paint' || selectedTool === 'erase') && (
-                  <div 
-                    className="absolute pointer-events-none" 
-                    style={{
-                      left: cursorCoords.x * TILE_SIZE + WORLD_SIZE / 2,
-                      top: cursorCoords.y * TILE_SIZE + WORLD_SIZE / 2,
-                      width: TILE_SIZE,
-                      height: TILE_SIZE,
-                      backgroundColor: 'rgba(56, 189, 248, 0.2)', // Light Blue
-                      border: '1px solid rgba(56, 189, 248, 0.7)',
-                      zIndex: 60,
-                      opacity: 0.5 + Math.sin(Date.now() / 150) * 0.3
-                    }}
-                  />
+                  (() => {
+                    const selTile = customTiles.find(t => t.id === selectedTileId);
+                    const h = selTile?.frameHeight || TILE_SIZE;
+                    const w = selTile?.frameWidth || h;
+                    
+                    return (
+                      <div 
+                        className="absolute pointer-events-none" 
+                        style={{
+                          left: (selTile?.snapToGrid !== false ? cursorCoords.x * TILE_SIZE : smoothCursorCoords.x - w / 2) + WORLD_SIZE / 2,
+                          top: (selTile?.snapToGrid !== false ? cursorCoords.y * TILE_SIZE : smoothCursorCoords.y - h / 2) + WORLD_SIZE / 2,
+                          width: w,
+                          height: h,
+                          backgroundColor: 'rgba(56, 189, 248, 0.2)', 
+                          border: '1px solid rgba(56, 189, 248, 0.7)',
+                          zIndex: 60,
+                          opacity: 0.5 + Math.sin(Date.now() / 150) * 0.3
+                        }}
+                      />
+                    );
+                  })()
                 )}
-                
-                {/* Layer 3: Nodes */}
+
+      <div 
+        onMouseDown={(e) => { e.preventDefault(); setIsResizingRight(true); }}
+        className={`w-1 z-30 cursor-col-resize hover:bg-cyan-500/50 transition-colors ${isResizingRight ? 'bg-cyan-500' : 'bg-slate-800'}`}
+      />
+
+      <MapDataSidebar onEditNode={handleEditNodeProperties} onGoToNode={goToNode} />
                 {nodes.map(node => (
                   <div
                     key={node.id}
@@ -2061,7 +2090,6 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         </div>
       </div>
 
-      {/* Resizer Right */}
       <div 
         onMouseDown={(e) => { e.preventDefault(); setIsResizingRight(true); }}
         className={`w-1 z-30 cursor-col-resize hover:bg-cyan-500/50 transition-colors ${isResizingRight ? 'bg-cyan-500' : 'bg-slate-800'}`}
@@ -2109,16 +2137,10 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
       )}
 
       {showDebugModal && (
-        <WinluDebugOverlay
-          sheetUrl={autoTileSheetUrl || '/A2 - Terrain and Misc.jpg'}
+        <DebugOverlay
+          winluSheetUrl={autoTileSheetUrl}
+          waterSheetUrl={waterSheetUrl}
           onClose={() => setShowDebugModal(false)}
-        />
-      )}
-
-      {showWaterDebugModal && waterSheetUrl && (
-        <WaterDebugOverlay
-          sheetUrl={waterSheetUrl}
-          onClose={() => setShowWaterDebugModal(false)}
         />
       )}
 

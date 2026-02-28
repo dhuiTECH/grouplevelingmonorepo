@@ -65,9 +65,14 @@ export interface CustomTile {
   sort_order?: number;
 }
 
-export type ToolType = 'select' | 'paint' | 'erase' | 'node' | 'stamp' | 'eyedropper';
+export type ToolType = 'select' | 'paint' | 'erase' | 'node' | 'stamp' | 'eyedropper' | 'rotate';
 
 const CHUNK_SIZE = 16;
+
+export const useTickStore = create<{ globalTick: number; incrementTick: () => void }>((set) => ({
+  globalTick: 0,
+  incrementTick: () => set((state) => ({ globalTick: (state.globalTick + 1) % 1000 })),
+}));
 
 const syncQueue: Record<string, Promise<void> | undefined> = {};
 const syncTimeouts: Record<string, NodeJS.Timeout | undefined> = {};
@@ -136,8 +141,6 @@ interface MapState {
   setDragGrabOffset: (offset: { x: number, y: number } | null) => void;
   isLoadingTiles: boolean;
   spawnPoint: { x: number; y: number } | null;
-  globalTick: number; // For shared animations
-  incrementTick: () => void;
   
   // Brush state
   brushSize: number;
@@ -172,6 +175,7 @@ interface MapState {
 
   // Auto-tiling editor state
   isSmartMode: boolean;
+  smartBrushLock: boolean; // Prevent deleting smart tiles when erase tool is used
   selectedSmartType: string; // 'off' | 'grass' | 'dirt' | 'water'
   selectedBlockCol: number;
   selectedBlockRow: number;
@@ -185,6 +189,7 @@ interface MapState {
   selectedWaterBaseId: string | null; // NEW
   selectedFoamStripId: string | null; // NEW
   setSmartMode: (enabled: boolean) => void;
+  setSmartBrushLock: (enabled: boolean) => void;
   setSelectedSmartType: (type: string) => void;
   setSelectedBlock: (col: number, row: number) => void;
   setSmartBrushLayer: (layer: number) => void;
@@ -225,7 +230,7 @@ interface MapState {
   addTile: (tile: Tile) => void;
   addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number) => Promise<void>;
   batchAddTiles: (newTiles: Omit<Tile, 'id'>[]) => Promise<void>;
-  removeTileAt: (x: number, y: number) => Promise<Tile | null>;
+  removeTileAt: (x: number, y: number, excludeAutoTiles?: boolean) => Promise<Tile | null>;
   removeTileById: (id: string) => Promise<void>;
   moveTile: (tileId: string, newX: number, newY: number, newOffsetX: number, newOffsetY: number) => Promise<void>;
   rotateTile: (tileId: string, rotationDelta: number) => Promise<void>;
@@ -250,8 +255,6 @@ export const useMapStore = create<MapState>((set, get) => ({
   setDragGrabOffset: (dragGrabOffset) => set({ dragGrabOffset }),
   isLoadingTiles: false,
   spawnPoint: null,
-  globalTick: 0,
-  incrementTick: () => set((state) => ({ globalTick: (state.globalTick + 1) % 1000 })),
 
   brushSize: 1,
   setBrushSize: (brushSize) => set({ brushSize }),
@@ -303,6 +306,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   setCurrentStamp: (currentStamp) => set({ currentStamp }),
 
   isSmartMode: false,
+  smartBrushLock: false,
   selectedSmartType: 'off',
   selectedBlockCol: 0,
   selectedBlockRow: 0,
@@ -322,6 +326,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   showDebugNumbers: false,
 
   setSmartMode: (isSmartMode) => set({ isSmartMode }),
+  setSmartBrushLock: (smartBrushLock) => set({ smartBrushLock }),
   setSelectedSmartType: (selectedSmartType) => set({ selectedSmartType, isSmartMode: selectedSmartType !== 'off' }),
   setSelectedBlock: (selectedBlockCol, selectedBlockRow) => set({ selectedBlockCol, selectedBlockRow }),
   setSmartBrushLayer: (smartBrushLayer) => set({ smartBrushLayer }),
@@ -645,7 +650,22 @@ export const useMapStore = create<MapState>((set, get) => ({
 
     // 1. Update local state (keep full data for instant web rendering)
     set((state) => {
-      const existingIdx = state.tiles.findIndex(t => t.x === x && t.y === y && (t.layer || 0) === (layer || 0));
+      // Logic for finding "same" tile to replace:
+      // - If snapped: same x, y, layer
+      // - If non-snapped: same x, y, layer AND offset is very close (within 8px)
+      const existingIdx = state.tiles.findIndex(t => {
+        const isSameCell = t.x === x && t.y === y && (t.layer || 0) === (layer || 0);
+        if (!isSameCell) return false;
+        
+        // If both are non-snapped, we allow multiple tiles per cell unless they are in the exact same spot
+        if (snapToGrid === false && t.snapToGrid === false) {
+          return Math.abs(t.offsetX - (offsetX || 0)) < 8 && Math.abs(t.offsetY - (offsetY || 0)) < 8;
+        }
+        
+        // If either is snapped, we enforce one tile per cell per layer
+        return true;
+      });
+
       const newTile = {
         id: uuidv4(),
         x, y, type, imageUrl, isSpritesheet, frameCount, frameWidth, frameHeight, animationSpeed,
@@ -698,25 +718,34 @@ export const useMapStore = create<MapState>((set, get) => ({
     });
   },
 
-  removeTileAt: async (x, y) => {
+  removeTileAt: async (x, y, excludeAutoTiles = false) => {
     const chunkX = Math.floor(x / CHUNK_SIZE);
     const chunkY = Math.floor(y / CHUNK_SIZE);
 
     let removedTile: Tile | null = null;
     let targetLayer: number | undefined;
 
-    // Remove the highest layer tile first
-    const existingTilesAtPos = get().tiles.filter(t => t.x === x && t.y === y).sort((a, b) => (b.layer || 0) - (a.layer || 0));
+    // Remove the tile closest to the mouse or the highest layer first
+    let existingTilesAtPos = get().tiles.filter(t => t.x === x && t.y === y);
+    
+    if (excludeAutoTiles) {
+      existingTilesAtPos = existingTilesAtPos.filter(t => !t.isAutoTile);
+    }
     
     if (existingTilesAtPos.length > 0) {
+      // Sort by layer (desc) and then by proximity to the center if multiple tiles on same layer?
+      // For now, layer desc is the main rule.
+      existingTilesAtPos.sort((a, b) => (b.layer || 0) - (a.layer || 0));
       removedTile = existingTilesAtPos[0];
       targetLayer = removedTile.layer || 0;
+      // If there are multiple tiles on this layer (due to non-snap), we should technically pick the one closest to the mouse.
+      // But for simplicity, we'll just pick the last added (which is what existing logic does).
     } else {
       return null; // Nothing to remove
     }
 
     set((state) => ({
-      tiles: state.tiles.filter(t => !(t.x === x && t.y === y && (t.layer || 0) === targetLayer))
+      tiles: state.tiles.filter(t => t.id !== removedTile!.id)
     }));
 
     // Debounced sync to Supabase

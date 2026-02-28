@@ -1,8 +1,8 @@
 'use client';
-import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { Application, extend, useTick } from '@pixi/react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { Application, extend } from '@pixi/react';
 import * as PIXI from 'pixi.js';
-import { useMapStore, Tile, CustomTile } from '@/lib/store/mapStore';
+import { useMapStore, useTickStore, Tile, CustomTile } from '@/lib/store/mapStore';
 import { getPixiTextureCoords, getLiquidTextureCoords, getTileIdFromMask } from './mapUtils';
 
 // Register PixiJS components for use in JSX
@@ -164,14 +164,12 @@ PixiTile.displayName = 'PixiTile';
 
 // --- Smart Tile Component ---
 const SmartPixiTile = React.memo(({
-  tile, customTileLookup, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl, isFoamEnabled, foamStripTile, worldSize, onPropMouseDown, showDebugNumbers
+  tile, customTileLookup, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl, isFoamEnabled, foamStripTile, worldSize, onPropMouseDown, showDebugNumbers, selectedTool
 }: {
   tile: Tile; customTileLookup: Map<string, CustomTile>; autoTileSheetUrl?: string | null; dirtSheetUrl?: string | null; waterSheetUrl?: string | null;
   isFoamEnabled: boolean; foamStripTile?: CustomTile; worldSize: number; onPropMouseDown?: (tileId: string, e: any) => void;
-  showDebugNumbers?: boolean;
+  showDebugNumbers?: boolean; selectedTool: string;
 }) => {
-  const globalTick = useMapStore(state => state.globalTick);
-  const selectedTool = useMapStore(state => state.selectedTool);
   const normalizedTileUrl = normalizeUrl(tile.imageUrl);
   const liveCustomTile = customTileLookup.get(normalizedTileUrl);
   const tileLayer = tile.layer || 0;
@@ -189,14 +187,21 @@ const SmartPixiTile = React.memo(({
   const foamUrl = (isFoamEnabled && foamStripTile?.url && (tile.foamBitmask || 0) > 0) ? foamStripTile.url : null;
   const foamTextureBase = useTexture(foamUrl);
 
-  const displayWidth = tile.isAutoTile ? TILE_SIZE : (liveCustomTile?.frameWidth || tile.frameWidth || TILE_SIZE);
   const displayHeight = tile.isAutoTile ? TILE_SIZE : (liveCustomTile?.frameHeight || tile.frameHeight || TILE_SIZE);
+  const displayWidth = tile.isAutoTile ? TILE_SIZE : (liveCustomTile?.frameWidth || tile.frameWidth || displayHeight);
 
   // ANIMATION LOGIC
   const frameCount = liveCustomTile?.frameCount || tile.frameCount || 1;
   const isAnimated = (liveCustomTile?.isSpritesheet || tile.isSpritesheet) && frameCount > 1;
   const speed = Number(liveCustomTile?.animationSpeed || tile.animationSpeed || 1);
-  const currentFrame = isAnimated ? Math.floor(globalTick * speed) % frameCount : 0;
+  
+  // Use a selector to compute the current frame based on globalTick.
+  // This prevents non-animated tiles from re-rendering 10 times a second!
+  const currentFrame = useTickStore(
+    useCallback(state => 
+      isAnimated ? Math.floor(state.globalTick * speed) % frameCount : 0,
+    [isAnimated, speed, frameCount])
+  );
 
   const quarterTextures = useMemo(() => {
     if (!mainTextureBase || !mainTextureBase.source || !tile.isAutoTile) return null;
@@ -314,15 +319,16 @@ const SmartPixiTile = React.memo(({
 SmartPixiTile.displayName = 'SmartPixiTile';
 
 export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({ 
-  width, height, worldSize, transform, onPropMouseDown, waterBaseTile, foamStripTile, showDebugNumbers
+  width, height, worldSize, transform, onPropMouseDown, waterBaseTile, foamStripTile, showDebugNumbers,
+  nodes, cursorCoords, selectedTool, isSpacePressed, brushMode, brushSize, selectedTileId
 }) => {
+  const customTiles = useMapStore(state => state.customTiles);
   const tiles = useMapStore(state => state.tiles);
   const isFoamEnabled = useMapStore(state => state.isFoamEnabled);
   const autoTileSheetUrl = useMapStore(state => state.autoTileSheetUrl);
   const dirtSheetUrl = useMapStore(state => state.dirtSheetUrl);
   const waterSheetUrl = useMapStore(state => state.waterSheetUrl);
   const selection = useMapStore(state => state.selection);
-  const customTiles = useMapStore(state => state.customTiles);
 
   // Pre-calculate custom tile lookup map for O(1) access during culling and rendering
   const customTileLookup = useMemo(() => {
@@ -333,19 +339,55 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
     return map;
   }, [customTiles]);
 
-  const sortedTiles = useMemo(() => {
-    // 1. Frustum Culling calculation
+  // Stable callback for tile interactions to prevent breaking React.memo
+  const onPropMouseDownRef = useRef(onPropMouseDown);
+  useEffect(() => {
+    onPropMouseDownRef.current = onPropMouseDown;
+  }, [onPropMouseDown]);
+
+  const stableOnPropMouseDown = useCallback((tileId: string, e: any) => {
+    if (onPropMouseDownRef.current) {
+      onPropMouseDownRef.current(tileId, e);
+    }
+  }, []);
+
+  // Culling box state to prevent re-filtering tiles every frame during pan/zoom
+  const [cullBox, setCullBox] = useState({ minX: -999999, minY: -999999, maxX: 999999, maxY: 999999 });
+
+  useEffect(() => {
+    if (!width || !height || !transform.scale) return;
+
     const viewportLeft = -transform.x / transform.scale;
     const viewportTop = -transform.y / transform.scale;
     const viewportRight = viewportLeft + width / transform.scale;
     const viewportBottom = viewportTop + height / transform.scale;
 
-    // Expand bounds slightly to prevent popping at the edges
-    const buffer = TILE_SIZE * 4;
-    const minX = viewportLeft - buffer;
-    const minY = viewportTop - buffer;
-    const maxX = viewportRight + buffer;
-    const maxY = viewportBottom + buffer;
+    // Safe zone buffer (e.g., 20 tiles)
+    const safeBuffer = TILE_SIZE * 20;
+
+    // Only update cull box if viewport gets too close to the edge of the current cull box
+    if (
+      viewportLeft < cullBox.minX + safeBuffer ||
+      viewportTop < cullBox.minY + safeBuffer ||
+      viewportRight > cullBox.maxX - safeBuffer ||
+      viewportBottom > cullBox.maxY - safeBuffer
+    ) {
+      const vw = viewportRight - viewportLeft;
+      const vh = viewportBottom - viewportTop;
+      
+      // Make the new cull box ~3x the size of the viewport to allow plenty of panning before next recalculation
+      setCullBox({
+        minX: viewportLeft - vw,
+        minY: viewportTop - vh,
+        maxX: viewportRight + vw,
+        maxY: viewportBottom + vh
+      });
+    }
+  }, [transform.x, transform.y, transform.scale, width, height, cullBox]);
+
+  const sortedTiles = useMemo(() => {
+    // 1. Frustum Culling using the debounced cullBox
+    const { minX, minY, maxX, maxY } = cullBox;
 
     // Filter to only visible tiles before sorting
     const visibleTiles = tiles.filter(tile => {
@@ -379,7 +421,7 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
       }
       return 0;
     });
-  }, [tiles, customTileLookup, transform.x, transform.y, transform.scale, width, height, worldSize]);
+  }, [tiles, customTileLookup, cullBox, worldSize]);
 
   const drawSelection = React.useCallback((g: PIXI.Graphics) => {
     g.clear();
@@ -407,6 +449,22 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
     }
   }, [drawSelection]);
 
+  const tileElements = useMemo(() => {
+    return sortedTiles.map(tile => (
+      <SmartPixiTile
+        key={`${tile.id}-${tile.bitmask}-${tile.foamBitmask}`} tile={tile} customTileLookup={customTileLookup}
+        autoTileSheetUrl={autoTileSheetUrl} dirtSheetUrl={dirtSheetUrl} waterSheetUrl={waterSheetUrl}
+        isFoamEnabled={isFoamEnabled} foamStripTile={foamStripTile} worldSize={worldSize}
+        onPropMouseDown={stableOnPropMouseDown} showDebugNumbers={showDebugNumbers}
+        selectedTool={selectedTool}
+      />
+    ));
+  }, [
+    sortedTiles, customTileLookup, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl,
+    isFoamEnabled, foamStripTile, worldSize, stableOnPropMouseDown, showDebugNumbers,
+    selectedTool
+  ]);
+
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 }}>
       <Application 
@@ -415,14 +473,7 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
       >
         <PixiContainer x={transform.x} y={transform.y} scale={transform.scale}>
           
-          {sortedTiles.map(tile => (
-            <SmartPixiTile
-              key={`${tile.id}-${tile.bitmask}-${tile.foamBitmask}`} tile={tile} customTileLookup={customTileLookup}
-              autoTileSheetUrl={autoTileSheetUrl} dirtSheetUrl={dirtSheetUrl} waterSheetUrl={waterSheetUrl}
-              isFoamEnabled={isFoamEnabled} foamStripTile={foamStripTile} worldSize={worldSize}
-              onPropMouseDown={onPropMouseDown} showDebugNumbers={showDebugNumbers}
-            />
-          ))}
+          {tileElements}
 
           <PixiGraphics ref={selectionRef} />
         </PixiContainer>

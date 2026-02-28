@@ -33,7 +33,7 @@ const getImageDimensions = (file: File): Promise<{ width: number; height: number
   });
 };
 
-export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }) => {
+export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, onGoToNode }) => {
   const { 
     tiles, nodes, selectedNodeId, updateNode, removeNode, customTiles, addCustomTile, removeCustomTile, 
     selectedTileId, selectTile, setTool, selectedTool, activeNodeType, exportMap, updateCustomTile,
@@ -653,4 +653,4 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
       </div>
     </div>
   );
-};
+});
