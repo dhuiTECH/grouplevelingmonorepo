@@ -1,7 +1,7 @@
 'use client';
 import React from 'react';
 import { useMapStore, NodeType } from '@/lib/store/mapStore';
-import { Target, Map as MapIcon, User, Sword, Box, Trash2, Maximize, Settings } from 'lucide-react';
+import { Target, Map as MapIcon, User, Sword, Box, Trash2, Maximize, Settings, Grid } from 'lucide-react';
 
 const DRAGGABLE_NODES: { type: NodeType; label: string; icon: React.ReactNode }[] = [
   { type: 'spawn', label: 'Spawn Point', icon: <Target size={16} className="text-blue-400" /> },
@@ -17,9 +17,10 @@ interface MapDataSidebarProps {
 }
 
 export const MapDataSidebar: React.FC<MapDataSidebarProps> = ({ onEditNode, onGoToNode }) => {
-  const { 
-    nodes, selectedNodeId, updateNode, removeNode, 
-    setTool, selectedTool, activeNodeType, rightSidebarWidth
+  const {
+    nodes, selectedNodeId, updateNode, removeNode,
+    setTool, selectedTool, activeNodeType, rightSidebarWidth,
+    nodeSnapToGrid, setNodeSnapToGrid
   } = useMapStore();
   
   const selectedNode = nodes.find(n => n.id === selectedNodeId);
@@ -82,14 +83,24 @@ export const MapDataSidebar: React.FC<MapDataSidebarProps> = ({ onEditNode, onGo
 
         {/* Node Palette */}
         <div className="p-4 border-b border-slate-800">
-          <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">Node Palette</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-bold text-slate-400 uppercase">Node Palette</h3>
+            <button
+              onClick={() => setNodeSnapToGrid(!nodeSnapToGrid)}
+              className={`px-2 py-1 rounded text-[10px] font-bold transition-all flex items-center gap-1 ${nodeSnapToGrid ? 'bg-orange-600 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}
+              title={nodeSnapToGrid ? "Disable grid snapping for nodes" : "Enable grid snapping for nodes"}
+            >
+              <Grid size={12} />
+              SNAP
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             {DRAGGABLE_NODES.map(node => (
-              <button 
-                key={node.type} 
-                draggable 
-                onDragStart={(e) => handleDragStart(e, node.type)} 
-                onClick={() => setTool('node', node.type)} 
+              <button
+                key={node.type}
+                draggable
+                onDragStart={(e) => handleDragStart(e, node.type)}
+                onClick={() => setTool('node', node.type)}
                 className={`p-2 rounded flex flex-col items-center gap-1 transition-all border ${selectedTool === 'node' && activeNodeType === node.type ? 'bg-blue-900/50 border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.2)]' : 'bg-slate-800 border-slate-700 hover:border-blue-500/50 hover:bg-slate-700'}`}
               >
                 {node.icon}

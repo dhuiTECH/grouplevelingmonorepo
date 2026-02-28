@@ -1,14 +1,15 @@
 'use client';
 import React, { useRef } from 'react';
-import { useMapStore, NodeType } from '@/lib/store/mapStore';
+import { useMapStore, NodeType, CustomTile } from '@/lib/store/mapStore';
 import { WinluPalette } from './WinluPalette';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '@/lib/supabase';
+import { Reorder, useDragControls } from 'framer-motion';
 import { 
   Target, Map as MapIcon, User, Sword, Box, Trash2, Save, Upload, 
   Image as ImageIcon, Plus, Eraser, MousePointer2, Settings, Maximize, 
   XCircle, Loader2, Zap, ChevronDown, AlertTriangle, Eye, EyeOff, Lock, Unlock, Pin,
-  Grid
+  Grid, GripVertical
 } from 'lucide-react';
 
 interface MapSidebarProps {
@@ -39,9 +40,10 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
     isSmartMode, setSmartMode, isRaiseMode, setRaiseMode, isFoamEnabled, setFoamEnabled,
     autoTileSheetUrl, setAutoTileSheetUrl, 
     selectedSmartType, setSelectedSmartType, dirtSheetUrl, setDirtSheetUrl,
+    waterSheetUrl, setWaterSheetUrl,
     selectedWaterBaseId, setSelectedWaterBaseId, selectedFoamStripId, setSelectedFoamStripId,
     waterBaseTile, foamStripTile, sidebarWidth, layerSettings, setLayerVisibility, setLayerLocked,
-    favorites, setFavorite, loadTilesFromSupabase
+    favorites, setFavorite, loadTilesFromSupabase, forceSyncAllChunks
   } = useMapStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const roadInputRef = useRef<HTMLInputElement>(null);
@@ -51,6 +53,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
   const bigStructureInputRef = useRef<HTMLInputElement>(null);
   const autoTileInputRef = useRef<HTMLInputElement>(null);
   const dirtInputRef = useRef<HTMLInputElement>(null);
+  const waterInputRef = useRef<HTMLInputElement>(null);
   const waterBaseUploadRef = useRef<HTMLInputElement>(null);
   const foamStripUploadRef = useRef<HTMLInputElement>(null);
   
@@ -64,6 +67,38 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
     (selectedFoamStripId && foamStripTile()?.id === selectedTileId ? foamStripTile() : undefined);
 
   const [activeTab, setActiveTab] = React.useState<'water' | 'ground' | 'road' | 'prop' | 'structure' | 'mountain' | 'big_structure'>('ground');
+
+  const { reorderCustomTiles } = useMapStore();
+
+  const filteredTiles = React.useMemo(() => {
+    return customTiles.filter(t => {
+      if (activeTab === 'water') return t.category === 'water_base' || t.category === 'foam_strip';
+      if (activeTab === 'ground') return t.category === 'tile' || (!t.category && (t.layer || 0) === 0);
+      if (activeTab === 'road') return t.category === 'road' || (!t.category && (t.layer || 0) === 1);
+      if (activeTab === 'structure') return t.category === 'structure';
+      if (activeTab === 'mountain') return t.category === 'mountain';
+      if (activeTab === 'big_structure') return t.category === 'big_structure';
+      return t.category === 'prop' || (!t.category && (t.layer || 0) >= 2);
+    });
+  }, [customTiles, activeTab]);
+
+  const handleReorder = (newFilteredOrder: CustomTile[]) => {
+    // We need to merge the reordered filtered tiles back into the full customTiles array
+    // maintaining the relative order of non-filtered tiles.
+    const newFullOrder = [...customTiles];
+    
+    // Find indices of currently filtered tiles in the full array
+    const filteredIds = new Set(filteredTiles.map(t => t.id));
+    let filteredIdx = 0;
+    
+    for (let i = 0; i < newFullOrder.length; i++) {
+      if (filteredIds.has(newFullOrder[i].id)) {
+        newFullOrder[i] = newFilteredOrder[filteredIdx++];
+      }
+    }
+    
+    reorderCustomTiles(newFullOrder);
+  };
 
   const handleUploadAsset = async (file: File, prefix: string) => {
     try {
@@ -106,6 +141,16 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
     if (dirtInputRef.current) dirtInputRef.current.value = '';
   };
 
+  const handleWaterSheetUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const publicUrl = await handleUploadAsset(file, 'tiles/auto');
+    if (publicUrl) {
+      await setWaterSheetUrl(publicUrl);
+    }
+    if (waterInputRef.current) waterInputRef.current.value = '';
+  };
+
   const processFiles = async (files: FileList | File[], category: 'tile' | 'prop' | 'road' | 'water_base' | 'foam_strip' | 'structure' | 'mountain' | 'big_structure' = 'tile') => {
     setUploadingTiles(true);
     const fileArray = Array.from(files);
@@ -136,7 +181,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
             type,
             layer,
             isWalkable: true,
-            isAutoFill: true,
+            isAutoFill: false,
             isSpritesheet: false,
             frameCount: 1,
             frameWidth: dimensions.width,
@@ -144,7 +189,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
             animationSpeed: 0.8,
             category,
             isAutoTile: false,
-            snapToGrid: false,
+            snapToGrid: true,
             rotation: 0
           };
           await addCustomTile(newTile);
@@ -197,7 +242,8 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    await forceSyncAllChunks();
     const json = exportMap();
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -212,6 +258,8 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
   const waterTiles = customTiles.filter(t => t.category === 'water_base');
   const foamTiles = customTiles.filter(t => t.category === 'foam_strip');
 
+  const [reorderMode, setReorderMode] = React.useState(false);
+
   return (
     <div 
       style={{ width: sidebarWidth }}
@@ -219,9 +267,18 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
     >
       <div className="p-4 border-b border-slate-800 flex justify-between items-center">
         <h2 className="text-sm font-bold text-slate-100 uppercase tracking-widest">World Editor</h2>
-        <button onClick={handleExport} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition-colors" title="Export Map">
-          <Save size={14} />
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setReorderMode(!reorderMode)} 
+            className={`p-1.5 rounded border transition-colors ${reorderMode ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`}
+            title="Toggle Reorder Mode (Drag to Sort Tiles)"
+          >
+            <GripVertical size={14} />
+          </button>
+          <button onClick={handleExport} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition-colors" title="Export Map">
+            <Save size={14} />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -310,32 +367,62 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
             onDrop={handleDrop}
             className={`transition-all duration-200 rounded-lg p-2 ${isDragging ? 'bg-blue-600/20 ring-2 ring-blue-500 ring-dashed' : ''}`}
           >
-            {customTiles.filter(t => {
-              if (activeTab === 'water') return t.category === 'water_base' || t.category === 'foam_strip';
-              if (activeTab === 'ground') return t.category === 'tile' || (!t.category && (t.layer || 0) === 0);
-              if (activeTab === 'road') return t.category === 'road' || (!t.category && (t.layer || 0) === 1);
-              if (activeTab === 'structure') return t.category === 'structure';
-              if (activeTab === 'mountain') return t.category === 'mountain';
-              if (activeTab === 'big_structure') return t.category === 'big_structure';
-              return t.category === 'prop' || (!t.category && (t.layer || 0) >= 2);
-            }).length === 0 ? (
+            {filteredTiles.length === 0 ? (
               <div className="text-center py-6 border-2 border-dashed border-slate-800 rounded bg-slate-900/50 flex flex-col items-center justify-center">
                 <Upload size={24} className={`mb-2 transition-colors ${isDragging ? 'text-blue-400 animate-bounce' : 'text-slate-600'}`} />
                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">
                   {isDragging ? 'Drop to Upload' : `Drop ${activeTab.toUpperCase()} PNGs`}
                 </p>
               </div>
+            ) : reorderMode ? (
+              <Reorder.Group 
+                axis="y" 
+                values={filteredTiles} 
+                onReorder={handleReorder}
+                className="space-y-1"
+              >
+                {filteredTiles.map(tile => (
+                  <Reorder.Item 
+                    key={tile.id} 
+                    value={tile}
+                    className="relative group flex items-center gap-2 p-1.5 bg-slate-950 border border-slate-800 rounded hover:border-orange-500/50 transition-colors"
+                  >
+                    <div className="shrink-0 cursor-grab active:cursor-grabbing text-slate-600 hover:text-orange-400">
+                      <GripVertical size={14} />
+                    </div>
+                    
+                    <div 
+                      className="w-8 h-8 shrink-0 bg-black border border-slate-800 rounded overflow-hidden"
+                    >
+                      <div 
+                        className="w-full h-full"
+                        style={{
+                          backgroundImage: `url(${tile.url})`,
+                          backgroundSize: tile.isSpritesheet && tile.frameCount ? `${tile.frameCount * 100}% 100%` : 'contain',
+                          backgroundPosition: 'center',
+                          backgroundRepeat: 'no-repeat',
+                          imageRendering: 'pixelated'
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[9px] font-bold text-slate-400 truncate uppercase tracking-tighter">
+                        {tile.name.replace('.png', '').substring(0, 15)}
+                      </p>
+                    </div>
+
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                       <button onClick={(e) => { e.stopPropagation(); removeCustomTile(tile.id); }} className="p-1 bg-red-600/20 text-red-500 hover:bg-red-600 hover:text-white rounded transition-all">
+                        <Trash2 size={10} />
+                      </button>
+                    </div>
+                  </Reorder.Item>
+                ))}
+              </Reorder.Group>
             ) : (
               <div className="grid grid-cols-4 gap-2">
-                {customTiles.filter(t => {
-                  if (activeTab === 'water') return t.category === 'water_base' || t.category === 'foam_strip';
-                  if (activeTab === 'ground') return t.category === 'tile' || (!t.category && (t.layer || 0) === 0);
-                  if (activeTab === 'road') return t.category === 'road' || (!t.category && (t.layer || 0) === 1);
-                  if (activeTab === 'structure') return t.category === 'structure';
-                  if (activeTab === 'mountain') return t.category === 'mountain';
-                  if (activeTab === 'big_structure') return t.category === 'big_structure';
-                  return t.category === 'prop' || (!t.category && (t.layer || 0) >= 2);
-                }).map(tile => (
+                {filteredTiles.map(tile => (
                   <div key={tile.id} className="relative group">
                     <button onClick={() => selectTile(selectedTileId === tile.id ? null : tile.id)} className={`w-full aspect-square bg-slate-950 border rounded overflow-hidden transition-all flex items-center justify-center ${selectedTileId === tile.id ? 'border-green-500 ring-1 ring-green-500/50 scale-95 shadow-inner' : 'border-slate-700 hover:border-slate-500'}`}>
                       <div 
@@ -414,7 +501,55 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
                 <label className="text-[9px] text-slate-500 uppercase font-bold">Rotation</label>
                 <input type="number" value={currentlyEditedTile.rotation || 0} onChange={(e) => updateCustomTile(currentlyEditedTile.id, { rotation: parseInt(e.target.value) || 0 })} className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" />
               </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[9px] text-slate-500 uppercase font-bold">Width</label>
+                <input type="number" value={currentlyEditedTile.frameWidth || 48} onChange={(e) => updateCustomTile(currentlyEditedTile.id, { frameWidth: parseInt(e.target.value) || 48 })} className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[9px] text-slate-500 uppercase font-bold">Height</label>
+                <input type="number" value={currentlyEditedTile.frameHeight || 48} onChange={(e) => updateCustomTile(currentlyEditedTile.id, { frameHeight: parseInt(e.target.value) || 48 })} className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" />
+              </div>
             </div>
+            {/* Toggles Grid */}
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/50">
+              <div className="flex items-center justify-between bg-slate-950/30 p-1.5 rounded border border-slate-800/50">
+                <label className="text-[8px] text-slate-500 uppercase font-bold">Snap Grid</label>
+                <button 
+                  onClick={() => updateCustomTile(currentlyEditedTile.id, { snapToGrid: !currentlyEditedTile.snapToGrid })}
+                  className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${currentlyEditedTile.snapToGrid ? 'bg-blue-900/50 text-blue-400 border border-blue-500/30' : 'bg-slate-800 text-slate-600'}`}
+                >
+                  {currentlyEditedTile.snapToGrid ? 'ON' : 'OFF'}
+                </button>
+              </div>
+              <div className="flex items-center justify-between bg-slate-950/30 p-1.5 rounded border border-slate-800/50">
+                <label className="text-[8px] text-slate-500 uppercase font-bold">Walkable</label>
+                <button 
+                  onClick={() => updateCustomTile(currentlyEditedTile.id, { isWalkable: !currentlyEditedTile.isWalkable })}
+                  className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${currentlyEditedTile.isWalkable ? 'bg-green-900/50 text-green-400 border border-green-500/30' : 'bg-slate-800 text-slate-600'}`}
+                >
+                  {currentlyEditedTile.isWalkable ? 'YES' : 'NO'}
+                </button>
+              </div>
+              <div className="flex items-center justify-between bg-slate-950/30 p-1.5 rounded border border-slate-800/50">
+                <label className="text-[8px] text-slate-500 uppercase font-bold">AutoFill</label>
+                <button 
+                  onClick={() => updateCustomTile(currentlyEditedTile.id, { isAutoFill: !currentlyEditedTile.isAutoFill })}
+                  className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${currentlyEditedTile.isAutoFill ? 'bg-purple-900/50 text-purple-400 border border-purple-500/30' : 'bg-slate-800 text-slate-600'}`}
+                >
+                  {currentlyEditedTile.isAutoFill ? 'ON' : 'OFF'}
+                </button>
+              </div>
+              <div className="flex items-center justify-between bg-slate-950/30 p-1.5 rounded border border-slate-800/50">
+                <label className="text-[8px] text-slate-500 uppercase font-bold">AutoTile</label>
+                <button 
+                  onClick={() => updateCustomTile(currentlyEditedTile.id, { isAutoTile: !currentlyEditedTile.isAutoTile })}
+                  className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${currentlyEditedTile.isAutoTile ? 'bg-cyan-900/50 text-cyan-400 border border-cyan-500/30' : 'bg-slate-800 text-slate-600'}`}
+                >
+                  {currentlyEditedTile.isAutoTile ? 'ON' : 'OFF'}
+                </button>
+              </div>
+            </div>
+
             {/* Advanced (Spritesheet) */}
             <div className="pt-2 border-t border-slate-800/50 flex items-center justify-between">
               <label className="text-[9px] text-slate-500 uppercase font-bold italic">Spritesheet</label>
@@ -422,6 +557,30 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
                 {currentlyEditedTile.isSpritesheet ? 'ON' : 'OFF'}
               </button>
             </div>
+            
+            {currentlyEditedTile.isSpritesheet && (
+              <div className="grid grid-cols-2 gap-2 mt-2 bg-slate-950/50 p-2 rounded border border-slate-800">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[8px] text-slate-500 font-bold">Frames</label>
+                  <input 
+                    type="number" 
+                    value={currentlyEditedTile.frameCount || 1} 
+                    onChange={(e) => updateCustomTile(currentlyEditedTile.id, { frameCount: parseInt(e.target.value) || 1 })}
+                    className="bg-slate-900 border border-slate-700 text-[9px] text-cyan-400 rounded px-1 py-0.5 text-center"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[8px] text-slate-500 font-bold">Speed</label>
+                  <input 
+                    type="number" 
+                    step="0.1"
+                    value={currentlyEditedTile.animationSpeed || 0.8} 
+                    onChange={(e) => updateCustomTile(currentlyEditedTile.id, { animationSpeed: parseFloat(e.target.value) || 0.8 })}
+                    className="bg-slate-900 border border-slate-700 text-[9px] text-cyan-400 rounded px-1 py-0.5 text-center"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -461,6 +620,24 @@ export const MapSidebar: React.FC<MapSidebarProps> = ({ onEditNode, onGoToNode }
             ) : (
               <div onClick={() => dirtInputRef.current?.click()} className="h-10 bg-slate-900/30 rounded border border-dashed border-slate-800 flex items-center justify-center cursor-pointer">
                 <span className="text-[9px] text-slate-700 font-black uppercase">No Dirt Sheet</span>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Water Sheet</label>
+              <button onClick={() => waterInputRef.current?.click()} className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded border border-slate-700 font-bold transition-colors">LOAD</button>
+              <input type="file" ref={waterInputRef} className="hidden" accept="image/png" onChange={handleWaterSheetUpload} />
+            </div>
+            {waterSheetUrl ? (
+              <div className="relative h-10 bg-slate-950 rounded border border-slate-800 overflow-hidden group">
+                 <img src={waterSheetUrl} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" alt="Water" />
+                 <button onClick={() => setWaterSheetUrl(null)} className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"><XCircle size={10} /></button>
+              </div>
+            ) : (
+              <div onClick={() => waterInputRef.current?.click()} className="h-10 bg-slate-900/30 rounded border border-dashed border-slate-800 flex items-center justify-center cursor-pointer">
+                <span className="text-[9px] text-slate-700 font-black uppercase">No Water Sheet</span>
               </div>
             )}
           </div>

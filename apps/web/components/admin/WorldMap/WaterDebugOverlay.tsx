@@ -2,23 +2,21 @@ import React, { useState } from 'react';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { BLOB_12x4_MAP, MASK_TO_ID } from './mapUtils';
 
-interface WinluDebugOverlayProps {
+interface WaterDebugOverlayProps {
   sheetUrl: string;
   onClose: () => void;
 }
 
-export const WinluDebugOverlay: React.FC<WinluDebugOverlayProps> = ({ sheetUrl, onClose }) => {
+export const WaterDebugOverlay: React.FC<WaterDebugOverlayProps> = ({ sheetUrl, onClose }) => {
   const [blockCol, setBlockCol] = useState(0);
   const [blockRow, setBlockRow] = useState(0);
 
   const TILE_SIZE = 48;
   const BLOCK_WIDTH = 576; // 12 * 48
   const BLOCK_HEIGHT = 192; // 4 * 48
-  const GAP = 48;
-  const strideX = BLOCK_WIDTH + GAP; // 624
-  const strideY = BLOCK_HEIGHT + GAP; // 240
-
-  const BLOB_Y_OFFSET = 0; // Matching mapUtils.ts
+  const ROW_GAP = 48; // Only vertical gap for water
+  const strideX = BLOCK_WIDTH; // No horizontal gap for water
+  const strideY = BLOCK_HEIGHT + ROW_GAP; // 240
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -26,9 +24,9 @@ export const WinluDebugOverlay: React.FC<WinluDebugOverlayProps> = ({ sheetUrl, 
         <div className="p-4 border-b border-slate-700 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              WinLu Autotile Debugger
+              <span className="text-cyan-400">Water</span> Autotile Debugger
             </h2>
-            <p className="text-sm text-slate-400">Mapping visual IDs 1-47 to the 12x4 Biome block</p>
+            <p className="text-sm text-slate-400">Water sheet uses NO horizontal gaps (liquid layout)</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full transition-colors">
             <X size={24} className="text-slate-400" />
@@ -41,7 +39,7 @@ export const WinluDebugOverlay: React.FC<WinluDebugOverlayProps> = ({ sheetUrl, 
               <span className="text-sm font-medium text-slate-300">Block Col:</span>
               <div className="flex items-center gap-1">
                 <button onClick={() => setBlockCol(Math.max(0, blockCol - 1))} className="p-1 hover:bg-slate-700 rounded"><ChevronLeft size={16}/></button>
-                <span className="w-8 text-center font-bold text-blue-400">{blockCol}</span>
+                <span className="w-8 text-center font-bold text-cyan-400">{blockCol}</span>
                 <button onClick={() => setBlockCol(Math.min(3, blockCol + 1))} className="p-1 hover:bg-slate-700 rounded"><ChevronRight size={16}/></button>
               </div>
             </div>
@@ -49,20 +47,20 @@ export const WinluDebugOverlay: React.FC<WinluDebugOverlayProps> = ({ sheetUrl, 
               <span className="text-sm font-medium text-slate-300">Block Row:</span>
               <div className="flex items-center gap-1">
                 <button onClick={() => setBlockRow(Math.max(0, blockRow - 1))} className="p-1 hover:bg-slate-700 rounded"><ChevronLeft size={16}/></button>
-                <span className="w-8 text-center font-bold text-blue-400">{blockRow}</span>
+                <span className="w-8 text-center font-bold text-cyan-400">{blockRow}</span>
                 <button onClick={() => setBlockRow(Math.min(7, blockRow + 1))} className="p-1 hover:bg-slate-700 rounded"><ChevronRight size={16}/></button>
               </div>
             </div>
             <div className="ml-4 text-xs text-slate-500">
-              Showing Biome {blockCol},{blockRow} (576x192)
+              Water Block {blockCol},{blockRow} (576x192, no H-gap)
             </div>
           </div>
 
-          <div 
-            className="relative border-4 border-slate-600 shadow-2xl overflow-hidden bg-slate-950"
+          <div
+            className="relative border-4 border-cyan-600 shadow-2xl overflow-hidden bg-slate-950"
             style={{
               width: `${BLOCK_WIDTH}px`,
-              height: `${BLOCK_HEIGHT}px`, 
+              height: `${BLOCK_HEIGHT}px`,
               backgroundImage: `url('${sheetUrl}')`,
               backgroundPosition: `-${blockCol * strideX}px -${blockRow * strideY}px`,
               backgroundRepeat: 'no-repeat',
@@ -73,7 +71,7 @@ export const WinluDebugOverlay: React.FC<WinluDebugOverlayProps> = ({ sheetUrl, 
             {/* Grid Overlay */}
             <div className="absolute inset-0 pointer-events-none grid grid-cols-[repeat(12,48px)] grid-rows-[repeat(4,48px)]">
               {Array.from({ length: 12 * 4 }).map((_, i) => (
-                <div key={i} className="border-[0.5px] border-white/10" />
+                <div key={i} className="border-[0.5px] border-cyan-400/20" />
               ))}
             </div>
 
@@ -89,14 +87,14 @@ export const WinluDebugOverlay: React.FC<WinluDebugOverlayProps> = ({ sheetUrl, 
                   className="absolute flex items-center justify-center pointer-events-none"
                   style={{
                     left: `${col * TILE_SIZE}px`,
-                    top: `${BLOB_Y_OFFSET + row * TILE_SIZE}px`,
+                    top: `${row * TILE_SIZE}px`,
                     width: `${TILE_SIZE}px`,
                     height: `${TILE_SIZE}px`,
-                    backgroundColor: 'rgba(59, 130, 246, 0.3)',
-                    border: '1px solid rgba(59, 130, 246, 0.6)',
+                    backgroundColor: 'rgba(6, 182, 212, 0.3)',
+                    border: '1px solid rgba(6, 182, 212, 0.6)',
                   }}
                 >
-                  <div className="bg-blue-600/90 text-white text-[12px] font-bold px-1.5 py-0.5 rounded flex flex-col items-center justify-center">
+                  <div className="bg-cyan-600/90 text-white text-[12px] font-bold px-1.5 py-0.5 rounded flex flex-col items-center justify-center">
                     <span>{id}</span>
                     <span className="text-[8px] font-normal opacity-80">mask: {maskVal}</span>
                   </div>
@@ -104,12 +102,20 @@ export const WinluDebugOverlay: React.FC<WinluDebugOverlayProps> = ({ sheetUrl, 
               );
             })}
           </div>
-          
-          <div className="mt-4 bg-blue-900/20 p-4 rounded border border-blue-800/50 max-w-2xl">
-             <h3 className="text-sm font-bold text-blue-300 mb-2 uppercase tracking-wider">Corrected Biome Mapping</h3>
+
+          <div className="mt-4 bg-cyan-900/20 p-4 rounded border border-cyan-800/50 max-w-2xl">
+             <h3 className="text-sm font-bold text-cyan-300 mb-2 uppercase tracking-wider">Water Sheet Layout (Liquid)</h3>
              <p className="text-xs text-slate-400">
-               Each biome is now strictly 12x4 tiles (576x192). The 48px gap between biomes is handled by the stride (624px horizontal, 240px vertical). All autotile indices are now contained within the 4-row limit.
+               Water biomes are 12x4 tiles (576x192) with <strong>NO horizontal gap</strong> between blocks. Only a 48px vertical gap separates rows. This matches RPG Maker's liquid/water sheet format.
              </p>
+             <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+               <div className="bg-slate-800 p-2 rounded">
+                 <span className="text-cyan-400 font-bold">Horizontal:</span> Block * 576px (no gap)
+               </div>
+               <div className="bg-slate-800 p-2 rounded">
+                 <span className="text-cyan-400 font-bold">Vertical:</span> Block * 240px (192+48 gap)
+               </div>
+             </div>
           </div>
         </div>
       </div>

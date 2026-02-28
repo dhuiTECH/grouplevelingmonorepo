@@ -13,12 +13,12 @@ export const BLOB_12x4_MAP: Record<number, [number, number]> = {
 };
 
 export const MASK_TO_ID: Record<number, number> = {
-  0: 17,    1: 38,    4: 4,     5: 44,    7: 24,    16: 16,   17: 28,   20: 34,
-  21: 7,    23: 39,   28: 1,    29: 29,   31: 13,   64: 6,    65: 45,   68: 5,
-  69: 19,   71: 42,   80: 35,   81: 8,    84: 18,   85: 27,   87: 22,   92: 32,
-  93: 33,   95: 14,   112: 3,   113: 30,  116: 31,  117: 20,  119: 9,   124: 2,
-  125: 23,  127: 36,  193: 26,  197: 41,  199: 25,  209: 40,  213: 21,  215: 10,
-  221: 12,  223: 46,  241: 15,  245: 43,  247: 11,  253: 37,  255: 47
+  0: 17,    1: 38,    4: 4,     5: 29,    7: 24,    16: 16,   17: 27,   20: 7,
+  21: 18,   23: 22,   28: 1,    29: 21,   31: 13,   64: 6,    65: 31,   68: 5,
+  69: 30,   71: 32,   80: 9,    81: 20,   84: 8,    85: 19,   87: 12,   92: 10,
+  93: 23,   95: 47,   112: 3,   113: 40,  116: 11,  117: 42,  119: 44,  124: 2,
+  125: 46,  127: 37,  193: 26,  197: 33,  199: 25,  209: 39,  213: 41,  215: 28,
+  221: 45,  223: 35,  241: 15,  245: 43,  247: 34,  253: 36,  255: 14
 };
 
 export function getTileIdFromMask(mask: number): number {
@@ -72,6 +72,30 @@ export function getPixiTextureCoords(mask: number, blockCol: number, blockRow: n
   const tileId = getTileIdFromMask(mask);
 
   // 2. Map custom 1-47 ID to [col, row]
+  const [col, row] = BLOB_12x4_MAP[tileId] || [0, 0];
+
+  return [{
+    sourceX: blockStartX + col * TILE_SIZE,
+    sourceY: blockStartY + row * TILE_SIZE,
+    sourceWidth: TILE_SIZE,
+    sourceHeight: TILE_SIZE
+  }];
+}
+
+export function getLiquidTextureCoords(mask: number, blockCol: number, blockRow: number) {
+  const TILE_SIZE = 48;
+  const BLOCK_WIDTH = 576;
+  const BLOCK_HEIGHT = 192;
+  const ROW_GAP = 48;
+
+  const strideX = BLOCK_WIDTH;
+  const strideY = BLOCK_HEIGHT + ROW_GAP;
+
+  const blockStartX = blockCol * strideX;
+  const blockStartY = blockRow * strideY;
+
+  // Reuse the perfect dictionaries we already locked in
+  const tileId = getTileIdFromMask(mask);
   const [col, row] = BLOB_12x4_MAP[tileId] || [0, 0];
 
   return [{

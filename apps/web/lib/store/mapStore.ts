@@ -62,11 +62,58 @@ export interface CustomTile {
   smartType?: string;
   category?: 'water_base' | 'foam_strip' | 'tile' | 'prop' | 'road' | 'structure' | 'mountain' | 'big_structure';
   rotation?: number; // Default rotation
+  sort_order?: number;
 }
 
 export type ToolType = 'select' | 'paint' | 'erase' | 'node' | 'stamp' | 'eyedropper';
 
 const CHUNK_SIZE = 16;
+
+const syncQueue: Record<string, Promise<void> | undefined> = {};
+const syncTimeouts: Record<string, NodeJS.Timeout | undefined> = {};
+
+// Helper to handle debounced chunk syncing
+const triggerChunkSync = (chunkX: number, chunkY: number, get: () => MapState) => {
+  const chunkKey = `${chunkX},${chunkY}`;
+  
+  // Clear existing timeout for this chunk
+  if (syncTimeouts[chunkKey]) {
+    clearTimeout(syncTimeouts[chunkKey]);
+  }
+
+  // Set new timeout (500ms debounce)
+  syncTimeouts[chunkKey] = setTimeout(async () => {
+    const sync = async () => {
+      // Wait for any existing sync for this chunk to finish (serialize requests)
+      if (syncQueue[chunkKey]) {
+        await syncQueue[chunkKey];
+      }
+
+      const allTiles = get().tiles;
+      const chunkTiles = allTiles
+        .filter(t => Math.floor(t.x / CHUNK_SIZE) === chunkX && Math.floor(t.y / CHUNK_SIZE) === chunkY)
+        .map(t => {
+          const { id, ...rest } = t;
+          return {
+            ...rest,
+            block_col: t.blockCol || 0,
+            block_row: t.blockRow || 0
+          };
+        });
+
+      await supabase.from('map_chunks').upsert({
+        chunk_x: chunkX,
+        chunk_y: chunkY,
+        tile_data: chunkTiles,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'chunk_x,chunk_y' });
+    };
+
+    syncQueue[chunkKey] = sync();
+    await syncQueue[chunkKey];
+    syncTimeouts[chunkKey] = undefined;
+  }, 500);
+};
 
 export interface LayerSetting {
   locked: boolean;
@@ -82,12 +129,25 @@ interface MapState {
   selectedTool: ToolType;
   activeNodeType: NodeType | null;
   isDraggingNode: boolean;
+  draggingNodeId: string | null;
   isDraggingTile: boolean;
   draggingTileId: string | null;
+  dragGrabOffset: { x: number, y: number } | null;
+  setDragGrabOffset: (offset: { x: number, y: number } | null) => void;
   isLoadingTiles: boolean;
   spawnPoint: { x: number; y: number } | null;
   globalTick: number; // For shared animations
   incrementTick: () => void;
+  
+  // Brush state
+  brushSize: number;
+  setBrushSize: (size: number) => void;
+  brushMode: boolean;
+  setBrushMode: (enabled: boolean) => void;
+
+  // Node state
+  nodeSnapToGrid: boolean;
+  setNodeSnapToGrid: (enabled: boolean) => void;
   
   // Layout state
   sidebarWidth: number;
@@ -112,23 +172,27 @@ interface MapState {
 
   // Auto-tiling editor state
   isSmartMode: boolean;
-  selectedSmartType: string; // 'off' | 'grass' | 'dirt'
+  selectedSmartType: string; // 'off' | 'grass' | 'dirt' | 'water'
   selectedBlockCol: number;
   selectedBlockRow: number;
+  smartBrushLayer: number; // Target layer for smart brushes (default 0)
   terrainOffsets: Record<string, { flat: [number, number], raised: [number, number] }>;
   isRaiseMode: boolean;
   isFoamEnabled: boolean;
   autoTileSheetUrl: string | null;
   dirtSheetUrl: string | null;
+  waterSheetUrl: string | null;
   selectedWaterBaseId: string | null; // NEW
   selectedFoamStripId: string | null; // NEW
   setSmartMode: (enabled: boolean) => void;
   setSelectedSmartType: (type: string) => void;
   setSelectedBlock: (col: number, row: number) => void;
+  setSmartBrushLayer: (layer: number) => void;
   setRaiseMode: (enabled: boolean) => void;
   setFoamEnabled: (enabled: boolean) => void;
   setAutoTileSheetUrl: (url: string | null) => Promise<void>;
   setDirtSheetUrl: (url: string | null) => Promise<void>;
+  setWaterSheetUrl: (url: string | null) => Promise<void>;
   setSelectedWaterBaseId: (id: string | null) => Promise<void>; // NEW
   setSelectedFoamStripId: (id: string | null) => Promise<void>; // NEW
   waterBaseTile: () => CustomTile | undefined; // NEW SELECTOR
@@ -137,6 +201,8 @@ interface MapState {
   // Debug modal state
   showDebugModal: boolean;
   setShowDebugModal: (show: boolean) => void;
+  showDebugNumbers: boolean;
+  setShowDebugNumbers: (show: boolean) => void;
   
   setTiles: (tiles: Tile[]) => void;
   setNodes: (nodes: MapNode[]) => void;
@@ -149,10 +215,12 @@ interface MapState {
   selectNode: (id: string | null) => void;
   selectTile: (id: string | null) => void;
   setDraggingTile: (id: string | null) => void;
+  setDraggingNode: (id: string | null) => void;
   setTool: (tool: ToolType, nodeType?: NodeType | null) => void;
   addCustomTile: (tile: CustomTile) => Promise<void>;
   removeCustomTile: (id: string) => Promise<void>;
   updateCustomTile: (id: string, updates: Partial<CustomTile>) => Promise<void>;
+  reorderCustomTiles: (tiles: CustomTile[]) => Promise<void>;
   setSpawnPoint: (x: number, y: number) => void;
   addTile: (tile: Tile) => void;
   addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number) => Promise<void>;
@@ -160,11 +228,11 @@ interface MapState {
   removeTileAt: (x: number, y: number) => Promise<Tile | null>;
   removeTileById: (id: string) => Promise<void>;
   moveTile: (tileId: string, newX: number, newY: number, newOffsetX: number, newOffsetY: number) => Promise<void>;
-  updateTileAndNeighbors: (x: number, y: number, layer: number, isRemoving?: boolean) => Promise<void>; // NEW
+  rotateTile: (tileId: string, rotationDelta: number) => Promise<void>;
+  updateTileAndNeighbors: (x: number, y: number, layer: number, isRemoving?: boolean, smartType?: string, blockCol?: number, blockRow?: number) => Promise<void>; // NEW
+  forceSyncAllChunks: () => Promise<void>;
   exportMap: () => string;
 }
-
-const syncQueue: Record<string, Promise<void> | undefined> = {};
 
 export const useMapStore = create<MapState>((set, get) => ({
   tiles: [],
@@ -175,12 +243,24 @@ export const useMapStore = create<MapState>((set, get) => ({
   selectedTool: 'select',
   activeNodeType: null,
   isDraggingNode: false,
+  draggingNodeId: null,
   isDraggingTile: false,
   draggingTileId: null,
+  dragGrabOffset: null,
+  setDragGrabOffset: (dragGrabOffset) => set({ dragGrabOffset }),
   isLoadingTiles: false,
   spawnPoint: null,
   globalTick: 0,
   incrementTick: () => set((state) => ({ globalTick: (state.globalTick + 1) % 1000 })),
+
+  brushSize: 1,
+  setBrushSize: (brushSize) => set({ brushSize }),
+
+  brushMode: false,
+  setBrushMode: (brushMode) => set({ brushMode }),
+
+  nodeSnapToGrid: true,
+  setNodeSnapToGrid: (nodeSnapToGrid) => set({ nodeSnapToGrid }),
 
   // Layout initial state
   sidebarWidth: 320,
@@ -226,6 +306,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   selectedSmartType: 'off',
   selectedBlockCol: 0,
   selectedBlockRow: 0,
+  smartBrushLayer: 0,
   terrainOffsets: {
     grass: { flat: [0, 0], raised: [0, 192] },
     dirt: { flat: [0, 384], raised: [0, 576] }
@@ -234,16 +315,20 @@ export const useMapStore = create<MapState>((set, get) => ({
   isFoamEnabled: true,
   autoTileSheetUrl: null,
   dirtSheetUrl: null,
+  waterSheetUrl: null,
   selectedWaterBaseId: null, // NEW
   selectedFoamStripId: null, // NEW
   showDebugModal: false,
+  showDebugNumbers: false,
 
   setSmartMode: (isSmartMode) => set({ isSmartMode }),
   setSelectedSmartType: (selectedSmartType) => set({ selectedSmartType, isSmartMode: selectedSmartType !== 'off' }),
   setSelectedBlock: (selectedBlockCol, selectedBlockRow) => set({ selectedBlockCol, selectedBlockRow }),
-  setRaiseMode: (isRaiseMode) => set({ isRaiseMode }),
+  setSmartBrushLayer: (smartBrushLayer) => set({ smartBrushLayer }),
+  setRaiseMode: (enabled: boolean) => set({ isRaiseMode: enabled }),
   setFoamEnabled: (isFoamEnabled) => set({ isFoamEnabled }),
   setShowDebugModal: (showDebugModal) => set({ showDebugModal }),
+  setShowDebugNumbers: (showDebugNumbers) => set({ showDebugNumbers }),
   setAutoTileSheetUrl: async (url) => {
     set({ autoTileSheetUrl: url });
     await supabase.from('world_map_settings').upsert({ id: 1, autotile_sheet_url: url }, { onConflict: 'id' });
@@ -251,6 +336,10 @@ export const useMapStore = create<MapState>((set, get) => ({
   setDirtSheetUrl: async (url) => {
     set({ dirtSheetUrl: url });
     await supabase.from('world_map_settings').upsert({ id: 1, dirt_sheet_url: url }, { onConflict: 'id' });
+  },
+  setWaterSheetUrl: async (url) => {
+    set({ waterSheetUrl: url });
+    await supabase.from('world_map_settings').upsert({ id: 1, water_sheet_url: url }, { onConflict: 'id' });
   },
   setSelectedWaterBaseId: async (id) => { // NEW
     set({ selectedWaterBaseId: id });
@@ -293,6 +382,7 @@ export const useMapStore = create<MapState>((set, get) => ({
       set({
         autoTileSheetUrl: settingsData.autotile_sheet_url,
         dirtSheetUrl: settingsData.dirt_sheet_url,
+        waterSheetUrl: settingsData.water_sheet_url,
       });
     }
 
@@ -338,7 +428,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     }
 
     // Load Custom Tile Library
-    const { data: customTilesData } = await supabase.from('custom_tiles').select('*');
+    const { data: customTilesData } = await supabase.from('custom_tiles').select('*').order('sort_order', { ascending: true });
     if (customTilesData) {
       const parsedTiles: CustomTile[] = customTilesData.map((t: any) => ({
         id: t.id,
@@ -347,7 +437,7 @@ export const useMapStore = create<MapState>((set, get) => ({
         type: t.type,
         isSpritesheet: t.is_spritesheet,
         frameCount: t.frame_count,
-        frameWidth: t.frame_width,
+        frame_width: t.frame_width,
         frameHeight: t.frame_height,
         animationSpeed: t.animation_speed,
         layer: t.layer || 0,
@@ -357,7 +447,8 @@ export const useMapStore = create<MapState>((set, get) => ({
         isAutoTile: t.is_autotile ?? false,
         smartType: t.smartType,
         category: t.category,
-        rotation: t.rotation || 0
+        rotation: t.rotation || 0,
+        sort_order: t.sort_order || 0
       }));
 
       // Match the loaded URLs from settings back to the custom tile IDs
@@ -414,18 +505,26 @@ export const useMapStore = create<MapState>((set, get) => ({
   },
 
   updateNode: async (id, updates) => {
-    set((state) => ({
-      nodes: state.nodes.map((n) => n.id === id ? { ...n, ...updates } : n)
-    }));
-    const node = get().nodes.find(n => n.id === id);
-    if (node) {
+    let updatedNode: MapNode | null = null;
+    set((state) => {
+      const newNodes = state.nodes.map((n) => {
+        if (n.id === id) {
+          updatedNode = { ...n, ...updates };
+          return updatedNode;
+        }
+        return n;
+      });
+      return { nodes: newNodes };
+    });
+
+    if (updatedNode) {
       await supabase.from('world_map_nodes').update({
-        global_x: node.x,
-        global_y: node.y,
-        name: node.name,
-        type: node.type,
-        icon_url: node.iconUrl,
-        interaction_data: node.properties || {}
+        global_x: updatedNode.x,
+        global_y: updatedNode.y,
+        name: updatedNode.name,
+        type: updatedNode.type,
+        icon_url: updatedNode.iconUrl,
+        interaction_data: updatedNode.properties || {}
       }).eq('id', id);
     }
   },
@@ -443,6 +542,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   selectTile: (id) => set({ selectedTileId: id, selectedNodeId: null, selectedTool: 'paint' }),
 
   setDraggingTile: (id) => set({ draggingTileId: id, isDraggingTile: !!id }),
+  setDraggingNode: (id) => set({ draggingNodeId: id, isDraggingNode: !!id }),
 
   setTool: (tool, nodeType = null) => set({ 
     selectedTool: tool, 
@@ -450,7 +550,9 @@ export const useMapStore = create<MapState>((set, get) => ({
     selectedNodeId: null,
     selectedTileId: tool === 'paint' ? get().selectedTileId : null,
     draggingTileId: null,
-    isDraggingTile: false
+    draggingNodeId: null,
+    isDraggingTile: false,
+    isDraggingNode: false
   }),
 
   addCustomTile: async (tile) => {
@@ -474,7 +576,8 @@ export const useMapStore = create<MapState>((set, get) => ({
       is_autotile: tile.isAutoTile ?? false,
       smartType: tile.smartType, // Ensure smartType is saved
       category: tile.category, // NEW
-      rotation: tile.rotation || 0
+      rotation: tile.rotation || 0,
+      sort_order: tile.sort_order || 0
     });
     if (error) console.error("Failed to add custom tile:", error);
   },
@@ -509,10 +612,25 @@ export const useMapStore = create<MapState>((set, get) => ({
         is_autotile: tile.isAutoTile ?? false,
         smartType: tile.smartType, // Ensure smartType is updated
         category: tile.category, // NEW
-        rotation: tile.rotation || 0
+        rotation: tile.rotation || 0,
+        sort_order: tile.sort_order || 0
       }).eq('id', id);
       if (error) console.error("Failed to update custom tile:", error);
     }
+  },
+
+  reorderCustomTiles: async (tiles) => {
+    set({ customTiles: tiles });
+    
+    // Batch update sort order in Supabase
+    const updates = tiles.map((t, index) => ({
+      id: t.id,
+      sort_order: index
+    }));
+
+    await Promise.all(updates.map(u => 
+      supabase.from('custom_tiles').update({ sort_order: u.sort_order }).eq('id', u.id)
+    ));
   },
 
   setSpawnPoint: (x, y) => set({ spawnPoint: { x, y } }),
@@ -526,71 +644,32 @@ export const useMapStore = create<MapState>((set, get) => ({
     const chunkY = Math.floor(y / CHUNK_SIZE);
 
     // 1. Update local state (keep full data for instant web rendering)
-    set((state) => ({
-      tiles: [...state.tiles.filter(t => !(t.x === x && t.y === y && t.layer === (layer || 0))), {
+    set((state) => {
+      const existingIdx = state.tiles.findIndex(t => t.x === x && t.y === y && (t.layer || 0) === (layer || 0));
+      const newTile = {
         id: uuidv4(),
-        x,
-        y,
-        type,
-        imageUrl,
-        isSpritesheet,
-        frameCount,
-        frameWidth,
-        frameHeight,
-        animationSpeed,
-        layer: layer || 0,
-        offsetX: offsetX || 0,
-        offsetY: offsetY || 0,
-        isWalkable: isWalkable ?? true,
-        snapToGrid: snapToGrid ?? false,
-        isAutoFill: isAutoFill ?? true,
-        isAutoTile,
-        bitmask,
-        elevation,
-        hasFoam,
-        foamBitmask,
-        smartType,
-        blockCol: blockCol || 0,
-        blockRow: blockRow || 0,
-        rotation: rotation || 0
-      }]
-    }));
+        x, y, type, imageUrl, isSpritesheet, frameCount, frameWidth, frameHeight, animationSpeed,
+        layer: layer || 0, offsetX: offsetX || 0, offsetY: offsetY || 0,
+        isWalkable: isWalkable ?? true, snapToGrid: snapToGrid ?? false, isAutoFill: isAutoFill ?? true,
+        isAutoTile, bitmask, elevation, hasFoam, foamBitmask, smartType,
+        blockCol: blockCol || 0, blockRow: blockRow || 0, rotation: rotation || 0
+      };
 
-    // 2. Sync Chunk to Supabase from the latest state (serialized to prevent race conditions)
-    const chunkKey = `${chunkX},${chunkY}`;
-    
-    const sync = async () => {
-      // Wait for any existing sync for this chunk to finish
-      if (syncQueue[chunkKey]) {
-        await syncQueue[chunkKey];
+      if (existingIdx !== -1) {
+        const newTiles = [...state.tiles];
+        newTiles[existingIdx] = newTile;
+        return { tiles: newTiles };
+      } else {
+        return { tiles: [...state.tiles, newTile] };
       }
+    });
 
-      const allTiles = get().tiles;
-      const chunkTiles = allTiles
-        .filter(t => Math.floor(t.x / CHUNK_SIZE) === chunkX && Math.floor(t.y / CHUNK_SIZE) === chunkY)
-        .map(t => {
-          const { id, ...rest } = t;
-          return {
-            ...rest,
-            block_col: t.blockCol || 0,
-            block_row: t.blockRow || 0
-          };
-        });
+    // 2. Debounced sync to Supabase
+    triggerChunkSync(chunkX, chunkY, get);
 
-      await supabase.from('map_chunks').upsert({
-        chunk_x: chunkX,
-        chunk_y: chunkY,
-        tile_data: chunkTiles,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'chunk_x,chunk_y' });
-    };
-
-    syncQueue[chunkKey] = sync();
-    await syncQueue[chunkKey];
-
-    // Trigger Autotile Update if needed
+    // Trigger Autotile Update if needed (don't await sync, just update neighbors locally)
     if (isAutoTile || get().isSmartMode) {
-      await get().updateTileAndNeighbors(x, y, layer || 0, false);
+      await get().updateTileAndNeighbors(x, y, layer || 0, false, smartType, blockCol, blockRow);
     }
   },
 
@@ -612,44 +691,16 @@ export const useMapStore = create<MapState>((set, get) => ({
       return { tiles: Array.from(tileMap.values()) };
     });
 
-    // 2. Update all affected chunks in Supabase (serialized)
-    const allTiles = get().tiles;
-    const syncPromises = Array.from(chunkKeys).map(async (key) => {
+    // 2. Trigger debounced sync for all affected chunks
+    Array.from(chunkKeys).forEach(key => {
       const [cx, cy] = key.split(',').map(Number);
-      
-      const sync = async () => {
-        if (syncQueue[key]) await syncQueue[key];
-
-        const chunkTiles = allTiles
-          .filter(t => Math.floor(t.x / CHUNK_SIZE) === cx && Math.floor(t.y / CHUNK_SIZE) === cy)
-          .map(t => {
-            const { id, ...rest } = t;
-            return {
-              ...rest,
-              block_col: t.blockCol || 0,
-              block_row: t.blockRow || 0
-            };
-          });
-
-        await supabase.from('map_chunks').upsert({
-          chunk_x: cx,
-          chunk_y: cy,
-          tile_data: chunkTiles,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'chunk_x,chunk_y' });
-      };
-
-      syncQueue[key] = sync();
-      return syncQueue[key];
+      triggerChunkSync(cx, cy, get);
     });
-
-    await Promise.all(syncPromises);
   },
 
   removeTileAt: async (x, y) => {
     const chunkX = Math.floor(x / CHUNK_SIZE);
     const chunkY = Math.floor(y / CHUNK_SIZE);
-    const chunkKey = `${chunkX},${chunkY}`;
 
     let removedTile: Tile | null = null;
     let targetLayer: number | undefined;
@@ -668,87 +719,36 @@ export const useMapStore = create<MapState>((set, get) => ({
       tiles: state.tiles.filter(t => !(t.x === x && t.y === y && (t.layer || 0) === targetLayer))
     }));
 
-    // Sync Chunk to Supabase (serialized)
-    const sync = async () => {
-      if (syncQueue[chunkKey]) await syncQueue[chunkKey];
-
-      const allTiles = get().tiles;
-      const chunkTiles = allTiles
-        .filter(t => Math.floor(t.x / CHUNK_SIZE) === chunkX && Math.floor(t.y / CHUNK_SIZE) === chunkY)
-        .map(t => {
-          const { id, ...rest } = t;
-          return {
-            ...rest,
-            block_col: t.blockCol || 0,
-            block_row: t.blockRow || 0
-          };
-        });
-
-      await supabase.from('map_chunks').upsert({
-        chunk_x: chunkX,
-        chunk_y: chunkY,
-        tile_data: chunkTiles,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'chunk_x,chunk_y' });
-    };
-
-    syncQueue[chunkKey] = sync();
-    await syncQueue[chunkKey];
+    // Debounced sync to Supabase
+    triggerChunkSync(chunkX, chunkY, get);
 
     return removedTile;
   },
 
   removeTileById: async (id) => {
-    const state = get();
-    const tile = state.tiles.find(t => t.id === id);
+    const tile = get().tiles.find(t => t.id === id);
     if (!tile) return;
 
     const { x, y } = tile;
     const chunkX = Math.floor(x / CHUNK_SIZE);
     const chunkY = Math.floor(y / CHUNK_SIZE);
-    const chunkKey = `${chunkX},${chunkY}`;
 
     set((state) => ({
       tiles: state.tiles.filter(t => t.id !== id)
     }));
 
-    // Sync Chunk to Supabase (serialized)
-    const sync = async () => {
-      if (syncQueue[chunkKey]) await syncQueue[chunkKey];
-
-      const allTiles = get().tiles;
-      const chunkTiles = allTiles
-        .filter(t => Math.floor(t.x / CHUNK_SIZE) === chunkX && Math.floor(t.y / CHUNK_SIZE) === chunkY)
-        .map(t => {
-          const { id, ...rest } = t;
-          return {
-            ...rest,
-            block_col: t.blockCol || 0,
-            block_row: t.blockRow || 0
-          };
-        });
-
-      await supabase.from('map_chunks').upsert({
-        chunk_x: chunkX,
-        chunk_y: chunkY,
-        tile_data: chunkTiles,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'chunk_x,chunk_y' });
-    };
-
-    syncQueue[chunkKey] = sync();
-    await syncQueue[chunkKey];
+    // Debounced sync to Supabase
+    triggerChunkSync(chunkX, chunkY, get);
   },
 
   moveTile: async (tileId, newX, newY, newOffsetX, newOffsetY) => {
-    const state = get();
-    const tile = state.tiles.find(t => t.id === tileId);
+    const tile = get().tiles.find(t => t.id === tileId);
     if (!tile) return;
 
     const oldX = tile.x;
     const oldY = tile.y;
 
-    // 1. Update local state with full data
+    // 1. Update local state
     set((state) => ({
       tiles: state.tiles.map(t => t.id === tileId ? { 
         ...t, 
@@ -765,41 +765,62 @@ export const useMapStore = create<MapState>((set, get) => ({
     const newChunkX = Math.floor(newX / CHUNK_SIZE);
     const newChunkY = Math.floor(newY / CHUNK_SIZE);
 
-    const oldChunkKey = `${oldChunkX},${oldChunkY}`;
-    const newChunkKey = `${newChunkX},${newChunkY}`;
-
-    const syncChunk = async (cx: number, cy: number, key: string) => {
-      const sync = async () => {
-        if (syncQueue[key]) await syncQueue[key];
-
-        const allTiles = get().tiles;
-        const chunkTiles = allTiles
-          .filter(t => Math.floor(t.x / CHUNK_SIZE) === cx && Math.floor(t.y / CHUNK_SIZE) === cy)
-          .map(t => {
-            const { id, ...rest } = t;
-            return {
-              ...rest,
-              block_col: t.blockCol || 0,
-              block_row: t.blockRow || 0
-            };
-          });
-
-        await supabase.from('map_chunks').upsert({
-          chunk_x: cx,
-          chunk_y: cy,
-          tile_data: chunkTiles,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'chunk_x,chunk_y' });
-      };
-
-      syncQueue[key] = sync();
-      await syncQueue[key];
-    };
-
-    await syncChunk(oldChunkX, oldChunkY, oldChunkKey);
-    if (oldChunkKey !== newChunkKey) {
-      await syncChunk(newChunkX, newChunkY, newChunkKey);
+    triggerChunkSync(oldChunkX, oldChunkY, get);
+    if (oldChunkX !== newChunkX || oldChunkY !== newChunkY) {
+      triggerChunkSync(newChunkX, newChunkY, get);
     }
+  },
+
+  rotateTile: async (tileId, rotationDelta) => {
+    const tile = get().tiles.find(t => t.id === tileId);
+    if (!tile) return;
+
+    const currentRotation = tile.rotation || 0;
+    const newRotation = (currentRotation + rotationDelta) % 360;
+    const normalizedRotation = newRotation < 0 ? newRotation + 360 : newRotation;
+
+    // Update local state
+    set((state) => ({
+      tiles: state.tiles.map(t => t.id === tileId ? { ...t, rotation: normalizedRotation } : t)
+    }));
+
+    // Sync to Supabase
+    const chunkX = Math.floor(tile.x / CHUNK_SIZE);
+    const chunkY = Math.floor(tile.y / CHUNK_SIZE);
+    triggerChunkSync(chunkX, chunkY, get);
+  },
+
+  forceSyncAllChunks: async () => {
+    // Clear all timeouts and run them immediately
+    const promises = Object.keys(syncTimeouts).map(async (key) => {
+      if (syncTimeouts[key]) {
+        clearTimeout(syncTimeouts[key]);
+        const [cx, cy] = key.split(',').map(Number);
+        
+        const sync = async () => {
+          if (syncQueue[key]) await syncQueue[key];
+          const allTiles = get().tiles;
+          const chunkTiles = allTiles
+            .filter(t => Math.floor(t.x / CHUNK_SIZE) === cx && Math.floor(t.y / CHUNK_SIZE) === cy)
+            .map(t => {
+              const { id, ...rest } = t;
+              return { ...rest, block_col: t.blockCol || 0, block_row: t.blockRow || 0 };
+            });
+
+          await supabase.from('map_chunks').upsert({
+            chunk_x: cx,
+            chunk_y: cy,
+            tile_data: chunkTiles,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'chunk_x,chunk_y' });
+        };
+
+        syncQueue[key] = sync();
+        await syncQueue[key];
+        syncTimeouts[key] = undefined;
+      }
+    });
+    await Promise.all(promises);
   },
 
   exportMap: () => {
@@ -812,30 +833,50 @@ export const useMapStore = create<MapState>((set, get) => ({
     }, null, 2);
   },
 
-  updateTileAndNeighbors: async (x, y, layer, isRemoving = false) => {
+  updateTileAndNeighbors: async (x, y, layer, isRemoving = false, smartType?: string, blockCol?: number, blockRow?: number) => {
     // 1. We must recalculate the bitmasks on the state directly.
-    const getTileSig = (tiles: Tile[], tx: number, ty: number) => {
-      const t = tiles.find(t => t.x === tx && t.y === ty && (t.layer || 0) === layer);
-      return t && t.isAutoTile ? `${t.smartType}-${t.blockCol}-${t.blockRow}` : null;
-    };
-
     const touchedChunks = new Set<string>();
 
     set((state) => {
-      let newTiles = [...state.tiles];
-      
+      const { tiles } = state;
+
+      // Pre-calculate a spatial map for fast neighbor lookups (O(1) instead of O(N))
+      // Only for tiles in the immediate area
+      const localTiles = new Map<string, Tile>();
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const tx = x + dx;
+          const ty = y + dy;
+          const t = tiles.find(t => t.x === tx && t.y === ty && (t.layer || 0) === layer);
+          if (t) localTiles.set(`${tx},${ty}`, t);
+        }
+      }
+
+      const getTileSig = (tx: number, ty: number) => {
+        const t = localTiles.get(`${tx},${ty}`);
+        return t && t.isAutoTile ? `${t.smartType}-${t.blockCol}-${t.blockRow}` : null;
+      };
+
+      const newTiles = [...tiles];
+
       const updateSingleTile = (tx: number, ty: number) => {
         const tileIndex = newTiles.findIndex(t => t.x === tx && t.y === ty && (t.layer || 0) === layer);
         if (tileIndex === -1) return;
         const tile = newTiles[tileIndex];
         if (!tile.isAutoTile) return;
 
+        // CRITICAL: Only update tiles matching the target smartType/blockCol/blockRow
+        // This prevents grass from updating water tiles or different grass blocks
+        if (smartType !== undefined && tile.smartType !== smartType) return;
+        if (blockCol !== undefined && tile.blockCol !== blockCol) return;
+        if (blockRow !== undefined && tile.blockRow !== blockRow) return;
+
         const mySig = `${tile.smartType}-${tile.blockCol}-${tile.blockRow}`;
         const grid: Record<string, string> = {};
-        
+
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
-            const neighborSig = getTileSig(newTiles, tx + dx, ty + dy);
+            const neighborSig = getTileSig(tx + dx, ty + dy);
             if (neighborSig) grid[`${tx+dx},${ty+dy}`] = neighborSig;
           }
         }
@@ -843,60 +884,30 @@ export const useMapStore = create<MapState>((set, get) => ({
         const newMask = calculateBitmask(tx, ty, grid, mySig);
         if (tile.bitmask !== newMask) {
           newTiles[tileIndex] = { ...tile, bitmask: newMask };
+          // Update local map too so next neighbor sees the change
+          localTiles.set(`${tx},${ty}`, newTiles[tileIndex]);
           touchedChunks.add(`${Math.floor(tx / CHUNK_SIZE)},${Math.floor(ty / CHUNK_SIZE)}`);
         }
       };
 
-      // If we are adding, update the center tile first so neighbors see it
-      if (!isRemoving) {
-        updateSingleTile(x, y);
-      }
+      // Update center and then neighbors
+      const area = [
+        {tx: x, ty: y},
+        {tx: x, ty: y-1}, {tx: x+1, ty: y-1}, {tx: x+1, ty: y}, {tx: x+1, ty: y+1},
+        {tx: x, ty: y+1}, {tx: x-1, ty: y+1}, {tx: x-1, ty: y}, {tx: x-1, ty: y-1}
+      ];
 
-      // Then update all neighbors
-      updateSingleTile(x, y - 1);
-      updateSingleTile(x + 1, y - 1);
-      updateSingleTile(x + 1, y);
-      updateSingleTile(x + 1, y + 1);
-      updateSingleTile(x, y + 1);
-      updateSingleTile(x - 1, y + 1);
-      updateSingleTile(x - 1, y);
-      updateSingleTile(x - 1, y - 1);
+      for (const pos of area) {
+        updateSingleTile(pos.tx, pos.ty);
+      }
 
       return { tiles: newTiles };
     });
 
-    // 2. Batch sync the chunks that actually changed
-    if (touchedChunks.size === 0) return;
-
-    const currentTiles = get().tiles;
-    const syncPromises = Array.from(touchedChunks).map(async (key) => {
+    // 2. Trigger debounced sync for touched chunks
+    touchedChunks.forEach(key => {
       const [cx, cy] = key.split(',').map(Number);
-      const sync = async () => {
-        if (syncQueue[key]) await syncQueue[key];
-
-        const chunkTiles = currentTiles
-          .filter(t => Math.floor(t.x / CHUNK_SIZE) === cx && Math.floor(t.y / CHUNK_SIZE) === cy)
-          .map(t => {
-            const { id, ...rest } = t;
-            return {
-              ...rest,
-              block_col: t.blockCol || 0,
-              block_row: t.blockRow || 0
-            };
-          });
-
-        await supabase.from('map_chunks').upsert({
-          chunk_x: cx,
-          chunk_y: cy,
-          tile_data: chunkTiles,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'chunk_x,chunk_y' });
-      };
-
-      syncQueue[key] = sync();
-      return syncQueue[key];
+      triggerChunkSync(cx, cy, get);
     });
-
-    await Promise.all(syncPromises);
   }
 }));

@@ -7,13 +7,15 @@ import { PixiMapCanvas } from './PixiMapCanvas';
 import { MapSidebar } from './MapSidebar';
 import { MapDataSidebar } from './MapDataSidebar';
 import { createNoise2D } from 'simplex-noise';
-import { 
-  Plus, Minus, Maximize, Grid, Zap, Loader2, Target, Map as MapIcon, 
-  User, Sword, Box, Globe, Search, MousePointer2, Eraser, Wand2, 
-  GripVertical, Copy, Square, CheckSquare, Pipette, X, Paintbrush, Bug
+import {
+  Plus, Minus, Maximize, Grid, Zap, Loader2, Target, Map as MapIcon,
+  User, Sword, Box, Globe, Search, MousePointer2, Eraser, Wand2,
+  GripVertical, Copy, Square, CheckSquare, Pipette, X, Paintbrush, Bug,
+  RotateCw
 } from 'lucide-react';
 import { WinluPalette } from './WinluPalette';
 import { WinluDebugOverlay } from './WinluDebugOverlay';
+import { WaterDebugOverlay } from './WaterDebugOverlay';
 import { generateAsset } from '@/lib/services/mapGeminiService';
 import NodeEditModal, { NodeFormData } from '../NodeEditModal';
 import { supabase } from '@/lib/supabase';
@@ -21,24 +23,122 @@ import { supabase } from '@/lib/supabase';
 const WORLD_SIZE = 100000; 
 const TILE_SIZE = 48;
 
+// Helper to normalize URLs for comparison (ignoring query params)
+const normalizeUrl = (url: string | undefined | null) => {
+  if (!url) return '';
+  return url.split('?')[0];
+};
+
 interface WorldMapEngineProps {
   shopItems?: any[];
 }
 
+// Coordinate Display Component to prevent full Engine re-renders
+const CoordinateDisplay = React.memo(({ x, y, smoothX, smoothY }: { x: number; y: number; smoothX: number; smoothY: number }) => {
+  return (
+    <div className="flex items-center gap-2 border-l border-slate-700 pl-4 font-mono text-cyan-400">
+      X: {x} Y: {y}
+    </div>
+  );
+});
+CoordinateDisplay.displayName = 'CoordinateDisplay';
+
+// Brush Preview Component
+const BrushPreview = React.memo(({
+  isSpacePressed, selectedTool, selectedTileId, customTiles, cursorCoords, smoothCursorCoords, TILE_SIZE, WORLD_SIZE, brushSize, brushMode
+}: any) => {
+  if (isSpacePressed || (selectedTool !== 'paint' && selectedTool !== 'erase') || (selectedTool === 'paint' && !selectedTileId)) return null;
+  
+  const tile = selectedTool === 'paint' ? customTiles.find((t: any) => t.id === selectedTileId) : null;
+  const half = brushMode ? Math.floor(brushSize / 2) : 0;
+  const isEven = brushMode && brushSize % 2 === 0;
+  const previewTiles = [];
+
+  for (let dy = -half; dy < (isEven ? half : half + 1); dy++) {
+    for (let dx = -half; dx < (isEven ? half : half + 1); dx++) {
+      previewTiles.push({ dx, dy });
+    }
+  }
+
+  return (
+    <div 
+      className="absolute pointer-events-none z-[60]"
+      style={{
+        left: cursorCoords.x * TILE_SIZE + WORLD_SIZE / 2,
+        top: cursorCoords.y * TILE_SIZE + WORLD_SIZE / 2,
+      }}
+    >
+      {previewTiles.map(({ dx, dy }, i) => {
+        if (selectedTool === 'erase') {
+          return (
+            <div 
+              key={i}
+              className="absolute bg-red-500/30 border border-red-500/50"
+              style={{
+                left: dx * TILE_SIZE,
+                top: dy * TILE_SIZE,
+                width: TILE_SIZE,
+                height: TILE_SIZE,
+              }}
+            />
+          );
+        }
+
+        if (!tile) return null;
+        const displayWidth = tile.frameWidth || TILE_SIZE;
+        const displayHeight = tile.frameHeight || TILE_SIZE;
+
+        const left = tile.snapToGrid 
+          ? dx * TILE_SIZE - (displayWidth - TILE_SIZE) / 2
+          : dx * TILE_SIZE - (displayWidth / 2) + (TILE_SIZE / 2); // Approximation for non-snap
+        
+        const top = tile.snapToGrid
+          ? dy * TILE_SIZE - (displayHeight - TILE_SIZE)
+          : dy * TILE_SIZE - (displayHeight) + (TILE_SIZE);
+
+        return (
+          <div 
+            key={i}
+            className="absolute opacity-70"
+            style={{
+              left,
+              top,
+              width: displayWidth,
+              height: displayHeight,
+              backgroundImage: `url(${tile.url})`,
+              backgroundSize: 'auto 100%',
+              backgroundPosition: '0 0',
+              backgroundRepeat: 'no-repeat',
+              imageRendering: 'pixelated',
+              transform: `rotate(${tile.rotation || 0}deg)`,
+              transformOrigin: 'center center'
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+});
+BrushPreview.displayName = 'BrushPreview';
+
 export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }) => {
   const transformComponentRef = useRef<ReactZoomPanPinchRef>(null);
   const dropTargetRef = useRef<HTMLDivElement>(null);
-  const { 
-    addNode, updateNode, selectNode, selectedNodeId, 
-    addTileSimple, selectedTileId, customTiles, selectedTool, 
-    activeNodeType, removeTileAt, removeNode, batchAddTiles, 
-    loadTilesFromSupabase, isDraggingTile, draggingTileId, 
-    setDraggingTile, moveTile, removeTileById,
-    isSmartMode, isRaiseMode, isFoamEnabled, autoTileSheetUrl,
-    selectedSmartType, setSelectedSmartType, setRaiseMode, waterBaseTile, foamStripTile, setTool,
+  const {
+    addNode, updateNode, selectNode, selectedNodeId,
+    addTileSimple, selectedTileId, customTiles, selectedTool,
+    activeNodeType, removeTileAt, removeNode, batchAddTiles,
+    loadTilesFromSupabase, isDraggingTile, draggingTileId,
+    setDraggingTile, isDraggingNode, draggingNodeId, setDraggingNode,
+    moveTile, removeTileById, rotateTile,
+    isSmartMode, isRaiseMode, isFoamEnabled, autoTileSheetUrl, waterSheetUrl,
+    selectedSmartType, setSelectedSmartType, setSelectedBlock, smartBrushLayer, setSmartBrushLayer, setRaiseMode, waterBaseTile, foamStripTile, setTool,
     sidebarWidth, setSidebarWidth, rightSidebarWidth, setRightSidebarWidth,
     favorites, setFavorite, selectTile, incrementTick,
-    isLoadingTiles, tiles, nodes, showDebugModal, setShowDebugModal
+    brushSize, setBrushSize, brushMode, setBrushMode,
+    nodeSnapToGrid, setNodeSnapToGrid,
+    isLoadingTiles, tiles, nodes, showDebugModal, setShowDebugModal, showDebugNumbers, setShowDebugNumbers, currentStamp,
+    dragGrabOffset, setDragGrabOffset, selection, setSelection
   } = useMapStore();
   
   const [isResizingLeft, setIsResizingLeft] = useState(false);
@@ -103,6 +203,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const [uploadingDialogueImageLine, setUploadingDialogueImageLine] = useState<number | null>(null);
   const [uploadingVoiceLineLine, setUploadingVoiceLineLine] = useState<number | null>(null);
   const [iconGalleryUrls, setIconGalleryUrls] = useState<string[]>([]);
+  const [showWaterDebugModal, setShowWaterDebugModal] = useState(false);
 
   const nodeIconInputRef = useRef<HTMLInputElement>(null);
   const sceneBgInputRef = useRef<HTMLInputElement>(null);
@@ -112,9 +213,14 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const dialogueVoiceLineInputRef = useRef<HTMLInputElement>(null);
   const currentUploadIdx = useRef<number | null>(null);
 
+  // Throttling refs for drag and brush operations
+  const dragRafRef = useRef<number | null>(null);
+  const pendingDragUpdateRef = useRef<{x: number, y: number} | null>(null);
+  const brushRafRef = useRef<number | null>(null);
+  const pendingBrushRef = useRef<{clientX: number, clientY: number, isShift: boolean} | null>(null);
+
   // Undo Stack State
   const [undoStack, setUndoStack] = useState<any[]>([]);
-  const [dragGrabOffset, setDragGrabOffset] = useState<{ x: number, y: number } | null>(null);
 
   // Zoom to Fit Logic
   const zoomToFit = useCallback((animate = true) => {
@@ -203,6 +309,18 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         }
         if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey) {
           setTool('stamp');
+          return;
+        }
+        if (e.key.toLowerCase() === 'r') {
+          setTool('rotate');
+          return;
+        }
+        if (e.key.toLowerCase() === 'd') {
+          if (e.shiftKey && waterSheetUrl) {
+            setShowWaterDebugModal(true);
+          } else {
+            setShowDebugModal(true);
+          }
           return;
         }
       }
@@ -594,20 +712,38 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   };
 
   // --- PAUL SOLT AUTO-TILING HELPERS ---
-  const calculateAndUpdateTile = async (tx: number, ty: number) => {
+  const calculateAndUpdateTile = async (
+    tx: number,
+    ty: number,
+    layer: number = 0,
+    targetSmartType?: string,
+    targetBlockCol?: number,
+    targetBlockRow?: number
+  ) => {
     const currentTiles = useMapStore.getState().tiles;
-    const tile = currentTiles.find(t => t.x === tx && t.y === ty && (t.layer || 0) === 0);
-    
+    const tile = currentTiles.find(t => t.x === tx && t.y === ty && (t.layer || 0) === (layer || 0));
+
     if (!tile || !tile.isAutoTile) return;
 
+    // If target specs provided, only update tiles matching those specs
+    if (targetSmartType !== undefined && tile.smartType !== targetSmartType) return;
+    if (targetBlockCol !== undefined && tile.blockCol !== targetBlockCol) return;
+    if (targetBlockRow !== undefined && tile.blockRow !== targetBlockRow) return;
+
     const elevation = tile.elevation || 0;
-    
+
     const getBitmaskFresh = (x: number, y: number, elev: number) => {
       const has = (dx: number, dy: number) => {
         // FRESH STATE EVERY TIME — this fixes horizontal detection
         const currentTiles = useMapStore.getState().tiles;
-        const n = currentTiles.find(t => t.x === x + dx && t.y === y + dy && (t.layer || 0) === 0);
-        return (n?.elevation === elev && n?.smartType === tile.smartType);
+        const n = currentTiles.find(t => t.x === x + dx && t.y === y + dy && (t.layer || 0) === (layer || 0));
+        // Check smartType, elevation, AND block position (grass blocks don't connect to each other)
+        return (
+          n?.elevation === elev &&
+          n?.smartType === tile.smartType &&
+          n?.blockCol === tile.blockCol &&
+          n?.blockRow === tile.blockRow
+        );
       };
     
       const N = has(0, -1);
@@ -685,35 +821,84 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     }
   };
 
-  const updateTileAndNeighbors = async (tx: number, ty: number) => {
-     // Standard 8-direction update for Winlu A2 Autotiling
-     const neighbors = [
-       { x: tx, y: ty },     // Center
-       { x: tx, y: ty - 1 }, // N
-       { x: tx + 1, y: ty }, // E
-       { x: tx, y: ty + 1 }, // S
-       { x: tx - 1, y: ty }, // W
-       { x: tx + 1, y: ty - 1 }, // NE
-       { x: tx + 1, y: ty + 1 }, // SE
-       { x: tx - 1, y: ty + 1 }, // SW
-       { x: tx - 1, y: ty - 1 }  // NW
-     ];
+  const updateTileAndNeighbors = async (
+    tx: number,
+    ty: number,
+    layer: number = 0,
+    smartType?: string,
+    blockCol?: number,
+    blockRow?: number
+  ) => {
+    // Standard 8-direction update for Winlu A2 Autotiling
+    const neighbors = [
+      { x: tx, y: ty },     // Center
+      { x: tx, y: ty - 1 }, // N
+      { x: tx + 1, y: ty }, // E
+      { x: tx, y: ty + 1 }, // S
+      { x: tx - 1, y: ty }, // W
+      { x: tx + 1, y: ty - 1 }, // NE
+      { x: tx + 1, y: ty + 1 }, // SE
+      { x: tx - 1, y: ty + 1 }, // SW
+      { x: tx - 1, y: ty - 1 }  // NW
+    ];
 
-     for (const pos of neighbors) {
-       await calculateAndUpdateTile(pos.x, pos.y);
-     }
+    for (const pos of neighbors) {
+      await calculateAndUpdateTile(pos.x, pos.y, layer, smartType, blockCol, blockRow);
+    }
+  };
+
+  const handleNodeMouseDown = (nodeId: string, e: React.MouseEvent) => {
+    if (isSpacePressed) return;
+    
+    if (selectedTool === 'select' || selectedTool === 'node') {
+      e.stopPropagation();
+      const node = nodes.find(n => n.id === nodeId);
+      if (node) {
+        selectNode(nodeId);
+        
+        const { positionX, positionY, scale } = transformComponentRef.current!.instance.transformState;
+        const rect = dropTargetRef.current!.getBoundingClientRect();
+        const worldX = (e.clientX - rect.left - positionX) / scale;
+        const worldY = (e.clientY - rect.top - positionY) / scale;
+        
+        const exactX = worldX - WORLD_SIZE / 2;
+        const exactY = worldY - WORLD_SIZE / 2;
+        
+        // Node's display center is (node.x * TILE_SIZE + TILE_SIZE/2, node.y * TILE_SIZE + TILE_SIZE/2)
+        // because of the absolute positioning and z-index div layout.
+        const logicalX = node.x * TILE_SIZE + TILE_SIZE / 2;
+        const logicalY = node.y * TILE_SIZE + TILE_SIZE / 2;
+        
+        setDragGrabOffset({
+          x: exactX - logicalX,
+          y: exactY - logicalY
+        });
+        
+        setDraggingNode(nodeId);
+      }
+    } else if (selectedTool === 'erase') {
+      e.stopPropagation();
+      const node = nodes.find(n => n.id === nodeId);
+      if (node) {
+        setUndoStack(prev => [...prev, { action: 'erase_node', nodeData: node }]);
+        removeNode(nodeId);
+      }
+    }
   };
 
   const [isSelecting, setIsSelecting] = useState(false);
 
   const getTopMostTileId = (gx: number, gy: number) => {
-    const tilesAtPos = tiles.filter(t => t.x === gx && t.y === gy && (t.layer === 1 || t.layer === 2));
+    const tilesAtPos = tiles.filter(t => t.x === gx && t.y === gy);
     if (tilesAtPos.length === 0) return null;
     return tilesAtPos.sort((a, b) => (b.layer || 0) - (a.layer || 0))[0].id;
   };
 
-  const handleMapInteraction = async (clientX: number, clientY: number, isMove = false, isShift = false, forceErase = false, isAlt = false) => {
+  const lastInteractionRef = useRef<{gx: number, gy: number, tool: string} | null>(null);
+
+  const handleMapInteraction = async (clientX: number, clientY: number, isMove = false, isShift = false, forceErase = false, isAlt = false, buttons = 0) => {
     if (!transformComponentRef.current || !dropTargetRef.current || (isSpacePressed && !isMove)) return;
+    const state = useMapStore.getState();
     const { positionX, positionY, scale } = transformComponentRef.current.instance.transformState;
     const rect = dropTargetRef.current.getBoundingClientRect();
     const worldX = (clientX - rect.left - positionX) / scale;
@@ -722,79 +907,64 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     const gy = Math.floor((worldY - WORLD_SIZE / 2) / TILE_SIZE);
 
     const tool = forceErase ? 'erase' : selectedTool;
-    const state = useMapStore.getState();
 
-    // 0. Respect Layer Locks
-    if (tool === 'paint' || tool === 'erase') {
-      const targetLayer = selectedTileId ? (customTiles.find(t => t.id === selectedTileId)?.layer || 0) : 0;
-      if (state.layerSettings[targetLayer]?.locked) return;
-    }
+    // Node dragging logic - throttled with requestAnimationFrame
+    if (state.isDraggingNode && state.draggingNodeId) {
+      const node = state.nodes.find(n => n.id === state.draggingNodeId);
+      if (node && state.dragGrabOffset) {
+        const exactX = worldX - WORLD_SIZE / 2;
+        const exactY = worldY - WORLD_SIZE / 2;
 
-    if ((isAlt || tool === 'eyedropper') && !isMove) {
-      // Eyedropper Logic
-      const tileAtPos = state.tiles
-        .filter(t => t.x === gx && t.y === gy)
-        .sort((a, b) => (b.layer || 0) - (a.layer || 0))[0]; // Get top layer
+        let newX = (exactX - state.dragGrabOffset.x) / TILE_SIZE;
+        let newY = (exactY - state.dragGrabOffset.y) / TILE_SIZE;
 
-      if (tileAtPos) {
-        if (tileAtPos.isAutoTile && tileAtPos.smartType) {
-          useMapStore.getState().setSelectedSmartType(tileAtPos.smartType);
-          setTool('paint');
-        } else {
-          const customTile = state.customTiles.find(ct => ct.url === tileAtPos.imageUrl);
-          if (customTile) {
-            selectTile(customTile.id);
-            setTool('paint');
-          }
+        if (nodeSnapToGrid) {
+          // Snap to 0.5 increments to allow "lines in between" (edges/centers)
+          newX = Math.round(newX * 2) / 2;
+          newY = Math.round(newY * 2) / 2;
+        }
+
+        // Store pending update
+        pendingDragUpdateRef.current = { x: newX, y: newY };
+
+        // Throttle store updates with requestAnimationFrame
+        if (!dragRafRef.current) {
+          dragRafRef.current = requestAnimationFrame(() => {
+            if (pendingDragUpdateRef.current && node.x !== pendingDragUpdateRef.current.x || node.y !== pendingDragUpdateRef.current.y) {
+              useMapStore.setState(s => ({
+                nodes: s.nodes.map(n => n.id === node.id ? { ...n, x: pendingDragUpdateRef.current!.x, y: pendingDragUpdateRef.current!.y } : n)
+              }));
+            }
+            dragRafRef.current = null;
+          });
         }
       }
       return;
     }
 
-    if (tool === 'stamp') {
-      if (isMove) {
-        if (isSelecting && state.selection) {
-          useMapStore.getState().setSelection({ ...state.selection, end: { x: gx, y: gy } });
-        }
-        setCursorCoords({ x: gx, y: gy });
-      } else {
-        if (state.currentStamp && !isShift) {
-          handlePasteStamp(gx, gy);
-        } else {
-          useMapStore.getState().setSelection({ start: { x: gx, y: gy }, end: { x: gx, y: gy } });
-          setIsSelecting(true);
-        }
-      }
-      return;
-    }
-
-    if (isMove) {
-      setCursorCoords({ x: gx, y: gy });
+    // Update coordinates - skip during drag operations to prevent lag
+    if (!isDraggingTile && !state.isDraggingNode) {
       setSmoothCursorCoords({ x: worldX - WORLD_SIZE / 2, y: worldY - WORLD_SIZE / 2 });
-      
-      if (state.isDraggingTile && state.draggingTileId) {
-        const draggingTile = state.tiles.find(t => t.id === state.draggingTileId);
-        
-        let offsetX = 0;
-        let offsetY = 0;
-        
-        if (draggingTile && !draggingTile.snapToGrid) {
-          const exactX = worldX - WORLD_SIZE / 2;
-          const exactY = worldY - WORLD_SIZE / 2;
-          
-          const targetLogicalX = exactX - (dragGrabOffset?.x || 0);
-          const targetLogicalY = exactY - (dragGrabOffset?.y || 0);
-          
-          offsetX = Math.round(targetLogicalX - (gx * TILE_SIZE + TILE_SIZE / 2));
-          offsetY = Math.round(targetLogicalY - (gy * TILE_SIZE + TILE_SIZE));
-        }
-
-        useMapStore.setState((state) => ({
-          tiles: state.tiles.map(t => t.id === state.draggingTileId ? { ...t, x: gx, y: gy, offsetX, offsetY } : t)
-        }));
-      }
-      return;
+      setCursorCoords({ x: gx, y: gy });
     }
+
+    // PERFORMANCE: Skip interaction if we are moving and haven't entered a new grid cell
+    // But allow continuous painting for brush mode
+    if (isMove && !isDraggingTile) {
+      const { brushMode: currentBrushMode, brushSize: currentBrushSize } = useMapStore.getState();
+      const isBrushMode = (tool === 'paint' || tool === 'erase') && currentBrushMode && currentBrushSize > 1;
+      if (!isBrushMode && lastInteractionRef.current?.gx === gx && lastInteractionRef.current?.gy === gy && lastInteractionRef.current?.tool === tool) {
+        return;
+      }
+    }
+    
+    if (isMove) {
+      lastInteractionRef.current = { gx, gy, tool };
+    }
+
+    // CRITICAL: If this is a movement call and NO buttons are pressed, 
+    // it's just a hover/track call. Do NOT perform any actions (paint/erase/etc).
+    if (isMove && buttons === 0) return;
 
     if (tool === 'select') {
       return;
@@ -803,86 +973,179 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     if (tool === 'paint' && selectedTileId) {
       const tile = customTiles.find(t => t.id === selectedTileId);
       if (tile) {
-        let offsetX = 0;
-        let offsetY = 0;
-        
-        if (!tile.snapToGrid) {
-          const exactX = worldX - WORLD_SIZE / 2;
-          const exactY = worldY - WORLD_SIZE / 2;
-          
-          offsetX = Math.round(exactX - (gx * TILE_SIZE + TILE_SIZE / 2));
-          offsetY = Math.round(exactY - (gy * TILE_SIZE + TILE_SIZE));
+        // Get current brush settings
+        const { brushMode: currentBrushMode, brushSize: currentBrushSize } = useMapStore.getState();
+
+        // Determine brush area based on mode and size
+        let brushArea = [{dx: 0, dy: 0}]; // Default: single tile
+
+        if (currentBrushMode && currentBrushSize > 1) {
+          // Brush mode enabled: use full brush area
+          // size N now means N x N tiles
+          const half = Math.floor(currentBrushSize / 2);
+          const isEven = currentBrushSize % 2 === 0;
+          brushArea = [];
+          for (let dy = -half; dy < (isEven ? half : half + 1); dy++) {
+            for (let dx = -half; dx < (isEven ? half : half + 1); dx++) {
+              brushArea.push({dx, dy});
+            }
+          }
         }
 
-        let isAutoTile = tile.isAutoTile ?? false;
-        let elevation = 0;
-        let bitmask = 0;
-        let hasFoam = isFoamEnabled;
-        let foamBitmask = 0;
-        let smartType = tile.smartType;
+        const tasks = [];
 
-        if (selectedSmartType !== 'off' && (!tile.layer || tile.layer === 0)) {
-           isAutoTile = true;
-           smartType = selectedSmartType;
-           if (isRaiseMode) elevation = 1;
-           if (isShift) elevation = 0; 
+        for (const {dx, dy} of brushArea) {
+          const tx = gx + dx;
+          const ty = gy + dy;
+
+          let offsetX = 0;
+          let offsetY = 0;
+
+          if (!tile.snapToGrid) {
+            const exactX = worldX - WORLD_SIZE / 2 + (dx * TILE_SIZE);
+            const exactY = worldY - WORLD_SIZE / 2 + (dy * TILE_SIZE);
+
+            offsetX = Math.round(exactX - (tx * TILE_SIZE + TILE_SIZE / 2));
+            offsetY = Math.round(exactY - (ty * TILE_SIZE + TILE_SIZE));
+          }
+
+          let isAutoTile = tile.isAutoTile ?? false;
+          let elevation = 0;
+          let bitmask = 0;
+          let hasFoam = isFoamEnabled;
+          let foamBitmask = 0;
+          let smartType = tile.smartType;
+
+          if (selectedSmartType !== 'off' && tile.layer === smartBrushLayer) {
+             isAutoTile = true;
+             smartType = selectedSmartType;
+             if (isRaiseMode) elevation = 1;
+             if (isShift) elevation = 0;
+          }
+
+          tasks.push((async () => {
+            const prevTile = useMapStore.getState().tiles.find(t => t.x === tx && t.y === ty && (t.layer || 0) === (tile.layer || 0));
+
+            // Only add to undo if it's the center tile or we are not moving (single click)
+            if (!isMove || (dx === 0 && dy === 0)) {
+              setUndoStack(prev => [...prev, {
+                action: 'paint',
+                x: tx,
+                y: ty,
+                layer: tile.layer || 0,
+                previousTile: prevTile || null
+              }]);
+            }
+
+            await addTileSimple(
+              tx, ty, tile.type || 'custom', tile.url, tile.isSpritesheet, tile.frameCount,
+              tile.frameWidth, tile.frameHeight, tile.animationSpeed, tile.layer,
+              offsetX, offsetY, tile.isWalkable, tile.snapToGrid, tile.isAutoFill,
+              isAutoTile, bitmask, elevation, hasFoam, foamBitmask, smartType, tile.rotation || 0,
+              state.selectedBlockCol, state.selectedBlockRow
+            );
+
+            if (isAutoTile) {
+               await updateTileAndNeighbors(tx, ty, tile.layer || 0, smartType, state.selectedBlockCol, state.selectedBlockRow);
+            }
+          })());
         }
-
-        const prevTile = useMapStore.getState().tiles.find(t => t.x === gx && t.y === gy && (t.layer || 0) === (tile.layer || 0));
-        setUndoStack(prev => [...prev, {
-          action: 'paint',
-          x: gx,
-          y: gy,
-          layer: tile.layer || 0,
-          previousTile: prevTile || null
-        }]);
-        
-        await addTileSimple(
-          gx, gy, 'custom', tile.url, tile.isSpritesheet, tile.frameCount, 
-          tile.frameWidth, tile.frameHeight, tile.animationSpeed, tile.layer, 
-          offsetX, offsetY, tile.isWalkable, tile.snapToGrid, tile.isAutoFill,
-          isAutoTile, bitmask, elevation, hasFoam, foamBitmask, smartType, tile.rotation || 0,
-          state.selectedBlockCol, state.selectedBlockRow
-        );
-
-        if (isAutoTile) {
-           await updateTileAndNeighbors(gx, gy);
-        }
-      }
-    } else if (tool === 'node' && activeNodeType) {
-      const exists = nodes.find(n => n.x === gx && n.y === gy);
-      if (!exists) {
-        setUndoStack(prev => [...prev, { action: 'node_add', x: gx, y: gy }]);
-        addNode({ x: gx, y: gy, type: activeNodeType, name: `New ${activeNodeType}`, iconUrl: '' });
+        await Promise.all(tasks);
       }
     } else if (tool === 'erase') {
-      const removedTile = await removeTileAt(gx, gy);
-      if (removedTile) {
-        setUndoStack(prev => [...prev, {
-          action: 'erase_tile',
-          x: gx,
-          y: gy,
-          layer: removedTile.layer || 0,
-          previousTile: removedTile
-        }]);
+      // Get current brush settings
+      const { brushMode: currentBrushMode, brushSize: currentBrushSize } = useMapStore.getState();
 
-        // Recalculate neighbors after erasing an autotile
-        if (removedTile.isAutoTile) {
-           await updateTileAndNeighbors(gx, gy);
+      // Determine brush area based on mode and size
+      let brushArea = [{dx: 0, dy: 0}]; // Default: single tile
+
+      if (currentBrushMode && currentBrushSize > 1) {
+        // Brush mode enabled: use full brush area
+        const half = Math.floor(currentBrushSize / 2);
+        const isEven = currentBrushSize % 2 === 0;
+        brushArea = [];
+        for (let dy = -half; dy < (isEven ? half : half + 1); dy++) {
+          for (let dx = -half; dx < (isEven ? half : half + 1); dx++) {
+            brushArea.push({dx, dy});
+          }
         }
       }
-      
-      const n = nodes.find(node => node.x === gx && node.y === gy);
-      if (n) {
-        setUndoStack(prev => [...prev, { action: 'erase_node', nodeData: n }]);
-        removeNode(n.id);
+
+      const tasks = [];
+
+      for (const {dx, dy} of brushArea) {
+        const tx = gx + dx;
+        const ty = gy + dy;
+
+        tasks.push((async () => {
+          const removedTile = await removeTileAt(tx, ty);
+          if (removedTile) {
+            if (!isMove || (dx === 0 && dy === 0)) {
+              setUndoStack(prev => [...prev, {
+                action: 'erase_tile',
+                x: tx,
+                y: ty,
+                layer: removedTile.layer || 0,
+                previousTile: removedTile
+              }]);
+            }
+
+            if (removedTile.isAutoTile) {
+               await updateTileAndNeighbors(tx, ty, removedTile.layer || 0, removedTile.smartType, removedTile.blockCol, removedTile.blockRow);
+            }
+          }
+
+          const n = nodes.find(node => node.x === tx && node.y === ty);
+          if (n && !isMove) { // Only erase nodes on direct click, not brush drag
+            setUndoStack(prev => [...prev, { action: 'erase_node', nodeData: n }]);
+            removeNode(n.id);
+          }
+        })());
+      }
+      await Promise.all(tasks);
+    } else if (tool === 'stamp') {
+      if (currentStamp) {
+        await handlePasteStamp(gx, gy);
+      } else {
+        if (!isMove) {
+          setIsSelecting(true);
+          setSelection({ start: { x: gx, y: gy }, end: { x: gx, y: gy } });
+        } else if (isSelecting && selection) {
+          setSelection({ ...selection, end: { x: gx, y: gy } });
+        }
+      }
+    } else if (tool === 'eyedropper') {
+      const topTile = tiles.filter(t => t.x === gx && t.y === gy)
+        .sort((a, b) => (b.layer || 0) - (a.layer || 0))[0];
+
+      if (topTile) {
+        // If it's a smart tile, select the smart brush type AND the specific block
+        if (topTile.isAutoTile && topTile.smartType) {
+          setSelectedSmartType(topTile.smartType);
+          if (topTile.blockCol !== undefined && topTile.blockRow !== undefined) {
+            setSelectedBlock(topTile.blockCol, topTile.blockRow);
+          }
+        }
+
+        const foundCustomTile = customTiles.find(ct => normalizeUrl(ct.url) === normalizeUrl(topTile.imageUrl));
+        if (foundCustomTile) {
+          selectTile(foundCustomTile.id);
+          setTool('paint');
+        }
       }
     }
   };
 
   const handlePropMouseDown = (tileId: string, e: React.MouseEvent) => {
     if (isSpacePressed) return;
-    
+
+    // Middle click (button 1) = rotate 90 degrees
+    if (e.button === 1) {
+      e.stopPropagation();
+      rotateTile(tileId, 90);
+      return;
+    }
+
     if (e.button === 2 || selectedTool === 'erase') {
       e.stopPropagation();
       const tile = tiles.find(t => t.id === tileId);
@@ -904,58 +1167,79 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         const rect = dropTargetRef.current!.getBoundingClientRect();
         const worldX = (e.clientX - rect.left - positionX) / scale;
         const worldY = (e.clientY - rect.top - positionY) / scale;
-        
+
         const exactX = worldX - WORLD_SIZE / 2;
         const exactY = worldY - WORLD_SIZE / 2;
-        
+
         const logicalX = tile.x * TILE_SIZE + TILE_SIZE / 2;
         const logicalY = tile.y * TILE_SIZE + TILE_SIZE;
-        
+
         setDragGrabOffset({
           x: exactX - (logicalX + (tile.offsetX || 0)),
           y: exactY - (logicalY + (tile.offsetY || 0))
         });
-        
+
         setDraggingTile(tileId);
       }
     }
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 2) {
-      e.preventDefault();
-      e.stopPropagation();
-      handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey, true, e.altKey);
+    if (isSpacePressed) return;
+    if (e.button === 1) return; // Middle click drag
+
+    const isRightClick = e.button === 2;
+    
+    // Determine tool and force erase
+    // Right click triggers erase. To allow single-click erase, we must treat it as a click action.
+    const forceErase = isRightClick; 
+    const tool = forceErase ? 'erase' : selectedTool;
+
+    // If it's a right click but we want to allow the transform-component to handle dragging,
+    // we need to be careful. However, the user explicitly asked for right click to delete.
+    // To allow BOTH, we can erase on mouse down, but that might interfere with drag start.
+    // Usually, in editors, click = action, drag = pan.
+    
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Rotate tool: rotate the top-most tile at click position
+    if (tool === 'rotate') {
+      const { positionX, positionY, scale } = transformComponentRef.current!.instance.transformState;
+      const rect = dropTargetRef.current!.getBoundingClientRect();
+      const worldX = (e.clientX - rect.left - positionX) / scale;
+      const worldY = (e.clientY - rect.top - positionY) / scale;
+      const gx = Math.floor((worldX - WORLD_SIZE / 2) / TILE_SIZE);
+      const gy = Math.floor((worldY - WORLD_SIZE / 2) / TILE_SIZE);
+
+      const topTileId = getTopMostTileId(gx, gy);
+      if (topTileId) {
+        e.stopPropagation();
+        rotateTile(topTileId, e.shiftKey ? -90 : 90); // Shift+click = rotate counter-clockwise
+      }
       return;
     }
-    if (e.button !== 0) return;
-    if (!isSpacePressed) {
-      if (e.altKey) {
-        e.stopPropagation();
-        handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey, false, true);
-        return;
-      }
 
-      if (selectedTool === 'select' || selectedTool === 'erase') {
-        const { positionX, positionY, scale } = transformComponentRef.current!.instance.transformState;
-        const rect = dropTargetRef.current!.getBoundingClientRect();
-        const worldX = (e.clientX - rect.left - positionX) / scale;
-        const worldY = (e.clientY - rect.top - positionY) / scale;
-        const gx = Math.floor((worldX - WORLD_SIZE / 2) / TILE_SIZE);
-        const gy = Math.floor((worldY - WORLD_SIZE / 2) / TILE_SIZE);
+    // Prop/Node handling
+    if (tool === 'select' || tool === 'erase') {
+      const { positionX, positionY, scale } = transformComponentRef.current!.instance.transformState;
+      const rect = dropTargetRef.current!.getBoundingClientRect();
+      const worldX = (e.clientX - rect.left - positionX) / scale;
+      const worldY = (e.clientY - rect.top - positionY) / scale;
+      const gx = Math.floor((worldX - WORLD_SIZE / 2) / TILE_SIZE);
+      const gy = Math.floor((worldY - WORLD_SIZE / 2) / TILE_SIZE);
 
-        const topTileId = getTopMostTileId(gx, gy);
-        if (topTileId) {
-           handlePropMouseDown(topTileId, e);
-           // If selecting a prop, we stop there. If nothing found, proceed to normal interaction?
-           return;
-        }
+      const topTileId = getTopMostTileId(gx, gy);
+      if (topTileId) {
+        handlePropMouseDown(topTileId, e);
+        if (tool === 'erase') return;
       }
+    }
 
-      if (selectedTool !== 'select' && selectedTool !== 'stamp') {
-        e.stopPropagation();
-        handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey, false, false);
-      }
+    if (tool !== 'select') {
+      // Direct call to interaction logic
+      // Use e.buttons to detect held buttons for continuous painting/erasing
+      handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey, forceErase, e.altKey, e.buttons || (isRightClick ? 2 : 1));
     }
   };
 
@@ -964,6 +1248,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
     if (selectedTool === 'stamp' && isSelecting) {
       setIsSelecting(false);
+      handleCopySelection(); // Auto-copy after dragging selection
       return;
     }
 
@@ -974,6 +1259,56 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
       }
       setDraggingTile(null);
       setDragGrabOffset(null);
+    }
+
+    if (state.isDraggingNode && state.draggingNodeId) {
+      const node = state.nodes.find(n => n.id === state.draggingNodeId);
+      if (node) {
+        // Sync node position to DB
+        await updateNode(node.id, { x: node.x, y: node.y });
+      }
+      setDraggingNode(null);
+      setDragGrabOffset(null);
+    }
+
+    // Cancel any pending drag RAF updates
+    if (dragRafRef.current) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+    pendingDragUpdateRef.current = null;
+
+    // Cancel any pending brush RAF updates
+    if (brushRafRef.current) {
+      cancelAnimationFrame(brushRafRef.current);
+      brushRafRef.current = null;
+    }
+    pendingBrushRef.current = null;
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    const nodeType = e.dataTransfer.getData('nodeType') as NodeType;
+
+    if (!nodeType || !activeNodeType) return;
+
+    const rect = dropTargetRef.current!.getBoundingClientRect();
+    const worldX = (e.clientX - rect.left - positionX) / scale;
+    const worldY = (e.clientY - rect.top - positionY) / scale;
+
+    // Use grid coordinates if snapping to grid (with 0.5 precision), otherwise use world coordinates
+    const nodeX = nodeSnapToGrid ? Math.round(((worldX - WORLD_SIZE / 2) / TILE_SIZE) * 2) / 2 : (worldX - WORLD_SIZE / 2) / TILE_SIZE;
+    const nodeY = nodeSnapToGrid ? Math.round(((worldY - WORLD_SIZE / 2) / TILE_SIZE) * 2) / 2 : (worldY - WORLD_SIZE / 2) / TILE_SIZE;
+
+    // Check for existing node at this position (with some tolerance)
+    const tolerance = 0.1; 
+    const exists = nodes.find(n =>
+      Math.abs(n.x - nodeX) < tolerance && Math.abs(n.y - nodeY) < tolerance
+    );
+
+    if (!exists) {
+      setUndoStack(prev => [...prev, { action: 'node_add', x: nodeX, y: nodeY }]);
+      addNode({ x: nodeX, y: nodeY, type: nodeType, name: `New ${nodeType}`, iconUrl: '' });
     }
   };
 
@@ -1008,16 +1343,42 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    handleMapInteraction(e.clientX, e.clientY, true, e.shiftKey, false, e.altKey);
-    
+    if (isSpacePressed) return;
+    handleMapInteraction(e.clientX, e.clientY, true, e.shiftKey, false, e.altKey, e.buttons);
+
+
     if (isSpacePressed) return;
 
-    if (e.buttons & 2) { 
+    if (e.buttons & 2) {
       e.stopPropagation();
-      handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey, true, e.altKey);
+      handleMapInteraction(e.clientX, e.clientY, true, e.shiftKey, true, e.altKey, e.buttons);
     } else if (e.buttons & 1 && selectedTool !== 'select') {
-      e.stopPropagation();
-      handleMapInteraction(e.clientX, e.clientY, false, e.shiftKey, false, e.altKey);
+      // Only paint/erase during move if brush mode is ON
+      // Stamp tool always needs move interaction for selection dragging
+      const { brushMode: currentBrushMode } = useMapStore.getState();
+      const isPaintOrErase = selectedTool === 'paint' || selectedTool === 'erase';
+
+      if (!isPaintOrErase || currentBrushMode) {
+        e.stopPropagation();
+        // Throttle brush operations to prevent lag
+        pendingBrushRef.current = { clientX: e.clientX, clientY: e.clientY, isShift: e.shiftKey };
+        if (!brushRafRef.current) {
+          brushRafRef.current = requestAnimationFrame(() => {
+            if (pendingBrushRef.current) {
+              handleMapInteraction(
+                pendingBrushRef.current.clientX,
+                pendingBrushRef.current.clientY,
+                true,
+                pendingBrushRef.current.isShift,
+                false,
+                false,
+                1
+              );
+            }
+            brushRafRef.current = null;
+          });
+        }
+      }
     }
   };
 
@@ -1343,6 +1704,37 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                 <Paintbrush size={20} />
               </button>
               
+              {(selectedTool === 'paint' || selectedTool === 'erase') && (
+                <div className="flex items-center gap-2 px-2 border-l border-slate-700/50">
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setBrushMode(!brushMode)}
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition-all flex items-center gap-1 ${brushMode ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}
+                      title="Toggle Brush Mode (hold Shift to temporarily toggle)"
+                    >
+                      <Square size={12} />
+                      BRUSH
+                    </button>
+                    {brushMode && (
+                      <>
+                        <span className="text-[10px] font-black text-slate-500 uppercase">Size</span>
+                        <div className="flex gap-1">
+                          {[1, 3, 5, 10].map(size => (
+                            <button
+                              key={size}
+                              onClick={() => setBrushSize(size)}
+                              className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-bold transition-all ${brushSize === size ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}
+                            >
+                              {size === 10 ? '10x10' : size}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              
               <div className="h-8 w-px bg-slate-700 mx-1" />
               
               <div className="flex gap-1.5 px-1">
@@ -1352,7 +1744,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
               <div className="h-8 w-px bg-slate-700 mx-1" />
 
               <div className="flex gap-1 px-1">
-                <button 
+                <button
                   onClick={() => setSelectedSmartType(selectedSmartType === 'off' ? 'grass' : 'off')}
                   className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${selectedSmartType !== 'off' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-400 hover:bg-slate-800'}`}
                   title="Toggle Smart Brush (Z)"
@@ -1360,7 +1752,23 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                   <Zap size={18} className={selectedSmartType !== 'off' ? "fill-white" : ""} />
                   <span className="text-[10px] font-black uppercase">Smart</span>
                 </button>
-                <button 
+                {selectedSmartType !== 'off' && (
+                  <div className="flex items-center gap-1 bg-slate-800/50 px-2 py-1 rounded-lg">
+                    <span className="text-[9px] text-slate-400 uppercase">Layer</span>
+                    <select
+                      value={smartBrushLayer}
+                      onChange={(e) => setSmartBrushLayer(Number(e.target.value))}
+                      className="bg-slate-900 text-white text-[10px] rounded px-1 py-0.5 outline-none border border-slate-700"
+                      title="Smart Brush Target Layer"
+                    >
+                      <option value={-1}>Water (-1)</option>
+                      <option value={0}>Ground (0)</option>
+                      <option value={1}>Roads (1)</option>
+                      <option value={2}>Props (2)</option>
+                    </select>
+                  </div>
+                )}
+                <button
                   onClick={() => setRaiseMode(!isRaiseMode)}
                   className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${isRaiseMode ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/40' : 'text-slate-400 hover:bg-slate-800'}`}
                   title="Toggle Raise Mode (R)"
@@ -1368,14 +1776,32 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                   <Box size={18} />
                   <span className="text-[10px] font-black uppercase">Raise</span>
                 </button>
-                <button 
+                <button
                   onClick={() => setShowDebugModal(true)}
                   className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-slate-400 hover:bg-slate-800"
-                  title="Open Bitmask Debugger"
+                  title="Open Bitmask Debugger (D)"
                 >
                   <Bug size={18} />
                   <span className="text-[10px] font-black uppercase">Debug</span>
                 </button>
+                <button
+                  onClick={() => setShowDebugNumbers(!showDebugNumbers)}
+                  className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${showDebugNumbers ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40' : 'text-slate-400 hover:bg-slate-800'}`}
+                  title="Toggle Debug Numbers on Tiles"
+                >
+                  <div className="text-[10px] font-black font-mono">#</div>
+                  <span className="text-[10px] font-black uppercase">Numbers</span>
+                </button>
+                {waterSheetUrl && (
+                  <button
+                    onClick={() => setShowWaterDebugModal(true)}
+                    className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-cyan-400 hover:bg-cyan-900/30 border border-cyan-800/50"
+                    title="Open Water Sheet Debugger (Shift+D)"
+                  >
+                    <Bug size={18} />
+                    <span className="text-[10px] font-black uppercase">Water</span>
+                  </button>
+                )}
               </div>
 
               <div className="h-8 w-px bg-slate-700 mx-1" />
@@ -1388,6 +1814,9 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
               </button>
               <button onClick={() => setTool('stamp')} className={`p-2 rounded-lg transition-all ${selectedTool === 'stamp' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Stamp Tool (S)">
                 <Copy size={20} />
+              </button>
+              <button onClick={() => setTool('rotate')} className={`p-2 rounded-lg transition-all ${selectedTool === 'rotate' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Rotate Tool (R) - Click tiles to rotate 90°">
+                <RotateCw size={20} />
               </button>
             </div>
           </div>
@@ -1403,28 +1832,34 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
               <div className="flex items-center gap-2 border-l border-slate-700 pl-4 text-purple-400">
                 <Wand2 size={12} className="animate-pulse" />
                 <span>Smart Brush: {selectedSmartType.toUpperCase()}</span>
+                <span className="text-[9px] bg-slate-800 px-1.5 py-0.5 rounded border border-slate-600">L{smartBrushLayer}</span>
                 {isRaiseMode && <span className="bg-purple-900/50 px-1 rounded text-[8px] border border-purple-500/50">RAISE</span>}
               </div>
             )}
 
-            <div className="flex items-center gap-2 border-l border-slate-700 pl-4 font-mono text-cyan-400">
-              X: {cursorCoords.x} Y: {cursorCoords.y}
-            </div>
+            <CoordinateDisplay 
+              x={cursorCoords.x} 
+              y={cursorCoords.y} 
+              smoothX={smoothCursorCoords.x} 
+              smoothY={smoothCursorCoords.y} 
+            />
           </div>
         </div>
 
         {/* Viewport */}
-        <div className={`flex-1 bg-[#6b705c] relative overflow-hidden ${isSpacePressed || isDraggingTile ? 'cursor-grabbing' : 'cursor-crosshair'}`} ref={dropTargetRef}>
+        <div className={`flex-1 bg-[#6b705c] relative overflow-hidden ${isSpacePressed || isDraggingTile || isDraggingNode ? 'cursor-grabbing' : 'cursor-crosshair'}`} ref={dropTargetRef}>
           
-          {/* Layer 1: The stationary Pixi Canvas (Internal container handles the panning) */}
+              {/* Layer 1: The stationary Pixi Canvas (Internal container handles the panning) */}
           <div className="absolute inset-0 z-0 pointer-events-none">
             <PixiMapCanvas 
               width={viewport.width} 
               height={viewport.height} 
               worldSize={WORLD_SIZE}
               transform={{ x: positionX, y: positionY, scale }} 
+              onPropMouseDown={handlePropMouseDown}
               waterBaseTile={waterBaseTile()}
               foamStripTile={foamStripTile()}
+              showDebugNumbers={showDebugNumbers}
             />
           </div>
 
@@ -1447,26 +1882,127 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
             }}
             limitToBounds={false} 
             wheel={{ step: 0.2 }} 
+            doubleClick={{ disabled: true }}
             panning={{ 
               disabled: !isSpacePressed && (selectedTool !== 'select' || isDraggingTile),
               velocityDisabled: true // Prevent "flinging" feel
             }}
           >
             <TransformComponent wrapperClass="w-full h-full">
-              <div 
-                style={{ 
-                  width: WORLD_SIZE, 
-                  height: WORLD_SIZE, 
-                  position: 'relative', 
+              <div
+                className="map-canvas-container"
+                style={{
+                  width: WORLD_SIZE,
+                  height: WORLD_SIZE,
+                  position: 'relative',
                   backgroundColor: 'transparent', // IMPORTANT: Transparent so Pixi shows through
-                }} 
-                onMouseDown={handleMouseDown} 
+                }}
+                onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
                 onMouseLeave={handleMouseUp}
                 onContextMenu={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+                onDragOver={(e) => e.preventDefault()}
+                onDragEnter={(e) => e.preventDefault()}
               >
                 
+                {/* Layer 2: Grid Highlight */}
+                {!isSpacePressed && (selectedTool === 'paint' || selectedTool === 'erase') && (
+                  <div 
+                    className="absolute pointer-events-none" 
+                    style={{
+                      left: cursorCoords.x * TILE_SIZE + WORLD_SIZE / 2,
+                      top: cursorCoords.y * TILE_SIZE + WORLD_SIZE / 2,
+                      width: TILE_SIZE,
+                      height: TILE_SIZE,
+                      backgroundColor: 'rgba(56, 189, 248, 0.2)', // Light Blue
+                      border: '1px solid rgba(56, 189, 248, 0.7)',
+                      zIndex: 60,
+                      opacity: 0.5 + Math.sin(Date.now() / 150) * 0.3
+                    }}
+                  />
+                )}
+                
+                {/* Layer 3: Nodes */}
+                {nodes.map(node => (
+                  <div
+                    key={node.id}
+                    onMouseDown={(e) => handleNodeMouseDown(node.id, e)}
+                    onDoubleClick={() => handleEditNodeProperties(node.id)}
+                    className={`absolute z-50 flex items-center justify-center rounded-full transition-transform transform-gpu ${selectedNodeId === node.id ? 'ring-4 ring-cyan-400 ring-offset-2 ring-offset-slate-900 shadow-2xl' : 'shadow-lg'}`}
+                    style={{
+                      left: node.x * TILE_SIZE + WORLD_SIZE / 2,
+                      top: node.y * TILE_SIZE + WORLD_SIZE / 2,
+                      width: TILE_SIZE,
+                      height: TILE_SIZE,
+                      cursor: isSpacePressed ? 'grabbing' : (selectedTool === 'select' || selectedTool === 'node' ? 'pointer' : 'crosshair'),
+                    }}
+                  >
+                    <div className="absolute inset-0 bg-slate-800/80 rounded-full border-2 border-slate-600" />
+                    {node.iconUrl ? (
+                      <img src={node.iconUrl} alt={node.name} className="w-3/5 h-3/5 object-contain" style={{ imageRendering: 'pixelated' }} />
+                    ) : (
+                      <div className="text-white">
+                        {node.type === 'spawn' && <Target size={20} />}
+                        {node.type === 'enemy' && <Sword size={20} />}
+                        {node.type === 'npc' && <User size={20} />}
+                        {node.type === 'loot' && <Box size={20} />}
+                        {node.type === 'poi' && <MapIcon size={20} />}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                
+                {/* Layer 4: Brush and Selection Previews */}
+                <BrushPreview 
+                  isSpacePressed={isSpacePressed} 
+                  selectedTool={selectedTool} 
+                  selectedTileId={selectedTileId} 
+                  customTiles={customTiles}
+                  cursorCoords={cursorCoords}
+                  smoothCursorCoords={smoothCursorCoords}
+                  TILE_SIZE={TILE_SIZE}
+                  WORLD_SIZE={WORLD_SIZE}
+                  brushSize={brushSize}
+                  brushMode={brushMode}
+                />
+                
+                {/* Stamp Tool Preview */}
+                {selectedTool === 'stamp' && currentStamp && !isSpacePressed && (
+                   <div 
+                      className="absolute pointer-events-none z-[70] opacity-60"
+                      style={{
+                        left: cursorCoords.x * TILE_SIZE + WORLD_SIZE / 2,
+                        top: cursorCoords.y * TILE_SIZE + WORLD_SIZE / 2,
+                      }}
+                   >
+                     {currentStamp.map(tile => {
+                       const customTile = customTiles.find(ct => normalizeUrl(ct.url) === normalizeUrl(tile.imageUrl));
+                       if (!customTile) return null;
+                       
+                       const displayWidth = customTile.frameWidth || TILE_SIZE;
+                       const displayHeight = customTile.frameHeight || TILE_SIZE;
+                       
+                       return (
+                         <div key={`${tile.x}-${tile.y}`}
+                           className="absolute"
+                           style={{
+                             left: tile.x * TILE_SIZE,
+                             top: tile.y * TILE_SIZE,
+                             width: displayWidth,
+                             height: displayHeight,
+                             backgroundImage: `url(${customTile.url})`,
+                             backgroundSize: 'cover',
+                             imageRendering: 'pixelated'
+                           }}
+                         />
+                       );
+                     })}
+                   </div>
+                )}
+
+
                 {/* High-Visibility Black Grid Overlay */}
                 <div 
                   className="absolute inset-0 pointer-events-none"
@@ -1479,77 +2015,9 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                       linear-gradient(to bottom, rgba(0,0,0,0.25) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1)))
                     `,
                     backgroundSize: `${TILE_SIZE}px ${TILE_SIZE}px, ${TILE_SIZE}px ${TILE_SIZE}px, ${TILE_SIZE * 10}px ${TILE_SIZE * 10}px, ${TILE_SIZE * 10}px ${TILE_SIZE * 10}px`,
-                    backgroundPosition: `${WORLD_SIZE / 2}px ${WORLD_SIZE / 2}px`
-                  }}
-                />
-
-                {!isSpacePressed && selectedTool === 'paint' && selectedTileId && (
-                  (() => {
-                    const tile = customTiles.find(t => t.id === selectedTileId);
-                    if (!tile) return null;
-                    const displayWidth = tile.frameWidth || TILE_SIZE;
-                    const displayHeight = tile.frameHeight || TILE_SIZE;
-
-                    const left = tile.snapToGrid 
-                      ? cursorCoords.x * TILE_SIZE + WORLD_SIZE / 2 - (displayWidth - TILE_SIZE) / 2
-                      : smoothCursorCoords.x + WORLD_SIZE / 2 - (displayWidth / 2);
-                    
-                    const top = tile.snapToGrid
-                      ? cursorCoords.y * TILE_SIZE + WORLD_SIZE / 2 - (displayHeight - TILE_SIZE)
-                      : smoothCursorCoords.y + WORLD_SIZE / 2 - (displayHeight);
-
-                    return (
-                      <div 
-                        className="absolute pointer-events-none opacity-50 z-[60]"
-                        style={{
-                          left,
-                          top,
-                          width: displayWidth,
-                          height: displayHeight,
-                          backgroundImage: `url(${tile.url})`,
-                          backgroundSize: 'auto 100%',
-                          backgroundPosition: '0 0',
-                          backgroundRepeat: 'no-repeat',
-                          imageRendering: 'pixelated',
-                          transform: `rotate(${tile.rotation || 0}deg)`,
-                          transformOrigin: 'center center'
-                        }}
-                      />
-                    );
-                  })()
-                )}
-                
-                {nodes.map(node => (
-                  <div 
-                    key={node.id} 
-                    id={`node-${node.id}`} 
-                    onClick={(e) => { e.stopPropagation(); selectNode(node.id); }} 
-                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); selectNode(node.id); handleEditNodeProperties(node.id); }}
-                    style={{ 
-                      position: 'absolute', 
-                      left: node.x * TILE_SIZE + WORLD_SIZE / 2, 
-                      top: node.y * TILE_SIZE + WORLD_SIZE / 2, 
-                      width: TILE_SIZE, 
-                      height: TILE_SIZE, 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center', 
-                      zIndex: 10 // Above MapCanvas (which is 1)
-                    }} 
-                    className={`group transition-transform hover:scale-125 ${selectedNodeId === node.id ? 'z-[20]' : ''}`}
-                  >
-                    <div className={`w-10 h-10 rounded-full shadow-2xl flex items-center justify-center border-2 transition-all ${selectedNodeId === node.id ? 'bg-cyan-500 border-white scale-110' : 'bg-slate-900 border-slate-600 hover:border-cyan-400'}`}>
-                      {node.type === 'spawn' && <Target size={20} className="text-white" />}
-                      {node.type === 'enemy' && <Sword size={20} className="text-red-400" />}
-                      {node.type === 'npc' && <User size={20} className="text-green-400" />}
-                      {node.type === 'loot' && <Box size={20} className="text-purple-400" />}
-                      {node.type === 'poi' && <MapIcon size={20} className="text-yellow-400" />}
-                    </div>
-                    <div className={`absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-1 bg-black/90 text-white text-[10px] font-black rounded border border-slate-700 pointer-events-none transition-opacity ${selectedNodeId === node.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                      {node.name.toUpperCase()}
-                    </div>
-                  </div>
-                ))}
+                  backgroundPosition: `${WORLD_SIZE / 2}px ${WORLD_SIZE / 2}px`
+                }}
+              />
               </div>
             </TransformComponent>
           </TransformWrapper>
@@ -1641,9 +2109,16 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
       )}
 
       {showDebugModal && (
-        <WinluDebugOverlay 
-          sheetUrl={autoTileSheetUrl || '/A2 - Terrain and Misc.jpg'} 
-          onClose={() => setShowDebugModal(false)} 
+        <WinluDebugOverlay
+          sheetUrl={autoTileSheetUrl || '/A2 - Terrain and Misc.jpg'}
+          onClose={() => setShowDebugModal(false)}
+        />
+      )}
+
+      {showWaterDebugModal && waterSheetUrl && (
+        <WaterDebugOverlay
+          sheetUrl={waterSheetUrl}
+          onClose={() => setShowWaterDebugModal(false)}
         />
       )}
 

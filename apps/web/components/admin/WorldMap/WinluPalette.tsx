@@ -3,10 +3,19 @@ import { useMapStore } from '@/lib/store/mapStore';
 import { Grid, Bug, ChevronDown } from 'lucide-react';
 
 export const WinluPalette = ({ compact = false }: { compact?: boolean }) => {
-  const { setSelectedBlock, setTool, selectedBlockCol, selectedBlockRow, autoTileSheetUrl, selectedSmartType, setSelectedSmartType, setShowDebugModal } = useMapStore();
+  const { setSelectedBlock, setTool, selectedBlockCol, selectedBlockRow, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl, selectedSmartType, setSelectedSmartType, setShowDebugModal } = useMapStore();
   const [showDropdown, setShowDropdown] = useState(false);
 
-  const SHEET_URL = autoTileSheetUrl || '/A2 - Terrain and Misc.jpg';
+  const SHEETS = {
+    grass: { url: autoTileSheetUrl, name: 'Grass' },
+    dirt: { url: dirtSheetUrl, name: 'Dirt' },
+    water: { url: waterSheetUrl, name: 'Water' },
+  };
+
+  const [selectedSheet, setSelectedSheet] = useState('grass');
+
+  const currentSheetData = SHEETS[selectedSheet as keyof typeof SHEETS];
+  const SHEET_URL = currentSheetData?.url || '';
 
   // 4x8 grid as requested
   const COLS = 4;
@@ -27,6 +36,7 @@ export const WinluPalette = ({ compact = false }: { compact?: boolean }) => {
             key={`${c}-${r}`}
             onClick={() => {
               setSelectedBlock(c, r);
+              setSelectedSmartType(selectedSheet); // Enable smart mode with current sheet type
               setTool('paint');
               setShowDropdown(false);
             }}
@@ -36,7 +46,7 @@ export const WinluPalette = ({ compact = false }: { compact?: boolean }) => {
             `}
             style={{
               width: '100%',
-              backgroundImage: `url('${SHEET_URL}')`,
+              backgroundImage: SHEET_URL ? `url('${SHEET_URL}')` : 'none',
               backgroundPosition: `${bgPosX}% ${bgPosY}%`,
               backgroundSize: `${COLS * 100}% ${ROWS * 100}%`,
               imageRendering: 'pixelated'
@@ -58,7 +68,7 @@ export const WinluPalette = ({ compact = false }: { compact?: boolean }) => {
              className="w-10 h-10 rounded border border-slate-700 relative overflow-hidden cursor-pointer hover:border-cyan-400 transition-colors"
              onClick={() => setShowDropdown(!showDropdown)}
              style={{
-               backgroundImage: `url('${SHEET_URL}')`,
+               backgroundImage: SHEET_URL ? `url('${SHEET_URL}')` : 'none',
                backgroundPosition: `${selectedBlockCol * (100 / (COLS - 1 || 1))}% ${selectedBlockRow * (100 / (ROWS - 1 || 1))}%`,
                backgroundSize: `${COLS * 100}% ${ROWS * 100}%`,
                imageRendering: 'pixelated'
@@ -81,6 +91,27 @@ export const WinluPalette = ({ compact = false }: { compact?: boolean }) => {
                 </label>
                 <div className="text-[9px] text-slate-500 font-mono">4x8 GRID</div>
               </div>
+              
+              <div className="flex items-center gap-2 mb-3 px-1">
+                {Object.keys(SHEETS)
+                  .filter(sheetKey => SHEETS[sheetKey as keyof typeof SHEETS]?.url)
+                  .map((sheetKey) => (
+                  <button
+                    key={sheetKey}
+                    onClick={() => {
+                      setSelectedSheet(sheetKey);
+                      setSelectedSmartType(sheetKey); // Set smart type to match sheet (grass/dirt/water)
+                    }}
+                    className={`
+                      text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded
+                      ${selectedSheet === sheetKey ? 'bg-cyan-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}
+                    `}
+                  >
+                    {SHEETS[sheetKey as keyof typeof SHEETS].name}
+                  </button>
+                ))}
+              </div>
+
               <div className="grid grid-cols-4 gap-2 w-[220px]">
                 {renderButtons()}
               </div>
