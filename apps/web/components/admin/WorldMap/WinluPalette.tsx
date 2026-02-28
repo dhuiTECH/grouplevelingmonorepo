@@ -65,7 +65,7 @@ export const WinluPalette = ({ compact = false }: { compact?: boolean }) => {
         <div className="flex items-center gap-1.5 bg-slate-950/50 p-1 rounded-lg border border-slate-700/50">
            {/* Current Selection Preview */}
            <div 
-             className="w-10 h-10 rounded border border-slate-700 relative overflow-hidden cursor-pointer hover:border-cyan-400 transition-colors"
+             className="w-8 h-8 rounded border border-slate-700 relative overflow-hidden cursor-pointer hover:border-cyan-400 transition-colors"
              onClick={() => setShowDropdown(!showDropdown)}
              style={{
                backgroundImage: SHEET_URL ? `url('${SHEET_URL}')` : 'none',
@@ -74,8 +74,8 @@ export const WinluPalette = ({ compact = false }: { compact?: boolean }) => {
                imageRendering: 'pixelated'
              }}
            >
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-center pb-0.5">
-                <ChevronDown size={10} className="text-white" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-center pb-0">
+                <ChevronDown size={8} className="text-white" />
               </div>
            </div>
         </div>

@@ -231,7 +231,7 @@ interface MapState {
   addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number) => Promise<void>;
   batchAddTiles: (newTiles: Omit<Tile, 'id'>[]) => Promise<void>;
   removeTileAt: (x: number, y: number, excludeAutoTiles?: boolean) => Promise<Tile | null>;
-  removeTileById: (id: string) => Promise<void>;
+  removeTileById: (id: string, excludeAutoTiles?: boolean) => Promise<void>;
   moveTile: (tileId: string, newX: number, newY: number, newOffsetX: number, newOffsetY: number) => Promise<void>;
   rotateTile: (tileId: string, rotationDelta: number) => Promise<void>;
   updateTileAndNeighbors: (x: number, y: number, layer: number, isRemoving?: boolean, smartType?: string, blockCol?: number, blockRow?: number) => Promise<void>; // NEW
@@ -399,6 +399,11 @@ export const useMapStore = create<MapState>((set, get) => ({
         const tileData = chunk.tile_data;
         if (Array.isArray(tileData)) {
           tileData.forEach((t: any) => {
+            // CRITICAL: Prevent corrupted tiles with NaN/null coordinates from crashing rendering bounds
+            if (typeof t.x !== 'number' || typeof t.y !== 'number' || isNaN(t.x) || isNaN(t.y)) {
+               return;
+            }
+
             allTiles.push({
               id: uuidv4(),
               x: t.x,
@@ -687,8 +692,10 @@ export const useMapStore = create<MapState>((set, get) => ({
     // 2. Debounced sync to Supabase
     triggerChunkSync(chunkX, chunkY, get);
 
-    // Trigger Autotile Update if needed (don't await sync, just update neighbors locally)
-    if (isAutoTile || get().isSmartMode) {
+    // Trigger Autotile Update ONLY if this specific tile is marked as an autotile.
+    // get().isSmartMode is used for the paintbrush to know when to SET isAutoTile=true,
+    // but once it's passed here, we should respect the tile's own property.
+    if (isAutoTile) {
       await get().updateTileAndNeighbors(x, y, layer || 0, false, smartType, blockCol, blockRow);
     }
   },
@@ -754,9 +761,14 @@ export const useMapStore = create<MapState>((set, get) => ({
     return removedTile;
   },
 
-  removeTileById: async (id) => {
+  removeTileById: async (id, excludeAutoTiles = false) => {
     const tile = get().tiles.find(t => t.id === id);
     if (!tile) return;
+
+    // Respect smart brush lock - don't erase auto tiles if lock is enabled
+    if (excludeAutoTiles && tile.isAutoTile) {
+      return;
+    }
 
     const { x, y } = tile;
     const chunkX = Math.floor(x / CHUNK_SIZE);
@@ -883,7 +895,9 @@ export const useMapStore = create<MapState>((set, get) => ({
 
       const getTileSig = (tx: number, ty: number) => {
         const t = localTiles.get(`${tx},${ty}`);
-        return t && t.isAutoTile ? `${t.smartType}-${t.blockCol}-${t.blockRow}` : null;
+        // Return signature for any tile that has smart properties, even if isAutoTile is false.
+        // This allows active smart tiles to connect to "dumb" pasted tiles of the same type.
+        return t && t.smartType ? `${t.smartType}-${t.blockCol || 0}-${t.blockRow || 0}` : null;
       };
 
       const newTiles = [...tiles];
@@ -892,6 +906,8 @@ export const useMapStore = create<MapState>((set, get) => ({
         const tileIndex = newTiles.findIndex(t => t.x === tx && t.y === ty && (t.layer || 0) === layer);
         if (tileIndex === -1) return;
         const tile = newTiles[tileIndex];
+        
+        // CRITICAL: If this tile was manually pasted (isAutoTile = false), do NOT recalculate its bitmask!
         if (!tile.isAutoTile) return;
 
         // CRITICAL: Only update tiles matching the target smartType/blockCol/blockRow
@@ -926,7 +942,9 @@ export const useMapStore = create<MapState>((set, get) => ({
         {tx: x, ty: y+1}, {tx: x-1, ty: y+1}, {tx: x-1, ty: y}, {tx: x-1, ty: y-1}
       ];
 
+      // If we are REMOVING a tile, we must process the neighbors, but skip the center since it's gone
       for (const pos of area) {
+        if (isRemoving && pos.tx === x && pos.ty === y) continue;
         updateSingleTile(pos.tx, pos.ty);
       }
 

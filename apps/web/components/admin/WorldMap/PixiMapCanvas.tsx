@@ -398,6 +398,11 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
       const displayWidth = (tile.isAutoTile && (tile.layer || 0) === 0) ? TILE_SIZE : (customTile?.frameWidth || tile.frameWidth || TILE_SIZE);
       const displayHeight = (tile.isAutoTile && (tile.layer || 0) === 0) ? TILE_SIZE : (customTile?.frameHeight || tile.frameHeight || TILE_SIZE);
 
+      // CRITICAL: Ensure x and y are actually numbers before doing math, otherwise they become NaN
+      if (typeof tile.x !== 'number' || typeof tile.y !== 'number' || isNaN(tile.x) || isNaN(tile.y)) {
+        return false;
+      }
+
       const tileWorldX = tile.x * TILE_SIZE + worldSize / 2 + (tile.offsetX || 0) - (displayWidth - TILE_SIZE) / 2;
       const tileWorldY = tile.y * TILE_SIZE + worldSize / 2 + (tile.offsetY || 0) - (displayHeight - TILE_SIZE);
 
