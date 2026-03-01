@@ -1030,7 +1030,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     // But allow continuous painting for brush mode OR if snap mode is not full-grid
     if (isMove && !isDraggingTile) {
       const { brushMode: currentBrushMode, brushSize: currentBrushSize, snapMode: currentSnapMode } = state;
-      const isBrushMode = (tool === 'paint' || tool === 'erase') && currentBrushMode && currentBrushSize > 1;
+      const isBrushMode = (tool === 'paint' || tool === 'erase') && currentBrushMode && (currentBrushSize > 1 || tool === 'erase');
       const isSubGridSnap = currentSnapMode !== 'full';
 
       if (!isBrushMode && !isSubGridSnap && lastInteractionRef.current?.gx === gx && lastInteractionRef.current?.gy === gy && lastInteractionRef.current?.tool === tool) {
@@ -1147,9 +1147,9 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         }
         await Promise.all(tasks);
       }
-    } else if (tool === 'erase') {
-      // Get current brush settings
-      const { brushMode: currentBrushMode, brushSize: currentBrushSize } = useMapStore.getState();
+    if (tool === 'erase') {
+      // Get current brush settings from store to ensure we have latest
+      const { brushMode: currentBrushMode, brushSize: currentBrushSize, smartBrushLock } = useMapStore.getState();
 
       // Determine brush area based on mode and size
       let brushArea = [{dx: 0, dy: 0}]; // Default: single tile
@@ -1325,13 +1325,10 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     const forceErase = isRightClick; 
     const tool = forceErase ? 'erase' : selectedTool;
 
-    // If it's a right click but we want to allow the transform-component to handle dragging,
-    // we need to be careful. However, the user explicitly asked for right click to delete.
-    // To allow BOTH, we can erase on mouse down, but that might interfere with drag start.
-    // Usually, in editors, click = action, drag = pan.
-    
-    e.preventDefault();
-    e.stopPropagation();
+    if (isRightClick) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
 
     // Rotate tool: rotate the top-most tile at click position
     if (tool === 'rotate') {
@@ -1492,7 +1489,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     const { brushMode: currentBrushMode } = useMapStore.getState();
     const isPaintOrErase = selectedTool === 'paint' || selectedTool === 'erase';
 
-    if (isDrawing && e.buttons > 0 && (!isPaintOrErase || currentBrushMode)) {
+    if (isDrawing && (e.buttons > 0 || e.button === 2) && (!isPaintOrErase || currentBrushMode)) {
       e.stopPropagation();
       // Throttle brush operations to prevent lag
       pendingBrushRef.current = { 
