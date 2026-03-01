@@ -86,17 +86,18 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
     transform: transform.value,
   }));
 
-  // Extract layers and perform Y-sorting
-  const { layerMinus1Tiles, layer0Tiles, propsBelow, propsAbove } = useMemo(() => {
+  // Extract layers and sort props by zIndex (single pass, no Y-split canvas swap)
+  const { layerMinus1Tiles, layer0Tiles, allProps } = useMemo(() => {
     const lMinus1: any[] = [];
     const l0: any[] = [];
-    const pBelow: any[] = [];
-    const pAbove: any[] = [];
-    
-    const playerY = user?.world_y || 0;
+    const props: any[] = [];
 
     visionGrid.forEach(cell => {
       cell.tiles?.forEach((t: any, index: number) => {
+        // Skip invisible collision/edge-block layers — they carry walkability data only
+        const rawLayer = (t.layer !== undefined && t.layer !== null) ? Number(t.layer) : 0;
+        if (rawLayer <= -2) return;
+
         const cleanUrl = t.imageUrl?.split('?')[0];
         const enrichedTile = { 
           ...t, 
@@ -110,41 +111,29 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
         const dictData = tileLibrary.get(cleanUrl);
 
         // Determine logical layer. Priority: Chunk Data -> Dictionary Data -> Default 0
-        let tileLayer = (t.layer !== undefined && t.layer !== null) ? Number(t.layer) : Number(dictData?.layer);
-        if (isNaN(tileLayer)) tileLayer = 0;
+        let tileLayer = rawLayer !== 0 ? rawLayer : (isNaN(Number(dictData?.layer)) ? 0 : Number(dictData?.layer));
 
         const isWater = (t.type === 'water') || (dictData?.type === 'water') || (dictData?.category === 'water_base');
 
         if (tileLayer < 0 || isWater) {
-          lMinus1.push(enrichedTile); // Water & Deep Layers
+          lMinus1.push(enrichedTile); // Water & deep layers
         } else if (tileLayer === 0) {
           l0.push(enrichedTile);      // Ground
         } else {
-          // For Y-sorting, calculate physical bottom of the prop
+          // Y-sort props by their visual bottom edge within the single background canvas
           const frameHeight = dictData?.frame_height ?? t.frameHeight ?? t.frame_height ?? 48;
           const displayHeight = frameHeight * (tileSize / 48);
-          // absolute Y position mapped to pixels (standard Y, positive is down)
           const finalTop = cell.y * tileSize - (displayHeight - tileSize) + (t.offsetY || 0);
-          
-          let internalZIndex = (tileLayer + 10) * 100;
-          internalZIndex += Math.floor(finalTop + displayHeight);
-          
-          enrichedTile.zIndex = internalZIndex;
-
-          if (cell.y < playerY) {
-            pBelow.push(enrichedTile); // Behind player
-          } else {
-            pAbove.push(enrichedTile); // In front of player
-          }
+          enrichedTile.zIndex = (tileLayer + 10) * 100 + Math.floor(finalTop + displayHeight);
+          props.push(enrichedTile);
         }
       });
     });
 
-    pBelow.sort((a, b) => a.zIndex - b.zIndex);
-    pAbove.sort((a, b) => a.zIndex - b.zIndex);
+    props.sort((a, b) => a.zIndex - b.zIndex);
 
-    return { layerMinus1Tiles: lMinus1, layer0Tiles: l0, propsBelow: pBelow, propsAbove: pAbove };
-  }, [visionGrid, tileSize, user?.world_y, tileLibrary]);
+    return { layerMinus1Tiles: lMinus1, layer0Tiles: l0, allProps: props };
+  }, [visionGrid, tileSize, tileLibrary]);
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -173,7 +162,8 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
               dictionaryData={tileLibrary.get(tile.cleanUrl)}
             />
           ))}
-          {propsBelow.map((tile) => (
+          {/* Props: all Y-sorted in one pass — no canvas-swap jitter on player move */}
+          {allProps.map((tile) => (
             <SkiaTile
               key={`tile-${tile.id || (tile.absX + ',' + tile.absY + ',' + (tile.layer || 1) + ',' + tile.index)}`}
               tile={tile} absPx={Math.floor(tile.absX * tileSize)} absPy={Math.floor(tile.absY * tileSize)}
@@ -227,22 +217,6 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
         {children}
       </Reanimated.View>
 
-      {/* FOREGROUND CANVAS: Props In Front of Player */}
-      <Canvas style={{ position: 'absolute', width, height, zIndex: 10 }} pointerEvents="none">
-        {/* Transparent fill so this canvas doesn't occlude the background canvas */}
-        <Fill color="transparent" />
-        <Group transform={transform}>
-          {propsAbove.map((tile) => (
-            <SkiaTile
-              key={`tile-${tile.id || (tile.absX + ',' + tile.absY + ',' + (tile.layer || 2) + ',' + tile.index)}`}
-              tile={tile} absPx={Math.floor(tile.absX * tileSize)} absPy={Math.floor(tile.absY * tileSize)}
-              tileSize={tileSize} images={images} mapSettings={mapSettings}
-              animationFrame={animationFrame} foamOpacity={foamOpacity} isProp={true}
-              dictionaryData={tileLibrary.get(tile.cleanUrl)}
-            />
-          ))}
-        </Group>
-      </Canvas>
     </View>
   );
 });
