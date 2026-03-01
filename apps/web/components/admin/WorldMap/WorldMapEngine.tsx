@@ -2204,7 +2204,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                         top: snapPosition(smoothCursorCoords.y, snapMode, cursorCoords.y, TILE_SIZE),
                       }}
                    >
-                     {currentStamp.map(tile => {
+                     {currentStamp.map((tile, stampIdx) => {
                        // --- Frozen smart tile: render using bitmask + sheet url ---
                        const isFrozenSmart = !!tile.smartType && tile.bitmask !== undefined;
                        if (isFrozenSmart) {
@@ -2216,7 +2216,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
                          if (!sheetUrl) {
                            return (
-                             <div key={`${tile.x}-${tile.y}`}
+                             <div key={`stamp-${stampIdx}-${tile.x}-${tile.y}-${tile.layer || 0}`}
                                className="absolute bg-green-500/30 border border-green-500/50"
                                style={{ left: tile.x * TILE_SIZE, top: tile.y * TILE_SIZE, width: TILE_SIZE, height: TILE_SIZE, imageRendering: 'pixelated' }}
                              />
@@ -2229,7 +2229,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                          const { sourceX, sourceY } = coords[0];
 
                          return (
-                           <div key={`${tile.x}-${tile.y}`}
+                           <div key={`stamp-${stampIdx}-${tile.x}-${tile.y}-${tile.layer || 0}`}
                              className="absolute"
                              style={{
                                left: tile.x * TILE_SIZE,
@@ -2253,7 +2253,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                        const displayHeight = customTile.frameHeight || TILE_SIZE;
                        
                        return (
-                         <div key={`${tile.x}-${tile.y}`}
+                         <div key={`stamp-${stampIdx}-${tile.x}-${tile.y}-${tile.layer || 0}`}
                            className="absolute"
                            style={{
                              left: tile.x * TILE_SIZE,

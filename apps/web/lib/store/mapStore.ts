@@ -902,15 +902,20 @@ export const useMapStore = create<MapState>((set, get) => ({
     set((state) => {
       const { tiles } = state;
 
-      // Pre-calculate a spatial map for fast neighbor lookups (O(1) instead of O(N))
-      // Only for tiles in the immediate area
+      const newTiles = [...tiles];
+
+      // Build O(1) index once — used for both localTiles population and updateSingleTile lookups
+      const tileIndexMap = new Map<string, number>();
+      newTiles.forEach((t, i) => tileIndexMap.set(`${t.x},${t.y},${t.layer || 0}`, i));
+
+      // Pre-calculate a spatial map for fast neighbor lookups using the index (no O(N) scans)
       const localTiles = new Map<string, Tile>();
       for (let dy = -2; dy <= 2; dy++) {
         for (let dx = -2; dx <= 2; dx++) {
           const tx = x + dx;
           const ty = y + dy;
-          const t = tiles.find(t => t.x === tx && t.y === ty && (t.layer || 0) === layer);
-          if (t) localTiles.set(`${tx},${ty}`, t);
+          const idx = tileIndexMap.get(`${tx},${ty},${layer}`);
+          if (idx !== undefined) localTiles.set(`${tx},${ty}`, newTiles[idx]);
         }
       }
 
@@ -920,12 +925,6 @@ export const useMapStore = create<MapState>((set, get) => ({
         // This allows active smart tiles to connect to "dumb" pasted tiles of the same type.
         return t && t.smartType ? `${t.smartType}-${t.blockCol || 0}-${t.blockRow || 0}` : null;
       };
-
-      const newTiles = [...tiles];
-
-      // Build O(1) index for neighbor lookups — avoids 9 × O(N) findIndex calls
-      const tileIndexMap = new Map<string, number>();
-      newTiles.forEach((t, i) => tileIndexMap.set(`${t.x},${t.y},${t.layer || 0}`, i));
 
       const updateSingleTile = (tx: number, ty: number) => {
         const tileIndex = tileIndexMap.get(`${tx},${ty},${layer}`) ?? -1;
