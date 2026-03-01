@@ -11,7 +11,7 @@ import {
   Plus, Minus, Maximize, Grid, Zap, Loader2, Target, Map as MapIcon,
   User, Sword, Box, Globe, Search, MousePointer2, Eraser, Wand2,
   GripVertical, Copy, Square, CheckSquare, Pipette, X, XCircle, Paintbrush, Bug,
-  RotateCw, Lock, Unlock, Droplets, Move
+  RotateCw, Lock, Unlock, Droplets, Move, ShieldOff, Eye, EyeOff
 } from 'lucide-react';
 import { WinluPalette } from './WinluPalette';
 import { DebugOverlay } from './DebugOverlay';
@@ -22,6 +22,7 @@ import { supabase } from '@/lib/supabase';
 
 const WORLD_SIZE = 100000; 
 const TILE_SIZE = 48;
+const COLLISION_LAYER = -2;
 
 // Helper to normalize URLs for comparison (ignoring query params)
 const normalizeUrl = (url: string | undefined | null) => {
@@ -180,7 +181,8 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     snapMode, setSnapMode,
     nodeSnapToGrid, setNodeSnapToGrid,
     isLoadingTiles, tiles, nodes, showDebugModal, setShowDebugModal, showDebugNumbers, setShowDebugNumbers, currentStamp, setCurrentStamp,
-    dragGrabOffset, setDragGrabOffset, selection, setSelection
+    dragGrabOffset, setDragGrabOffset, selection, setSelection,
+    showWalkabilityOverlay, setShowWalkabilityOverlay
   } = useMapStore();
   
   const [isResizingLeft, setIsResizingLeft] = useState(false);
@@ -1210,6 +1212,27 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           selectTile(foundCustomTile.id);
         }
       }
+    } else if (tool === 'collision') {
+      if (forceErase) {
+        // Right-click: remove the collision tile at this cell
+        const collisionTile = useMapStore.getState().tiles.find(
+          t => t.x === gx && t.y === gy && (t.layer || 0) === COLLISION_LAYER
+        );
+        if (collisionTile) {
+          removeTileById(collisionTile.id);
+        }
+      } else {
+        // Left-click/drag: paint an invisible non-walkable collision tile
+        await addTileSimple(
+          gx, gy, 'collision', '',
+          false, 0, TILE_SIZE, TILE_SIZE, 0,
+          COLLISION_LAYER, 0, 0,
+          false, // isWalkable = false
+          true,  // snapToGrid = true
+          false, false, 0, 0, false, 0,
+          undefined, 0, 0, 0
+        );
+      }
     }
   };
 
@@ -1905,6 +1928,13 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                   <Box size={16} />
                 </button>
                 <button
+                  onClick={() => setShowWalkabilityOverlay(!showWalkabilityOverlay)}
+                  className={`p-1.5 rounded-lg transition-all flex items-center gap-1 ${showWalkabilityOverlay ? 'bg-red-600/20 text-red-400 border border-red-500/50' : 'text-slate-400 hover:bg-slate-800'}`}
+                  title="Show Walkability Overlay"
+                >
+                  {showWalkabilityOverlay ? <Eye size={16} /> : <EyeOff size={16} />}
+                </button>
+                <button
                   onClick={() => setShowDebugNumbers(!showDebugNumbers)}
                   className={`p-1.5 rounded-lg transition-all flex items-center gap-1 ${showDebugNumbers ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40' : 'text-slate-400 hover:bg-slate-800'}`}
                   title="Debug Numbers"
@@ -1948,6 +1978,13 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                 <button onClick={() => setTool('rotate')} className={`p-1.5 rounded-lg transition-all ${selectedTool === 'rotate' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Rotate Tool (R)">
                   <RotateCw size={18} />
                 </button>
+                <button
+                  onClick={() => { setTool('collision'); setShowWalkabilityOverlay(true); }}
+                  className={`p-1.5 rounded-lg transition-all ${selectedTool === 'collision' ? 'bg-red-700 text-white shadow-lg shadow-red-900/40' : 'text-slate-400 hover:bg-slate-800'}`}
+                  title="Collision Brush — paint non-walkable zones"
+                >
+                  <ShieldOff size={18} />
+                </button>
               </div>
             </div>
           </div>
@@ -1965,6 +2002,15 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                 <span>{selectedSmartType.toUpperCase()}</span>
                 <span className="text-[8px] bg-slate-800 px-1 py-0.5 rounded border border-slate-600">L{smartBrushLayer}</span>
                 {isRaiseMode && <span className="bg-purple-900/50 px-1 rounded text-[7px] border border-purple-500/50">RAISE</span>}
+              </div>
+            )}
+
+            {/* COLLISION BRUSH INDICATOR */}
+            {selectedTool === 'collision' && (
+              <div className="flex items-center gap-1.5 border-l border-slate-700 pl-3 text-red-400">
+                <ShieldOff size={10} className="animate-pulse" />
+                <span>Collision Brush</span>
+                <span className="text-[8px] text-slate-500">RMB erase</span>
               </div>
             )}
 
@@ -1992,6 +2038,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
               waterBaseTile={waterBaseTile()}
               foamStripTile={foamStripTile()}
               showDebugNumbers={showDebugNumbers}
+              showWalkabilityOverlay={showWalkabilityOverlay}
               nodes={nodes}
               cursorCoords={cursorCoords}
               selectedTool={selectedTool}

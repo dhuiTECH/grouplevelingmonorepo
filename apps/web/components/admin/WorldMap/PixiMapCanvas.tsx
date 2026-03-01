@@ -28,6 +28,7 @@ interface PixiMapCanvasProps {
   waterBaseTile?: CustomTile;
   foamStripTile?: CustomTile;
   showDebugNumbers?: boolean;
+  showWalkabilityOverlay?: boolean;
   
   // Data passed down for rendering
   nodes: any[];
@@ -324,6 +325,7 @@ SmartPixiTile.displayName = 'SmartPixiTile';
 
 export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({ 
   width, height, worldSize, transform, onPropMouseDown, waterBaseTile, foamStripTile, showDebugNumbers,
+  showWalkabilityOverlay,
   nodes, cursorCoords, selectedTool, isSpacePressed, brushMode, brushSize, selectedTileId
 }) => {
   const customTiles = useMapStore(state => state.customTiles);
@@ -434,6 +436,27 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
     });
   }, [tiles, customTileLookup, cullBox, worldSize]);
 
+  const drawWalkabilityOverlay = React.useCallback((g: PIXI.Graphics) => {
+    g.clear();
+    if (!showWalkabilityOverlay) return;
+    const { minX, minY, maxX, maxY } = cullBox;
+    tiles.forEach(tile => {
+      if (tile.isWalkable !== false) return;
+      if (typeof tile.x !== 'number' || typeof tile.y !== 'number') return;
+      const wx = tile.x * TILE_SIZE + worldSize / 2;
+      const wy = tile.y * TILE_SIZE + worldSize / 2;
+      if (wx + TILE_SIZE < minX || wx > maxX || wy + TILE_SIZE < minY || wy > maxY) return;
+      g.rect(wx, wy, TILE_SIZE, TILE_SIZE).fill({ color: 0xDC2626, alpha: 0.35 });
+    });
+  }, [showWalkabilityOverlay, tiles, cullBox, worldSize]);
+
+  const walkabilityOverlayRef = React.useRef<PIXI.Graphics>(null);
+  React.useEffect(() => {
+    if (walkabilityOverlayRef.current) {
+      drawWalkabilityOverlay(walkabilityOverlayRef.current);
+    }
+  }, [drawWalkabilityOverlay]);
+
   const drawSelection = React.useCallback((g: PIXI.Graphics) => {
     g.clear();
     if (!selection) return;
@@ -486,6 +509,7 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
           
           {tileElements}
 
+          <PixiGraphics ref={walkabilityOverlayRef} />
           <PixiGraphics ref={selectionRef} />
         </PixiContainer>
       </Application>

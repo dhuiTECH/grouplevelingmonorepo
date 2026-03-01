@@ -65,7 +65,7 @@ export interface CustomTile {
   sort_order?: number;
 }
 
-export type ToolType = 'select' | 'paint' | 'erase' | 'node' | 'stamp' | 'eyedropper' | 'rotate';
+export type ToolType = 'select' | 'paint' | 'erase' | 'node' | 'stamp' | 'eyedropper' | 'rotate' | 'collision';
 
 const CHUNK_SIZE = 16;
 
@@ -205,6 +205,10 @@ interface MapState {
   waterBaseTile: () => CustomTile | undefined; // NEW SELECTOR
   foamStripTile: () => CustomTile | undefined; // NEW SELECTOR
   
+  // Walkability overlay state
+  showWalkabilityOverlay: boolean;
+  setShowWalkabilityOverlay: (show: boolean) => void;
+
   // Debug modal state
   showDebugModal: boolean;
   setShowDebugModal: (show: boolean) => void;
@@ -326,6 +330,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   waterSheetUrl: null,
   selectedWaterBaseId: null, // NEW
   selectedFoamStripId: null, // NEW
+  showWalkabilityOverlay: false,
   showDebugModal: false,
   showDebugNumbers: false,
 
@@ -336,6 +341,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   setSmartBrushLayer: (smartBrushLayer) => set({ smartBrushLayer }),
   setRaiseMode: (enabled: boolean) => set({ isRaiseMode: enabled }),
   setFoamEnabled: (isFoamEnabled) => set({ isFoamEnabled }),
+  setShowWalkabilityOverlay: (showWalkabilityOverlay) => set({ showWalkabilityOverlay }),
   setShowDebugModal: (showDebugModal) => set({ showDebugModal }),
   setShowDebugNumbers: (showDebugNumbers) => set({ showDebugNumbers }),
   setAutoTileSheetUrl: async (url) => {
