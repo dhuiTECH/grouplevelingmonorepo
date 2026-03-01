@@ -73,8 +73,9 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
   
   // NOTE: Render sprite-sheet tiles when:
   //   • tile.isAutoTile === true  → live auto-tile (bitmask recalculated by neighbours)
-  //   • tile.smartType set + tile.bitmask defined → frozen/pasted copy (isAutoTile: false, fixed bitmask)
-  const isFrozenSmart = !tile.isAutoTile && !!tile.smartType && tile.bitmask !== undefined;
+  //   • tile.smartType set        → frozen/pasted copy (isAutoTile: false); bitmask defaults to 0 if undefined
+  //     (smart tiles have imageUrl='' so they MUST use the sprite-sheet path or they're invisible)
+  const isFrozenSmart = !tile.isAutoTile && !!tile.smartType;
   if (tile.isAutoTile || isFrozenSmart) {
     let activeUrl = mapSettings?.autotile_sheet_url;
     let smartType = tile.smartType || 'grass';
@@ -194,8 +195,8 @@ export const SkiaTile = React.memo(SkiaTileInternal, (prev, next) => {
   let nextCleanUrl = next.tile.cleanUrl || next.tile.imageUrl?.split('?')[0];
 
   // For smart tiles (live or frozen), care about the sprite sheet url, not the icon url
-  const prevIsSmart = prev.tile.isAutoTile || (!prev.tile.isAutoTile && !!prev.tile.smartType && prev.tile.bitmask !== undefined);
-  const nextIsSmart = next.tile.isAutoTile || (!next.tile.isAutoTile && !!next.tile.smartType && next.tile.bitmask !== undefined);
+  const prevIsSmart = prev.tile.isAutoTile || (!prev.tile.isAutoTile && !!prev.tile.smartType);
+  const nextIsSmart = next.tile.isAutoTile || (!next.tile.isAutoTile && !!next.tile.smartType);
 
   if (prevIsSmart) {
     let smartType = prev.tile.smartType || 'grass';
