@@ -440,7 +440,8 @@ export const useMapStore = create<MapState>((set, get) => ({
               hasFoam: t.hasFoam,
               foamBitmask: t.foamBitmask,
               smartType: t.smartType,
-              rotation: t.rotation || 0
+              rotation: t.rotation || 0,
+              edgeBlocks: t.edgeBlocks,
             });
           });
         }
