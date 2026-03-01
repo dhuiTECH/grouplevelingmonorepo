@@ -147,6 +147,8 @@ interface MapState {
   setBrushSize: (size: number) => void;
   brushMode: boolean;
   setBrushMode: (enabled: boolean) => void;
+  snapMode: 'full' | 'half' | 'free';
+  setSnapMode: (mode: 'full' | 'half' | 'free') => void;
 
   // Node state
   nodeSnapToGrid: boolean;
@@ -261,6 +263,8 @@ export const useMapStore = create<MapState>((set, get) => ({
 
   brushMode: false,
   setBrushMode: (brushMode) => set({ brushMode }),
+  snapMode: 'full',
+  setSnapMode: (snapMode) => set({ snapMode }),
 
   nodeSnapToGrid: true,
   setNodeSnapToGrid: (nodeSnapToGrid) => set({ nodeSnapToGrid }),

@@ -11,7 +11,7 @@ import {
   Plus, Minus, Maximize, Grid, Zap, Loader2, Target, Map as MapIcon,
   User, Sword, Box, Globe, Search, MousePointer2, Eraser, Wand2,
   GripVertical, Copy, Square, CheckSquare, Pipette, X, XCircle, Paintbrush, Bug,
-  RotateCw, Lock, Unlock, Droplets
+  RotateCw, Lock, Unlock, Droplets, Move
 } from 'lucide-react';
 import { WinluPalette } from './WinluPalette';
 import { DebugOverlay } from './DebugOverlay';
@@ -43,9 +43,17 @@ const CoordinateDisplay = React.memo(({ x, y, smoothX, smoothY }: { x: number; y
 });
 CoordinateDisplay.displayName = 'CoordinateDisplay';
 
+const HALF_TILE = TILE_SIZE / 2;
+
+const snapPosition = (smooth: number, snapMode: 'full' | 'half' | 'free', gridCoord: number, tileSize: number): number => {
+  if (snapMode === 'free') return smooth + WORLD_SIZE / 2;
+  if (snapMode === 'half') return Math.round(smooth / HALF_TILE) * HALF_TILE + WORLD_SIZE / 2;
+  return gridCoord * tileSize + WORLD_SIZE / 2;
+};
+
 // Brush Preview Component
 const BrushPreview = React.memo(({
-  isSpacePressed, selectedTool, selectedTileId, customTiles, cursorCoords, smoothCursorCoords, TILE_SIZE, WORLD_SIZE, brushSize, brushMode, selectedSmartType
+  isSpacePressed, selectedTool, selectedTileId, customTiles, cursorCoords, smoothCursorCoords, TILE_SIZE, WORLD_SIZE, brushSize, brushMode, selectedSmartType, snapMode
 }: any) => {
   if (isSpacePressed || (selectedTool !== 'paint' && selectedTool !== 'erase')) return null;
   
@@ -53,7 +61,7 @@ const BrushPreview = React.memo(({
   if (selectedTool === 'paint' && !selectedTileId && selectedSmartType === 'off') return null;
   
   const tile = selectedTool === 'paint' ? customTiles.find((t: any) => t.id === selectedTileId) : null;
-  const isSnapOff = tile && !tile.snapToGrid;
+  const isNotFullSnap = snapMode !== 'full';
 
   const half = brushMode ? Math.floor(brushSize / 2) : 0;
   const isEven = brushMode && brushSize % 2 === 0;
@@ -65,12 +73,8 @@ const BrushPreview = React.memo(({
     }
   }
 
-  const leftPos = isSnapOff 
-    ? smoothCursorCoords.x + WORLD_SIZE / 2 
-    : cursorCoords.x * TILE_SIZE + WORLD_SIZE / 2;
-  const topPos = isSnapOff 
-    ? smoothCursorCoords.y + WORLD_SIZE / 2 
-    : cursorCoords.y * TILE_SIZE + WORLD_SIZE / 2;
+  const leftPos = snapPosition(smoothCursorCoords.x, snapMode, cursorCoords.x, TILE_SIZE);
+  const topPos = snapPosition(smoothCursorCoords.y, snapMode, cursorCoords.y, TILE_SIZE);
 
   return (
     <div 
@@ -97,7 +101,6 @@ const BrushPreview = React.memo(({
         }
 
         // If we're painting but have no specific tile template (e.g. pure smart brush)
-        // or if we just want the green box overlay
         if (!tile && selectedSmartType !== 'off') {
            return (
             <div 
@@ -117,13 +120,13 @@ const BrushPreview = React.memo(({
         const displayHeight = tile.frameHeight || TILE_SIZE;
         const displayWidth = tile.frameWidth || displayHeight;
 
-        // If snap is off, leftPos/topPos is the mouse. We want the tile centered/bottom-aligned on it.
-        // If snap is on, leftPos/topPos is grid top-left. We want the tile centered/bottom-aligned on the grid cell.
-        const left = isSnapOff
+        // If not full-snap, leftPos/topPos is the mouse. Center/bottom-align on it.
+        // If full-snap, leftPos/topPos is grid top-left. Center/bottom-align on the grid cell.
+        const left = isNotFullSnap
           ? dx * TILE_SIZE - (displayWidth / 2)
           : dx * TILE_SIZE - (displayWidth - TILE_SIZE) / 2;
         
-        const top = isSnapOff
+        const top = isNotFullSnap
           ? dy * TILE_SIZE - displayHeight
           : dy * TILE_SIZE - (displayHeight - TILE_SIZE);
 
@@ -138,9 +141,7 @@ const BrushPreview = React.memo(({
               height: displayHeight,
             }}
           >
-            {/* Green overlay for placement */}
             <div className="absolute inset-0 bg-green-500/20 border border-green-500/40 z-10" />
-            
             <div 
               className="absolute inset-0 opacity-50"
               style={{
@@ -176,6 +177,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     sidebarWidth, setSidebarWidth, rightSidebarWidth, setRightSidebarWidth,
     favorites, setFavorite, selectTile,
     brushSize, setBrushSize, brushMode, setBrushMode,
+    snapMode, setSnapMode,
     nodeSnapToGrid, setNodeSnapToGrid,
     isLoadingTiles, tiles, nodes, showDebugModal, setShowDebugModal, showDebugNumbers, setShowDebugNumbers, currentStamp, setCurrentStamp,
     dragGrabOffset, setDragGrabOffset, selection, setSelection
@@ -1001,15 +1003,13 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     }
 
     // PERFORMANCE: Skip interaction if we are moving and haven't entered a new grid cell
-    // But allow continuous painting for brush mode OR if snap-to-grid is OFF for the selected tile
+    // But allow continuous painting for brush mode OR if snap mode is not full-grid
     if (isMove && !isDraggingTile) {
-      const { brushMode: currentBrushMode, brushSize: currentBrushSize } = state;
+      const { brushMode: currentBrushMode, brushSize: currentBrushSize, snapMode: currentSnapMode } = state;
       const isBrushMode = (tool === 'paint' || tool === 'erase') && currentBrushMode && currentBrushSize > 1;
-      
-      const selectedTile = tool === 'paint' ? state.customTiles.find(t => t.id === state.selectedTileId) : null;
-      const isSnapOff = selectedTile && !selectedTile.snapToGrid;
+      const isSubGridSnap = currentSnapMode !== 'full';
 
-      if (!isBrushMode && !isSnapOff && lastInteractionRef.current?.gx === gx && lastInteractionRef.current?.gy === gy && lastInteractionRef.current?.tool === tool) {
+      if (!isBrushMode && !isSubGridSnap && lastInteractionRef.current?.gx === gx && lastInteractionRef.current?.gy === gy && lastInteractionRef.current?.tool === tool) {
         return;
       }
     }
@@ -1058,12 +1058,20 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           let offsetX = 0;
           let offsetY = 0;
 
-          if (tile && !tile.snapToGrid) {
+          const currentSnapMode = state.snapMode;
+          if (currentSnapMode === 'free') {
             const exactX = worldX - WORLD_SIZE / 2 + (dx * TILE_SIZE);
             const exactY = worldY - WORLD_SIZE / 2 + (dy * TILE_SIZE);
-
             offsetX = Math.round(exactX - (tx * TILE_SIZE + TILE_SIZE / 2));
             offsetY = Math.round(exactY - (ty * TILE_SIZE + TILE_SIZE));
+          } else if (currentSnapMode === 'half') {
+            const HALF = TILE_SIZE / 2;
+            const worldRelX = worldX - WORLD_SIZE / 2 + (dx * TILE_SIZE);
+            const worldRelY = worldY - WORLD_SIZE / 2 + (dy * TILE_SIZE);
+            const snappedX = Math.round(worldRelX / HALF) * HALF;
+            const snappedY = Math.round(worldRelY / HALF) * HALF;
+            offsetX = Math.round(snappedX - (tx * TILE_SIZE + TILE_SIZE / 2));
+            offsetY = Math.round(snappedY - (ty * TILE_SIZE + TILE_SIZE));
           }
 
           let isAutoTile = tile?.isAutoTile ?? false;
@@ -1097,7 +1105,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
             await addTileSimple(
               tx, ty, tile?.type || 'custom', tile?.url || '', tile?.isSpritesheet || false, tile?.frameCount || 0,
               tile?.frameWidth || 48, tile?.frameHeight || 48, tile?.animationSpeed || 0.1, activeTileLayer,
-              offsetX, offsetY, tile?.isWalkable ?? true, tile?.snapToGrid ?? true, tile?.isAutoFill ?? false,
+              offsetX, offsetY, tile?.isWalkable ?? true, currentSnapMode === 'full', tile?.isAutoFill ?? false,
               isAutoTile, bitmask, elevation, hasFoam, foamBitmask, smartType, tile?.rotation || 0,
               state.selectedBlockCol, state.selectedBlockRow
             );
@@ -1812,6 +1820,32 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                         ))}
                       </div>
                     )}
+                    <div className="h-4 w-px bg-slate-700" />
+                    <div className="flex gap-0.5" title="Snap Mode">
+                      <button
+                        onClick={() => setSnapMode('full')}
+                        className={`px-1.5 py-1 rounded text-[9px] font-black transition-all flex items-center gap-1 ${snapMode === 'full' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}
+                        title="Full Snap — lock to tile grid"
+                      >
+                        <Grid size={10} />
+                        SNAP
+                      </button>
+                      <button
+                        onClick={() => setSnapMode('half')}
+                        className={`px-1.5 py-1 rounded text-[9px] font-black transition-all ${snapMode === 'half' ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}
+                        title="Half Snap — for bridges, fences, doors"
+                      >
+                        ½
+                      </button>
+                      <button
+                        onClick={() => setSnapMode('free')}
+                        className={`px-1.5 py-1 rounded text-[9px] font-black transition-all flex items-center gap-1 ${snapMode === 'free' ? 'bg-rose-500 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}
+                        title="Free Placement — no snapping"
+                      >
+                        <Move size={10} />
+                        FREE
+                      </button>
+                    </div>
                 </div>
               )}
               
@@ -2018,8 +2052,8 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                       <div 
                         className="absolute pointer-events-none" 
                         style={{
-                          left: (selTile?.snapToGrid !== false ? cursorCoords.x * TILE_SIZE : smoothCursorCoords.x - w / 2) + WORLD_SIZE / 2,
-                          top: (selTile?.snapToGrid !== false ? cursorCoords.y * TILE_SIZE : smoothCursorCoords.y - h / 2) + WORLD_SIZE / 2,
+                          left: snapMode === 'full' ? cursorCoords.x * TILE_SIZE + WORLD_SIZE / 2 : snapPosition(smoothCursorCoords.x - w / 2, snapMode, cursorCoords.x, TILE_SIZE),
+                          top: snapMode === 'full' ? cursorCoords.y * TILE_SIZE + WORLD_SIZE / 2 : snapPosition(smoothCursorCoords.y - h / 2, snapMode, cursorCoords.y, TILE_SIZE),
                           width: w,
                           height: h,
                           backgroundColor: 'rgba(56, 189, 248, 0.2)', 
@@ -2080,6 +2114,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                   brushSize={brushSize}
                   brushMode={brushMode}
                   selectedSmartType={selectedSmartType}
+                  snapMode={snapMode}
                 />
                 
                 {/* Stamp Tool Preview */}
@@ -2087,8 +2122,8 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                    <div 
                       className="absolute pointer-events-none z-[70] opacity-60"
                       style={{
-                        left: cursorCoords.x * TILE_SIZE + WORLD_SIZE / 2,
-                        top: cursorCoords.y * TILE_SIZE + WORLD_SIZE / 2,
+                        left: snapPosition(smoothCursorCoords.x, snapMode, cursorCoords.x, TILE_SIZE),
+                        top: snapPosition(smoothCursorCoords.y, snapMode, cursorCoords.y, TILE_SIZE),
                       }}
                    >
                      {currentStamp.map(tile => {
