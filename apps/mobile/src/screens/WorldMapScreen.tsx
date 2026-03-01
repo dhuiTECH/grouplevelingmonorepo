@@ -24,7 +24,7 @@ import { usePets } from '@/hooks/usePets';
 import { useActivePet } from '@/contexts/ActivePetContext';
 import Reanimated, { useAnimatedRef } from 'react-native-reanimated';
 import { useTransition } from '@/context/TransitionContext';
-import { makeImageFromView, SkImage, Canvas, RadialGradient, vec, Rect as SkiaRect, Text as SkiaText, useFont, Blur, Skia, Paint, MaskFilter } from '@shopify/react-native-skia';
+import { makeImageFromView, SkImage, Canvas, RadialGradient, vec, Rect as SkiaRect, Text as SkiaText, useFont, Blur, Skia, Paint } from '@shopify/react-native-skia';
 import { mapNodeIcon } from '@/utils/assetMapper';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, G, Rect, Line, Polygon, Text as SvgText } from 'react-native-svg';
@@ -161,6 +161,7 @@ export const WorldMapScreen = () => {
   const [travelMenuVisible, setTravelMenuVisible] = useState(false);
   const [encounter, setEncounter] = useState<any | null>(null);
   const [interactionVisible, setInteractionVisible] = useState(false);
+  const [activeInteraction, setActiveInteraction] = useState<any | null>(null);
   const [previousLevel, setPreviousLevel] = useState(user?.level || 1);
   const [levelUpVisible, setLevelUpVisible] = useState(false);
   const [raidModalVisible, setRaidModalVisible] = useState(false);
@@ -186,10 +187,28 @@ export const WorldMapScreen = () => {
     loading: movingOnMap // Use this to track movement state
   } = useExploration(setEncounter, setInteractionVisible, setActiveRaid, setRaidModalVisible, activeMapId);
 
+  // Sync complex state interactions to a single "active" state to prevent modal stacking/flicker
+  useEffect(() => {
+    if (checkpointAlert) {
+      setActiveInteraction(checkpointAlert);
+    } else if (interactionVisible && encounter) {
+      setActiveInteraction(encounter);
+    }
+  }, [checkpointAlert, interactionVisible, encounter]);
+
+  const handleCloseInteraction = () => {
+    setActiveInteraction(null);
+    setCheckpointAlert(null);
+    setEncounter(null);
+    setInteractionVisible(false);
+  };
+
   const { pendingSteps, setPendingSteps } = useStepTracker();
   const { step } = useTutorial();
 
   const [loadingMap, setLoadingMap] = useState(true);
+  const [showWalkabilityOverlay, setShowWalkabilityOverlay] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<any | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [allShopItems, setAllShopItems] = useState<any[]>([]);
 
@@ -207,7 +226,7 @@ export const WorldMapScreen = () => {
   }, []);
 
   // 4. MANUAL MOVE (D-Pad) with Hold Support
-  const movementTimer = useRef<NodeJS.Timeout | null>(null);
+  const movementTimer = useRef<any>(null);
   const moveRef = useRef(move);
 
   // Keep moveRef current so interval sees latest state/function
@@ -530,70 +549,57 @@ export const WorldMapScreen = () => {
           mapSettings={mapSettings}
           user={user}
           tileSize={TILE_SIZE}
+          showWalkabilityOverlay={showWalkabilityOverlay}
         >
-          {/* We place Nodes, Player, and Party here so they sit between the ground and foreground props */}
-          <View 
-            style={[
-              StyleSheet.absoluteFill, 
-              { transform: [{ translateX: width / 2 }, { translateY: height / 2 }] }
-            ]} 
-            pointerEvents="box-none"
-          >
-            {/* Map Group inside Native View to apply the same transform as Skia Canvas (Center on Tile) */}
+          {/* STATIC PLAYER AVATAR (Centered, Persistent) */}
+          {user && (
             <View 
-              style={{ 
-                transform: [
-                  { translateX: -(user?.world_x || 0) * TILE_SIZE - (TILE_SIZE / 2) }, 
-                  { translateY: -(user?.world_y || 0) * TILE_SIZE - (TILE_SIZE / 2) }
-                ] 
-              }} 
+              style={[
+                styles.playerContainer, 
+                { 
+                  position: 'absolute', 
+                  left: (user?.world_x || 0) * TILE_SIZE,
+                  top: (user?.world_y || 0) * TILE_SIZE,
+                  width: TILE_SIZE, 
+                  height: TILE_SIZE,
+                  zIndex: 10000 
+                }
+              ]}
               pointerEvents="box-none"
             >
-              {/* STATIC PLAYER AVATAR (Centered, Persistent) */}
-              {user && (
-                <View 
-                  style={[
-                    styles.playerContainer, 
-                    { 
-                      position: 'absolute', 
-                      left: (user?.world_x || 0) * TILE_SIZE,
-                      top: (user?.world_y || 0) * TILE_SIZE,
-                      width: TILE_SIZE, 
-                      height: TILE_SIZE,
-                      zIndex: 10000 
-                    }
-                  ]}
-                pointerEvents="box-none" // Allow clicks to pass through empty areas if needed
-              >
-                <View style={styles.playerAvatar}>
-                  <LayeredAvatar user={user} size={72} isMoving={movingOnMap} />
-                </View>
-                {activePet?.pet_details && (
-                  <View style={styles.petAvatarOnMap} pointerEvents="none">
-                    <PetLayeredAvatar petDetails={activePet.pet_details} size={34} square hideBackground />
-                  </View>
-                )}
+              <View style={styles.playerAvatar}>
+                <LayeredAvatar user={user} size={72} isMoving={movingOnMap} />
               </View>
-            )}
+              {activePet?.pet_details && (
+                <View style={styles.petAvatarOnMap} pointerEvents="none">
+                  <PetLayeredAvatar petDetails={activePet.pet_details} size={34} square hideBackground />
+                </View>
+              )}
+            </View>
+          )}
 
-            {nodesInVision.map((node) => {
-              const nodeLeft = Math.round(node.x * TILE_SIZE);
-              const nodeTop = Math.round(node.y * TILE_SIZE);
+          {nodesInVision.map((node) => {
+            const nodeLeft = Math.round(node.x * TILE_SIZE);
+            const nodeTop = Math.round(node.y * TILE_SIZE);
 
-              return (
-                <MotiView 
-                  key={`node-${node.id}`}
-                  style={[
-                    styles.tile, 
-                    { 
-                      width: TILE_SIZE, 
-                      height: TILE_SIZE, 
-                      position: 'absolute',
-                      zIndex: (1000 - Math.floor(node.y))
-                    }
-                  ]}
-                  animate={{ left: nodeLeft, top: nodeTop }}
-                  transition={{ type: 'timing', duration: 300 }}
+            return (
+              <MotiView 
+                key={`node-${node.id}`}
+                style={[
+                  styles.tile, 
+                  { 
+                    width: TILE_SIZE, 
+                    height: TILE_SIZE, 
+                    position: 'absolute',
+                    zIndex: (1000 - Math.floor(node.y))
+                  }
+                ]}
+                animate={{ left: nodeLeft, top: nodeTop }}
+                transition={{ type: 'timing', duration: 300 }}
+              >
+                <TouchableOpacity 
+                  onPress={() => setSelectedNode(node)}
+                  activeOpacity={0.7}
                 >
                   <View style={styles.nodeContainer}>
                     <Image 
@@ -603,38 +609,37 @@ export const WorldMapScreen = () => {
                     />
                     <Text style={styles.nodeLabel}>{node.name}</Text>
                   </View>
-                </MotiView>
-              );
-            })}
+                </TouchableOpacity>
+              </MotiView>
+            );
+          })}
 
-            {/* PARTY MEMBERS */}
-            {user?.current_party_id && partyMembersOnline.size > 0 && Array.from(partyMembersOnline.values()).map((member) => {
-              const memberLeft = member.world_x * TILE_SIZE;
-              const memberTop = member.world_y * TILE_SIZE;
-              
-              return (
-                <MotiView
-                  key={`party-${member.id}`}
-                  style={[styles.partyMemberContainer, { position: 'absolute', left: memberLeft, top: memberTop, zIndex: 1000 - member.world_y }]}
-                  animate={{ left: memberLeft, top: memberTop }}
-                  transition={{ type: 'timing', duration: 500 }}
-                >
-                  <View style={styles.partyMemberAvatar}>
-                    <LayeredAvatar 
-                      user={member} 
-                      size={56} 
-                      allShopItems={allShopItems}
-                    />
-                  </View>
-                  <View style={styles.partyMemberLabel}>
-                    <View style={styles.partyMemberIndicator} />
-                    <Text style={styles.partyMemberName}>{member.hunter_name}</Text>
-                  </View>
-                </MotiView>
-              );
-            })}
-            </View>
-          </View>
+          {/* PARTY MEMBERS */}
+          {user?.current_party_id && partyMembersOnline.size > 0 && Array.from(partyMembersOnline.values()).map((member) => {
+            const memberLeft = member.world_x * TILE_SIZE;
+            const memberTop = member.world_y * TILE_SIZE;
+            
+            return (
+              <MotiView
+                key={`party-${member.id}`}
+                style={[styles.partyMemberContainer, { position: 'absolute', left: memberLeft, top: memberTop, zIndex: 1000 - member.world_y }]}
+                animate={{ left: memberLeft, top: memberTop }}
+                transition={{ type: 'timing', duration: 500 }}
+              >
+                <View style={styles.partyMemberAvatar}>
+                  <LayeredAvatar 
+                    user={member} 
+                    size={56} 
+                    allShopItems={allShopItems}
+                  />
+                </View>
+                <View style={styles.partyMemberLabel}>
+                  <View style={styles.partyMemberIndicator} />
+                  <Text style={styles.partyMemberName}>{member.hunter_name}</Text>
+                </View>
+              </MotiView>
+            );
+          })}
         </SkiaWorldMap>
 
         {/* 4. HUD & CONTROLS */}
@@ -684,10 +689,21 @@ export const WorldMapScreen = () => {
           <Text style={[styles.mapBtnText, { color: '#22d3ee' }]}>STEPS</Text>
         </TouchableOpacity>
 
+        {/* DEBUG: WALKABILITY OVERLAY TOGGLE */}
+        {__DEV__ && (
+          <TouchableOpacity
+            style={[styles.floatingMapBtn, { top: 240, borderColor: '#f97316' }]}
+            onPress={() => setShowWalkabilityOverlay(!showWalkabilityOverlay)}
+          >
+            <Ionicons name={showWalkabilityOverlay ? "eye" : "eye-off"} size={24} color="#f97316" />
+            <Text style={[styles.mapBtnText, { color: '#f97316' }]}>WALK</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Enter Temple — only when standing on a Temple tile */}
         {isOnTempleTile && (
           <TouchableOpacity
-            style={[styles.floatingMapBtn, { top: 240, borderColor: '#eab308' }]}
+            style={[styles.floatingMapBtn, { top: 300, borderColor: '#eab308' }]}
             onPress={() => navigation.navigate('Temple')}
           >
             <Ionicons name="flame" size={24} color="#eab308" />
@@ -857,15 +873,12 @@ export const WorldMapScreen = () => {
 
         {/* Checkpoint Found */}
         <InteractionModal
-          visible={!!checkpointAlert}
-          onClose={() => setCheckpointAlert(null)}
-          activeInteraction={checkpointAlert}
-        />
-
-        <InteractionModal
-          visible={interactionVisible}
-          onClose={() => setInteractionVisible(false)}
-          activeInteraction={encounter}
+          visible={!!activeInteraction || !!selectedNode}
+          onClose={() => {
+            handleCloseInteraction();
+            setSelectedNode(null);
+          }}
+          activeInteraction={activeInteraction || selectedNode}
         />
 
         <LevelUpModal

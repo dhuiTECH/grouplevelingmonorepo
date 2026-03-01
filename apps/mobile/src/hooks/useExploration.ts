@@ -38,10 +38,10 @@ export const useExploration = (
     lastY.current = cy;
 
     // Calculate required chunks for current vision (expanded grid for large props)
-    const minX = cx - 10;
-    const maxX = cx + 10;
-    const minY = cy - 12;
-    const maxY = cy + 12;
+    const minX = cx - 12;
+    const maxX = cx + 12;
+    const minY = cy - 14;
+    const maxY = cy + 14;
 
     const minChunkX = Math.floor(minX / CHUNK_SIZE);
     const maxChunkX = Math.floor(maxX / CHUNK_SIZE);
@@ -157,9 +157,9 @@ export const useExploration = (
       n.y >= minY - 2 && n.y <= maxY + 2
     ) || [];
 
-    // Expanded Grid (e.g., 15x21) to cover 9:16 screen with buffer for large props
-    for (let dy = 10; dy >= -10; dy--) {
-      for (let dx = -7; dx <= 7; dx++) {
+    // Expanded Grid (e.g., 21x27) to cover 9:16 screen with buffer for large props
+    for (let dy = 13; dy >= -13; dy--) {
+      for (let dx = -10; dx <= 10; dx++) {
         const tx = cx + dx;
         const ty = cy + dy;
         const key = `${tx},${ty}`;
@@ -267,7 +267,7 @@ export const useExploration = (
     if (dir.includes('W')) nx -= 1;
 
     // --- COLLISION DETECTION ---
-    // Check for edge-based or cell-based collision at target tile and the boundary
+    const currentCell = visionGrid.find(cell => cell.x === user.world_x && cell.y === user.world_y);
     const targetCell = visionGrid.find(cell => cell.x === nx && cell.y === ny);
     
     // Calculate the boundary position (edge) between current and target
@@ -276,21 +276,39 @@ export const useExploration = (
 
     if (targetCell) {
       // 1. Check for Cell-level collision (integer coordinate)
-      // Also check if ANY tile at this location is explicitly marked non-walkable
-      const hasCellBlock = targetCell.tiles?.some((t: any) => t.isWalkable === false);
+      const hasCellBlock = targetCell.tiles?.some((t: any) => (t.isWalkable === false || t.is_walkable === false));
       
-      // 2. Check for Edge-level collision (half-integer coordinate)
-      // Edge collisions are stored as tiles in the chunk data at .5 coordinates
-      const edgeKey = `${bx},${by}`;
-      
-      // We need to find if there's any tile in the visionGrid at this half-grid position
-      // Note: visionGrid currently only contains integer cells. 
-      // We should check the tileMap instead, or better, search all tiles in visionGrid
-      const hasEdgeBlock = visionGrid.some(cell => 
-        cell.tiles?.some((t: any) => t.x === bx && t.y === by && t.isWalkable === false)
+      // 2. Check for Edge-level collision (half-integer coordinate - legacy)
+      const hasLegacyEdgeBlock = visionGrid.some(cell => 
+        cell.tiles?.some((t: any) => t.x === bx && t.y === by && (t.isWalkable === false || t.is_walkable === false))
       );
 
-      if (hasCellBlock || hasEdgeBlock) {
+      // 3. Directional Edge Collision (New bitmask system: N=1, E=2, S=4, W=8)
+      let isEdgeBlocked = false;
+      if (currentCell?.tiles || targetCell?.tiles) {
+        if (dir.includes('N')) {
+          const exitBlocked = currentCell?.tiles?.some((t: any) => t.edgeBlocks && (t.edgeBlocks & 1));
+          const enterBlocked = targetCell?.tiles?.some((t: any) => t.edgeBlocks && (t.edgeBlocks & 4));
+          if (exitBlocked || enterBlocked) isEdgeBlocked = true;
+        }
+        if (dir.includes('S')) {
+          const exitBlocked = currentCell?.tiles?.some((t: any) => t.edgeBlocks && (t.edgeBlocks & 4));
+          const enterBlocked = targetCell?.tiles?.some((t: any) => t.edgeBlocks && (t.edgeBlocks & 1));
+          if (exitBlocked || enterBlocked) isEdgeBlocked = true;
+        }
+        if (dir.includes('E')) {
+          const exitBlocked = currentCell?.tiles?.some((t: any) => t.edgeBlocks && (t.edgeBlocks & 2));
+          const enterBlocked = targetCell?.tiles?.some((t: any) => t.edgeBlocks && (t.edgeBlocks & 8));
+          if (exitBlocked || enterBlocked) isEdgeBlocked = true;
+        }
+        if (dir.includes('W')) {
+          const exitBlocked = currentCell?.tiles?.some((t: any) => t.edgeBlocks && (t.edgeBlocks & 8));
+          const enterBlocked = targetCell?.tiles?.some((t: any) => t.edgeBlocks && (t.edgeBlocks & 2));
+          if (exitBlocked || enterBlocked) isEdgeBlocked = true;
+        }
+      }
+
+      if (hasCellBlock || hasLegacyEdgeBlock || isEdgeBlocked) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         setLoading(false);
         return;
@@ -329,7 +347,14 @@ export const useExploration = (
         // 1. Reveal Fog
         await supabase.from('player_discoveries').upsert({ user_id: user.id, x: nx, y: ny });
         
-        // 2. Add to Travel Menu (discovered_locations)
+        // 2. Check if already discovered for travel menu
+        const { data: existingDiscovery } = await supabase
+          .from('discovered_locations')
+          .select('node_id')
+          .match({ user_id: user.id, node_id: node.id })
+          .maybeSingle();
+
+        // 3. Add to Travel Menu (discovered_locations) if not there
         const { error: locError } = await supabase
           .from('discovered_locations')
           .upsert([{ 
@@ -337,11 +362,12 @@ export const useExploration = (
             node_id: node.id 
           }], { onConflict: 'user_id,node_id' });
 
-        if (!locError) {
+        // ONLY pop up the scene if this is a NEW discovery
+        if (!locError && !existingDiscovery) {
            setCheckpointAlert(node); 
            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
-
+        
         if (node.interaction_type === 'BOSS_RAID') {
           setActiveRaid({
             id: node.interaction_data?.raid_id,

@@ -63,7 +63,10 @@ export const TileRenderer: React.FC<TileRendererProps> = memo(({ tile, tileSize,
   // SAFE animation start
   useEffect(() => {
     if (isActuallyAnimated) {
-      const duration = effectiveSpeed * 1000;
+      // In web, speed 0.8 means 8 frames per second.
+      // So duration for a FULL cycle of numFrames is: numFrames / (10 * speed)
+      // This matches the SkiaTile implementation.
+      const duration = (safeFrames / (10 * effectiveSpeed)) * 1000;
       animationValue.setValue(0);
       
       // Use steps for the animation if it's a spritesheet

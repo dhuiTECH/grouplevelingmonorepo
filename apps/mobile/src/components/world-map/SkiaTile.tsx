@@ -31,8 +31,8 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
   const offsetY = Math.round(tile.offsetY || 0);
 
   const destRect = useMemo(() => rect(
-    Math.round(absPx - (displayWidth - tileSize) / 2 + offsetX),
-    Math.round(absPy - (displayHeight - tileSize) + offsetY),
+    absPx - (displayWidth - tileSize) / 2 + offsetX,
+    absPy - (displayHeight - tileSize) + offsetY,
     displayWidth + (isProp ? 0 : 1),
     displayHeight + (isProp ? 0 : 1)
   ), [absPx, absPy, displayWidth, displayHeight, offsetX, offsetY, tileSize, isProp]);
@@ -133,16 +133,20 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
   }
 
   // Standard or Spritesheet Tile (NOT Auto-Tiled)
-  const cleanUrl = tile.imageUrl?.split('?')[0];
+  const cleanUrl = tile.cleanUrl || tile.imageUrl?.split('?')[0];
   const img = cleanUrl ? images.get(cleanUrl) : null;
   if (img) {
     // 1. O(1) Dictionary Lookup for absolute truth
     const isSpritesheet = dictionaryData?.is_spritesheet ?? !!(tile.isSpritesheet || tile.is_spritesheet || tile.spritesheet || tile.is_sprite_sheet);
     const numFrames = Number(dictionaryData?.frame_count ?? tile.frameCount ?? tile.frame_count ?? tile.totalFrames ?? tile.total_frames ?? tile.frames ?? 1);
     
-    // Convert animation_speed to duration in seconds.
-    // If dictionaryData.animation_speed is 0.8, it means the whole animation takes 0.8 seconds.
-    const speed = Number(dictionaryData?.animation_speed ?? tile.animationSpeed ?? tile.animation_speed ?? tile.duration_ms / 1000 ?? tile.duration_secs ?? 1);
+    // 2. ANIMATION SPEED FIX:
+    // In web, animationSpeed (e.g. 0.8) means 1 tick every 100ms * speed.
+    // So speed 0.8 means 8 frames per second.
+    // In mobile, we need durationSecs for the WHOLE cycle.
+    // So: durationSecs = numFrames / (10 * animationSpeed)
+    const rawSpeed = Number(dictionaryData?.animation_speed ?? tile.animationSpeed ?? tile.animation_speed ?? 0.8);
+    const durationSecs = numFrames / (10 * rawSpeed);
 
     if (isSpritesheet || numFrames >= 2) {
       // If it's a spritesheet, ALWAYS use the spritesheet logic to ensure clipping, 
@@ -153,7 +157,7 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
           <SkiaSpritesheet
             image={img}
             numFrames={numFrames}
-            durationSecs={speed}
+            durationSecs={durationSecs}
             destRect={destRect}
             animationFrame={animationFrame}
           />
@@ -184,8 +188,8 @@ export const SkiaTile = React.memo(SkiaTileInternal, (prev, next) => {
   
   // CRITICAL: Don't compare the whole images Map reference.
   // Only re-render if the specific image this tile needs has changed/loaded.
-  let prevCleanUrl = prev.tile.imageUrl?.split('?')[0];
-  let nextCleanUrl = next.tile.imageUrl?.split('?')[0];
+  let prevCleanUrl = prev.tile.cleanUrl || prev.tile.imageUrl?.split('?')[0];
+  let nextCleanUrl = next.tile.cleanUrl || next.tile.imageUrl?.split('?')[0];
 
   // If it's a smart tile, we actually care about the sprite sheet url, not the fake icon url
   if (prev.tile.isAutoTile) {
@@ -218,6 +222,8 @@ export const SkiaTile = React.memo(SkiaTileInternal, (prev, next) => {
   if (t1.smartType !== t2.smartType) return false;
   if (t1.blockCol !== t2.blockCol) return false;
   if (t1.blockRow !== t2.blockRow) return false;
+  if (t1.edgeBlocks !== t2.edgeBlocks) return false;
+  if (t1.isWalkable !== t2.isWalkable) return false;
   
   return true;
 });

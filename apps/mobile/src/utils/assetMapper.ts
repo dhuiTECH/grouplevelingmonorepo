@@ -11,6 +11,11 @@ export const mapNodeIcon = (iconUrl: string | null, type?: string) => {
     return require('../../assets/exclamation.png');
   }
 
+  // PRIORITY 1: If it's a full URL, use it directly (don't override with local assets)
+  if (iconUrl.startsWith('http')) {
+    return { uri: iconUrl };
+  }
+
   // Handle common admin paths or direct filenames
   const path = iconUrl.toLowerCase();
 
@@ -40,17 +45,17 @@ export const mapNodeIcon = (iconUrl: string | null, type?: string) => {
   if (path.includes('system')) return require('../../assets/system.png');
   if (path.includes('huntericon')) return require('../../assets/huntericon.png');
 
-  // Fallback if it looks like a URL
-  if (iconUrl.startsWith('http')) {
-    return { uri: iconUrl };
-  }
-
   if (type === 'spawn') return require('../../assets/world.png');
   return require('../../assets/exclamation.png');
 };
 
 export const mapNodeBackground = (bgUrl: string | null) => {
   if (!bgUrl) return require('../../assets/stone-bg.jpg');
+
+  // PRIORITY 1: If it's a full URL, use it directly
+  if (bgUrl.startsWith('http')) {
+    return { uri: bgUrl };
+  }
 
   const path = bgUrl.toLowerCase();
   
@@ -61,11 +66,6 @@ export const mapNodeBackground = (bgUrl: string | null) => {
   // NPCs backgrounds
   if (path.includes('arcane')) return require('../../assets/shop/arcaneemporium.webp');
   if (path.includes('armory')) return require('../../assets/shop/hunterarmory.webp');
-
-  // If it's a full URL, return as URI object
-  if (bgUrl.startsWith('http')) {
-    return { uri: bgUrl };
-  }
 
   return require('../../assets/stone-bg.jpg');
 };

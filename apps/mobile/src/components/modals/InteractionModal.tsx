@@ -197,8 +197,9 @@ export const InteractionModal = ({ visible, onClose, activeInteraction }) => {
             </View>
           </View>
         )}
-        {!showVictory && !showShop && (
+        {!showVictory && !showShop && activeInteraction && (
           <DialogueScene
+            key={`scene-${activeInteraction.id || activeInteraction.encounter_id || 'unknown'}`}
             visible={visible}
             nodeName={activeInteraction.name || "System"}
             backgroundUrl={bgSource}
