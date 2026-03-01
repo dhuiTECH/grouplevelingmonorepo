@@ -23,6 +23,7 @@ import { supabase } from '@/lib/supabase';
 const WORLD_SIZE = 100000; 
 const TILE_SIZE = 48;
 const COLLISION_LAYER = -2;
+const EDGE_BLOCK_LAYER = -3;
 
 // Helper to normalize URLs for comparison (ignoring query params)
 const normalizeUrl = (url: string | undefined | null) => {
@@ -187,6 +188,8 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
+  const [collisionMode, setCollisionMode] = useState<'full' | 'edge'>('full');
+  const [edgeDirection, setEdgeDirection] = useState<number>(4); // default S=4
 
   // Resize Handlers for Sidebars
   useEffect(() => {
@@ -1231,25 +1234,72 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         }
       }
     } else if (tool === 'collision') {
-      const collisionTile = useMapStore.getState().tiles.find(
-        t => t.x === gx && t.y === gy && (t.layer || 0) === COLLISION_LAYER
-      );
-      if (forceErase || (collisionTile && !isMove)) {
-        // Right-click OR left-click on an existing collision tile: remove it (toggle off)
-        if (collisionTile) {
-          removeTileById(collisionTile.id);
-        }
-      } else if (!collisionTile) {
-        // Left-click/drag on empty cell: paint an invisible non-walkable collision tile
-        await addTileSimple(
-          gx, gy, 'collision', '',
-          false, 0, TILE_SIZE, TILE_SIZE, 0,
-          COLLISION_LAYER, 0, 0,
-          false, // isWalkable = false
-          true,  // snapToGrid = true
-          false, false, 0, 0, false, 0,
-          undefined, 0, 0, 0
+      if (collisionMode === 'full') {
+        // --- FULL BLOCK MODE (existing behaviour) ---
+        const collisionTile = useMapStore.getState().tiles.find(
+          t => t.x === gx && t.y === gy && (t.layer || 0) === COLLISION_LAYER
         );
+        if (forceErase || (collisionTile && !isMove)) {
+          if (collisionTile) removeTileById(collisionTile.id);
+        } else if (!collisionTile) {
+          await addTileSimple(
+            gx, gy, 'collision', '',
+            false, 0, TILE_SIZE, TILE_SIZE, 0,
+            COLLISION_LAYER, 0, 0,
+            false, true, false, false, 0, 0, false, 0,
+            undefined, 0, 0, 0
+          );
+        }
+      } else {
+        // --- EDGE BLOCK MODE ---
+        const edgeTile = useMapStore.getState().tiles.find(
+          t => t.x === gx && t.y === gy && (t.layer || 0) === EDGE_BLOCK_LAYER
+        );
+        const currentBits = edgeTile?.edgeBlocks ?? 0;
+
+        if (forceErase) {
+          // Right-click: clear this direction bit
+          const newBits = currentBits & ~edgeDirection;
+          if (edgeTile) {
+            if (newBits === 0) {
+              removeTileById(edgeTile.id);
+            } else {
+              await addTileSimple(
+                gx, gy, 'edge_block', '',
+                false, 0, TILE_SIZE, TILE_SIZE, 0,
+                EDGE_BLOCK_LAYER, 0, 0,
+                true, true, false, false, 0, 0, false, 0,
+                undefined, 0, 0, 0, newBits
+              );
+            }
+          }
+        } else if (!isMove) {
+          // Single click: toggle the bit
+          const newBits = currentBits ^ edgeDirection;
+          if (newBits === 0 && edgeTile) {
+            removeTileById(edgeTile.id);
+          } else {
+            await addTileSimple(
+              gx, gy, 'edge_block', '',
+              false, 0, TILE_SIZE, TILE_SIZE, 0,
+              EDGE_BLOCK_LAYER, 0, 0,
+              true, true, false, false, 0, 0, false, 0,
+              undefined, 0, 0, 0, newBits
+            );
+          }
+        } else {
+          // Drag: only add the bit (never remove during drag)
+          const newBits = currentBits | edgeDirection;
+          if (newBits !== currentBits) {
+            await addTileSimple(
+              gx, gy, 'edge_block', '',
+              false, 0, TILE_SIZE, TILE_SIZE, 0,
+              EDGE_BLOCK_LAYER, 0, 0,
+              true, true, false, false, 0, 0, false, 0,
+              undefined, 0, 0, 0, newBits
+            );
+          }
+        }
       }
     }
   };
@@ -2005,6 +2055,34 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
             </div>
           </div>
 
+          {/* EDGE COLLISION SUB-MODE — shown when collision tool is active */}
+          {selectedTool === 'collision' && (
+            <div className="flex items-center gap-1 bg-slate-900/90 border border-slate-700 rounded-lg px-2 py-1 pointer-events-auto shadow-2xl">
+              <button
+                onClick={() => setCollisionMode('full')}
+                className={`px-2 py-1 rounded text-[9px] font-black uppercase transition-all ${collisionMode === 'full' ? 'bg-red-700 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                title="Full Block — entire tile is non-walkable"
+              >
+                ■ Full
+              </button>
+              {([
+                { label: '▲', dir: 1, title: 'Block North edge' },
+                { label: '▶', dir: 2, title: 'Block East edge' },
+                { label: '▼', dir: 4, title: 'Block South edge (cliff top)' },
+                { label: '◀', dir: 8, title: 'Block West edge' },
+              ] as const).map(({ label, dir, title }) => (
+                <button
+                  key={dir}
+                  onClick={() => { setCollisionMode('edge'); setEdgeDirection(dir); }}
+                  className={`px-2 py-1 rounded text-[10px] font-black transition-all ${collisionMode === 'edge' && edgeDirection === dir ? 'bg-orange-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                  title={title}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className={`px-2 py-1 rounded-lg border text-[9px] font-black uppercase flex items-center gap-3 transition-all pointer-events-auto ${isSpacePressed ? 'bg-green-900/30 border-green-500 text-green-400' : 'bg-slate-900/90 border-slate-800 text-slate-500 shadow-2xl'}`}>
             <div className="flex items-center gap-1.5">
               <div className={`w-1.5 h-1.5 rounded-full ${isSpacePressed ? 'bg-green-500 animate-pulse' : 'bg-slate-700'}`} />
@@ -2023,9 +2101,9 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
 
             {/* COLLISION BRUSH INDICATOR */}
             {selectedTool === 'collision' && (
-              <div className="flex items-center gap-1.5 border-l border-slate-700 pl-3 text-red-400">
+              <div className={`flex items-center gap-1.5 border-l border-slate-700 pl-3 ${collisionMode === 'edge' ? 'text-orange-400' : 'text-red-400'}`}>
                 <ShieldOff size={10} className="animate-pulse" />
-                <span>Collision Brush</span>
+                <span>{collisionMode === 'full' ? 'Full Block' : `Edge ${edgeDirection === 1 ? '▲N' : edgeDirection === 2 ? '▶E' : edgeDirection === 4 ? '▼S' : '◀W'}`}</span>
                 <span className="text-[8px] text-slate-500">click to toggle</span>
               </div>
             )}

@@ -42,6 +42,7 @@ export interface Tile {
   blockCol?: number;
   blockRow?: number;
   rotation?: number; // In degrees
+  edgeBlocks?: number; // Directional edge collision bitmask: N=1, E=2, S=4, W=8
 }
 
 export interface CustomTile {
@@ -234,7 +235,7 @@ interface MapState {
   reorderCustomTiles: (tiles: CustomTile[]) => Promise<void>;
   setSpawnPoint: (x: number, y: number) => void;
   addTile: (tile: Tile) => void;
-  addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number) => Promise<void>;
+  addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number, edgeBlocks?: number) => Promise<void>;
   batchAddTiles: (newTiles: Omit<Tile, 'id'>[]) => Promise<void>;
   removeTileAt: (x: number, y: number, excludeAutoTiles?: boolean) => Promise<Tile | null>;
   removeTileById: (id: string, excludeAutoTiles?: boolean) => Promise<void>;
@@ -659,7 +660,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     tiles: [...state.tiles.filter(t => t.x !== tile.x || t.y !== tile.y), tile]
   })),
 
-  addTileSimple: async (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number) => {
+  addTileSimple: async (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number, edgeBlocks?: number) => {
     const chunkX = Math.floor(x / CHUNK_SIZE);
     const chunkY = Math.floor(y / CHUNK_SIZE);
 
@@ -698,7 +699,8 @@ export const useMapStore = create<MapState>((set, get) => ({
         layer: layer || 0, offsetX: offsetX || 0, offsetY: offsetY || 0,
         isWalkable: isWalkable ?? true, snapToGrid: snapToGrid ?? false, isAutoFill: isAutoFill ?? true,
         isAutoTile, bitmask, elevation, hasFoam, foamBitmask, smartType,
-        blockCol: blockCol || 0, blockRow: blockRow || 0, rotation: rotation || 0
+        blockCol: blockCol || 0, blockRow: blockRow || 0, rotation: rotation || 0,
+        ...(edgeBlocks !== undefined ? { edgeBlocks } : {})
       };
 
       if (existingIdx !== -1) {

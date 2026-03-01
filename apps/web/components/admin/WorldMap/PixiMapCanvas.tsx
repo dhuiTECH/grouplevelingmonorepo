@@ -387,13 +387,24 @@ const PixiScene: React.FC<PixiSceneProps> = ({
     g.clear();
     if (!showWalkabilityOverlay) return;
     const { minX, minY, maxX, maxY } = cullBox;
+    const BAR = 5;
     tiles.forEach(tile => {
-      if (tile.isWalkable !== false) return;
       if (typeof tile.x !== 'number' || typeof tile.y !== 'number') return;
       const wx = tile.x * TILE_SIZE + worldSize / 2;
       const wy = tile.y * TILE_SIZE + worldSize / 2;
       if (wx + TILE_SIZE < minX || wx > maxX || wy + TILE_SIZE < minY || wy > maxY) return;
-      g.rect(wx, wy, TILE_SIZE, TILE_SIZE).fill({ color: 0xDC2626, alpha: 0.35 });
+
+      if (tile.isWalkable === false) {
+        // Full block — red fill
+        g.rect(wx, wy, TILE_SIZE, TILE_SIZE).fill({ color: 0xDC2626, alpha: 0.35 });
+      } else if (tile.layer === -3 && tile.edgeBlocks) {
+        // Edge block — orange bars on blocked edges
+        const bits = tile.edgeBlocks;
+        if (bits & 1) g.rect(wx, wy, TILE_SIZE, BAR).fill({ color: 0xF97316, alpha: 0.85 });           // N
+        if (bits & 2) g.rect(wx + TILE_SIZE - BAR, wy, BAR, TILE_SIZE).fill({ color: 0xF97316, alpha: 0.85 }); // E
+        if (bits & 4) g.rect(wx, wy + TILE_SIZE - BAR, TILE_SIZE, BAR).fill({ color: 0xF97316, alpha: 0.85 }); // S
+        if (bits & 8) g.rect(wx, wy, BAR, TILE_SIZE).fill({ color: 0xF97316, alpha: 0.85 });           // W
+      }
     });
   }, [showWalkabilityOverlay, tiles, cullBox, worldSize]);
 
