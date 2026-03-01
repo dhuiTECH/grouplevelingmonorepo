@@ -15,8 +15,8 @@ const { width: WINDOW_WIDTH } = Dimensions.get('window');
 // Hardcoded Cave of Shadows 5K card for social share (demo mode)
 const CAVE_OF_SHADOWS_DEMO = {
   runData: {
-    distance: 7000, // 7 km
-    duration: 39 * 60 + 35, // 39:35, 5:39/km pace
+    distance: 10000, // 7 km
+    duration: 60 * 60 + 33, // 39:35, 5:39/km pace
     routeCoordinates: [],
   },
   dungeon: {
