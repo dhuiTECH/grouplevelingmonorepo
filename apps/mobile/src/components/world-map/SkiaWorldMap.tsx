@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect } from 'react';
 import { Dimensions, View, StyleSheet } from 'react-native';
 import { Canvas, Group, Fill, Rect as SkiaRect, useClock } from '@shopify/react-native-skia';
-import Reanimated, { useSharedValue, useDerivedValue, withTiming, withRepeat, Easing, useAnimatedStyle } from 'react-native-reanimated';
+import Reanimated, { useSharedValue, useDerivedValue, withTiming, withRepeat, Easing, useAnimatedStyle, withSpring, useFrameCallback, runOnJS } from 'react-native-reanimated';
 import { useSkiaAssets } from './useSkiaAssets';
 import { SkiaTile } from './SkiaTile';
 import { useTileLibrary } from '../../contexts/TileContext';
@@ -12,13 +12,23 @@ interface SkiaWorldMapProps {
   user: any;
   tileSize: number;
   showWalkabilityOverlay?: boolean;
-  children?: React.ReactNode; // For passing Player/Party/Nodes
+  children?: React.ReactNode; 
+  overlayChildren?: React.ReactNode;
+  velocityX: Reanimated.SharedValue<number>;
+  velocityY: Reanimated.SharedValue<number>;
+  isSprinting: Reanimated.SharedValue<boolean>;
+  onTileEnter?: (x: number, y: number) => void;
 }
 
 const { width, height } = Dimensions.get('window');
 
+// SPEED: 4 tiles/sec for walk, 8 tiles/sec for sprint
+const WALK_SPEED = 4;
+const SPRINT_SPEED = 8;
+
 export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({ 
-  visionGrid, mapSettings, user, tileSize, showWalkabilityOverlay, children 
+  visionGrid, mapSettings, user, tileSize, showWalkabilityOverlay, children, overlayChildren,
+  velocityX, velocityY, isSprinting, onTileEnter
 }) => {
   const { tileLibrary } = useTileLibrary();
 
@@ -30,7 +40,8 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
     if (mapSettings?.water_sheet_url) urls.add(mapSettings.water_sheet_url);
     if (mapSettings?.foam_sheet_url) urls.add(mapSettings.foam_sheet_url);
 
-    visionGrid.forEach(cell => {
+    (visionGrid || []).forEach(cell => {
+      if (!cell) return;
       cell.tiles?.forEach((tile: any) => {
         if (tile.imageUrl) urls.add(tile.imageUrl);
       });
@@ -41,15 +52,11 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
   const images = useSkiaAssets(urlsToLoad);
 
   // Animation values
-  // useClock() from Skia is tied directly to the canvas render thread — smoother than
-  // Reanimated's withRepeat/withTiming which runs on the JS/UI thread with timer drift.
   const clockMs = useClock();
-  // Convert ms → seconds so SkiaSpritesheet receives the same unit as before
   const animationFrame = useDerivedValue(() => clockMs.value / 1000);
 
   const foamOpacity = useSharedValue(0.6);
   useEffect(() => {
-    // Foam breathing animation (0.6 to 0.9)
     foamOpacity.value = withRepeat(
       withTiming(0.9, { duration: 1000, easing: Easing.inOut(Easing.sin) }),
       -1,
@@ -57,20 +64,52 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
     );
   }, []);
 
-  // Map translation
-  // The target is the negative position to center the player
-  // We offset by an additional half-tile to center on the TILE itself, not the top-left vertex.
-  const mapLeftTarget = -(user?.world_x || 0) * tileSize - (tileSize / 2);
-  const mapTopTarget = -(user?.world_y || 0) * tileSize - (tileSize / 2);
+  // --- VELOCITY-DRIVEN ENGINE ---
+  
+  // Initial positions centered on user
+  const mapLeft = useSharedValue(-(user?.world_x || 0) * tileSize - (tileSize / 2));
+  const mapTop = useSharedValue(-(user?.world_y || 0) * tileSize - (tileSize / 2));
 
-  const mapLeft = useSharedValue(mapLeftTarget);
-  const mapTop = useSharedValue(mapTopTarget);
-
+  // Snap to user position when it changes via React (teleport/fast travel)
   useEffect(() => {
-    // 300ms duration with linear or gentle ease-out prevents "rubber-banding" feel.
-    mapLeft.value = withTiming(mapLeftTarget, { duration: 250, easing: Easing.out(Easing.quad) });
-    mapTop.value = withTiming(mapTopTarget, { duration: 250, easing: Easing.out(Easing.quad) });
-  }, [mapLeftTarget, mapTopTarget, tileSize]);
+    if (velocityX.value === 0 && velocityY.value === 0) {
+      mapLeft.value = -(user?.world_x || 0) * tileSize - (tileSize / 2);
+      mapTop.value = -(user?.world_y || 0) * tileSize - (tileSize / 2);
+    }
+  }, [user?.world_x, user?.world_y, tileSize]);
+
+  // Track current tile to trigger logic
+  const lastTileX = useSharedValue(user?.world_x || 0);
+  const lastTileY = useSharedValue(user?.world_y || 0);
+
+  useFrameCallback((frameInfo) => {
+    'worklet';
+    if (!frameInfo.timeSincePreviousFrame) return;
+    if (velocityX.value === 0 && velocityY.value === 0) return;
+
+    const dt = frameInfo.timeSincePreviousFrame / 1000;
+    const speed = (isSprinting.value ? SPRINT_SPEED : WALK_SPEED) * tileSize;
+
+    // Proposed movement
+    const dx = velocityX.value * speed * dt;
+    const dy = velocityY.value * speed * dt;
+
+    // Update positions
+    mapLeft.value -= dx;
+    mapTop.value -= dy;
+
+    // Calculate current logical tile
+    const curX = Math.round(-(mapLeft.value + tileSize / 2) / tileSize);
+    const curY = Math.round(-(mapTop.value + tileSize / 2) / tileSize);
+
+    if (curX !== lastTileX.value || curY !== lastTileY.value) {
+      lastTileX.value = curX;
+      lastTileY.value = curY;
+      if (onTileEnter) {
+        runOnJS(onTileEnter)(curX, curY);
+      }
+    }
+  });
 
   const transform = useDerivedValue(() => [
     { translateX: mapLeft.value + (width / 2) },
@@ -87,7 +126,8 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
     const l0: any[] = [];
     const props: any[] = [];
 
-    visionGrid.forEach(cell => {
+    (visionGrid || []).forEach(cell => {
+      if (!cell) return;
       cell.tiles?.forEach((t: any, index: number) => {
         // Skip invisible collision/edge-block layers — they carry walkability data only
         const rawLayer = (t.layer !== undefined && t.layer !== null) ? Number(t.layer) : 0;
@@ -141,7 +181,7 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
           {layerMinus1Tiles.map((tile) => (
             <SkiaTile
               key={`tile-${tile.id || (tile.absX + ',' + tile.absY + ',' + (tile.layer || -1) + ',' + tile.index)}`}
-              tile={tile} absPx={Math.floor(tile.absX * tileSize)} absPy={Math.floor(tile.absY * tileSize)}
+              tile={tile} absPx={tile.absX * tileSize} absPy={tile.absY * tileSize}
               tileSize={tileSize} images={images} mapSettings={mapSettings}
               animationFrame={animationFrame} foamOpacity={foamOpacity} isProp={false}
               dictionaryData={tileLibrary.get(tile.cleanUrl)}
@@ -151,7 +191,7 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
           {layer0Tiles.map((tile) => (
             <SkiaTile
               key={`tile-${tile.id || (tile.absX + ',' + tile.absY + ',' + (tile.layer || 0) + ',' + tile.index)}`}
-              tile={tile} absPx={Math.floor(tile.absX * tileSize)} absPy={Math.floor(tile.absY * tileSize)}
+              tile={tile} absPx={tile.absX * tileSize} absPy={tile.absY * tileSize}
               tileSize={tileSize} images={images} mapSettings={mapSettings}
               animationFrame={animationFrame} foamOpacity={foamOpacity} isProp={false}
               dictionaryData={tileLibrary.get(tile.cleanUrl)}
@@ -161,7 +201,7 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
           {allProps.map((tile) => (
             <SkiaTile
               key={`tile-${tile.id || (tile.absX + ',' + tile.absY + ',' + (tile.layer || 1) + ',' + tile.index)}`}
-              tile={tile} absPx={Math.floor(tile.absX * tileSize)} absPy={Math.floor(tile.absY * tileSize)}
+              tile={tile} absPx={tile.absX * tileSize} absPy={tile.absY * tileSize}
               tileSize={tileSize} images={images} mapSettings={mapSettings}
               animationFrame={animationFrame} foamOpacity={foamOpacity} isProp={true}
               dictionaryData={tileLibrary.get(tile.cleanUrl)}
@@ -169,12 +209,13 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
           ))}
 
           {/* WALKABILITY OVERLAY: Blocked Cells & Directional Edge Blocks */}
-          {showWalkabilityOverlay && visionGrid.map(cell => {
-            const blockedTiles = cell.tiles?.filter((t: any) => (t.isWalkable === false || t.is_walkable === false));
+          {showWalkabilityOverlay && (visionGrid || []).map(cell => {
+            if (!cell) return null;
+            const blockedTiles = cell.tiles?.filter((t: any) => (t.isWalkable === false || t.is_walk_able === false || t.is_walkable === false));
             const edgeTiles = cell.tiles?.filter((t: any) => t.edgeBlocks !== undefined && t.edgeBlocks > 0);
             
-            const cellX = Math.floor(cell.x * tileSize);
-            const cellY = Math.floor(cell.y * tileSize);
+            const cellX = cell.x * tileSize;
+            const cellY = cell.y * tileSize;
             const BAR = 5 * (tileSize / 48);
 
             return (
@@ -211,6 +252,14 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
       >
         {children}
       </Reanimated.View>
+
+      {/* OVERLAY LAYER: Fixed UI elements like the Player Avatar */}
+      <View 
+        style={[StyleSheet.absoluteFill, { zIndex: 10000 }]} 
+        pointerEvents="box-none"
+      >
+        {overlayChildren}
+      </View>
 
     </View>
   );

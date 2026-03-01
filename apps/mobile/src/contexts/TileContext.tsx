@@ -41,7 +41,7 @@ export const TileProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (error) throw error;
 
-      if (data) {
+      if (data && Array.isArray(data)) {
         const library = new Map<string, CustomTileMetadata>();
         data.forEach((t: any) => {
           // Normalize URL (strip query params for matching)

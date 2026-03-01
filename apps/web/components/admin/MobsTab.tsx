@@ -22,6 +22,7 @@ interface BattleMusicPreset {
 export default function MobsTab() {
   const encounterIconInputRef = useRef<HTMLInputElement>(null);
   const encounterBgInputRef = useRef<HTMLInputElement>(null);
+  const encounterWalkingInputRef = useRef<HTMLInputElement>(null);
   const encounterSoundInputRef = useRef<HTMLInputElement>(null);
   const deathSoundInputRef = useRef<HTMLInputElement>(null);
   const battleMusicInputRef = useRef<HTMLInputElement>(null);
@@ -33,6 +34,7 @@ export default function MobsTab() {
   const [savingEncounter, setSavingEncounter] = useState(false);
   const [uploadingEncounterIcon, setUploadingEncounterIcon] = useState(false);
   const [uploadingEncounterBg, setUploadingEncounterBg] = useState(false);
+  const [uploadingEncounterWalking, setUploadingEncounterWalking] = useState(false);
   const [uploadingEncounterSound, setUploadingEncounterSound] = useState(false);
   const [uploadingDeathSound, setUploadingDeathSound] = useState(false);
   const [uploadingBattleMusic, setUploadingBattleMusic] = useState(false);
@@ -67,6 +69,13 @@ export default function MobsTab() {
     monster_end_frame: 0,
     monster_idle_loop_start: 0,
     monster_idle_loop_end: 0,
+    // Walking animation (Optional)
+    walking_url: '',
+    walking_is_spritesheet: false,
+    walking_frame_count: 4,
+    walking_frame_width: 64,
+    walking_frame_height: 64,
+    walking_animation_speed: 800,
     // Sounds
     sound_encounter_url: '',
     sound_death_url: '',
@@ -127,6 +136,7 @@ export default function MobsTab() {
       slots[3] ?? null,
     ];
     const spritesheet = visuals.spritesheet;
+    const walkingSpritesheet = visuals.walking_spritesheet;
     setEncounterForm({
       event_type: enc.event_type || 'MONSTER',
       name: enc.name || '',
@@ -151,6 +161,13 @@ export default function MobsTab() {
       monster_end_frame: spritesheet?.end_frame ?? (spritesheet?.frame_count ? spritesheet.frame_count - 1 : 0),
       monster_idle_loop_start: spritesheet?.idle_loop_range?.[0] ?? 0,
       monster_idle_loop_end: spritesheet?.idle_loop_range?.[1] ?? 0,
+      // Walking
+      walking_url: walkingSpritesheet?.url || '',
+      walking_is_spritesheet: !!walkingSpritesheet,
+      walking_frame_count: walkingSpritesheet?.frame_count ?? 4,
+      walking_frame_width: walkingSpritesheet?.frame_width ?? 64,
+      walking_frame_height: walkingSpritesheet?.frame_height ?? 64,
+      walking_animation_speed: walkingSpritesheet?.duration_ms ?? 800,
       sound_encounter_url: sounds.encounter_url || '',
       sound_death_url: sounds.death_url || '',
       battle_music_type: sounds.battle_music_type || '',
@@ -210,6 +227,23 @@ export default function MobsTab() {
       alert('Upload failed: ' + (e?.message || e));
     } finally {
       setUploadingEncounterBg(false);
+    }
+  };
+
+  const handleUploadEncounterWalking = async (file: File) => {
+    if (!file) return;
+    setUploadingEncounterWalking(true);
+    try {
+      const filePath = `encounters/monsters/${Date.now()}_walking_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true });
+      if (error) throw error;
+      const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
+      setEncounterForm((prev) => ({ ...prev, walking_url: `${data.publicUrl}?t=${Date.now()}` }));
+      if (encounterWalkingInputRef.current) encounterWalkingInputRef.current.value = '';
+    } catch (e: any) {
+      alert('Upload failed: ' + (e?.message || e));
+    } finally {
+      setUploadingEncounterWalking(false);
     }
   };
 
@@ -347,6 +381,16 @@ export default function MobsTab() {
                   : undefined
               }
             : undefined,
+          walking_spritesheet: encounterForm.walking_is_spritesheet
+            ? {
+                url: encounterForm.walking_url,
+                is_horizontal: true,
+                frame_count: encounterForm.walking_frame_count,
+                frame_width: encounterForm.walking_frame_width,
+                frame_height: encounterForm.walking_frame_height,
+                duration_ms: encounterForm.walking_animation_speed,
+              }
+            : undefined,
         },
         base_catch_rate: petMeta.base_catch_rate,
         flee_rate: petMeta.flee_rate,
@@ -419,6 +463,16 @@ export default function MobsTab() {
                   idle_loop_range: (encounterForm.monster_idle_loop_start > 0 || encounterForm.monster_idle_loop_end > 0)
                     ? [encounterForm.monster_idle_loop_start, encounterForm.monster_idle_loop_end]
                     : undefined,
+                }
+              : undefined,
+            walking_spritesheet: encounterForm.walking_is_spritesheet
+              ? {
+                  url: encounterForm.walking_url,
+                  is_horizontal: true,
+                  frame_count: encounterForm.walking_frame_count,
+                  frame_width: encounterForm.walking_frame_width,
+                  frame_height: encounterForm.walking_frame_height,
+                  duration_ms: encounterForm.walking_animation_speed,
                 }
               : undefined,
           },
@@ -927,6 +981,112 @@ export default function MobsTab() {
                 <p className="text-[9px] text-gray-500 w-full mt-2 italic">
                   Tip: Leave Intro and Loop at 0 to just play the whole sheet. Use Intro for the entrance animation and Loop for the idle state.
                 </p>
+              </div>
+            )}
+
+            <label className="flex items-center gap-2 cursor-pointer mt-4 border-t border-gray-800 pt-4">
+              <input
+                type="checkbox"
+                checked={encounterForm.walking_is_spritesheet}
+                onChange={(e) => setEncounterForm((prev) => ({ ...prev, walking_is_spritesheet: e.target.checked }))}
+                className="rounded border-gray-600 bg-black text-cyan-500"
+              />
+              <span className="text-xs text-gray-300">Has walking animation (horizontal spritesheet)</span>
+            </label>
+
+            {encounterForm.walking_is_spritesheet && (
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <input
+                    value={encounterForm.walking_url}
+                    onChange={(e) => setEncounterForm((prev) => ({ ...prev, walking_url: e.target.value }))}
+                    placeholder="Walking Spritesheet URL or upload below"
+                    className="flex-1 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white"
+                  />
+                  <input
+                    type="file"
+                    ref={encounterWalkingInputRef}
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUploadEncounterWalking(f);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => encounterWalkingInputRef.current?.click()}
+                    disabled={uploadingEncounterWalking}
+                    className="px-3 py-2 bg-cyan-700 hover:bg-cyan-600 disabled:bg-gray-700 text-white rounded-lg text-[10px] font-bold uppercase flex items-center gap-1 shrink-0"
+                  >
+                    {uploadingEncounterWalking ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                    {uploadingEncounterWalking ? 'Uploading…' : 'Upload Walking'}
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Frames</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={encounterForm.walking_frame_count}
+                      onChange={(e) =>
+                        setEncounterForm((prev) => ({
+                          ...prev,
+                          walking_frame_count: Math.max(1, parseInt(e.target.value, 10) || 1),
+                        }))
+                      }
+                      className="w-20 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Speed (ms)</label>
+                    <input
+                      type="number"
+                      min={10}
+                      step={50}
+                      value={encounterForm.walking_animation_speed}
+                      onChange={(e) =>
+                        setEncounterForm((prev) => ({
+                          ...prev,
+                          walking_animation_speed: Math.max(10, parseInt(e.target.value, 10) || 800),
+                        }))
+                      }
+                      className="w-24 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Width (px)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={encounterForm.walking_frame_width}
+                      onChange={(e) =>
+                        setEncounterForm((prev) => ({
+                          ...prev,
+                          walking_frame_width: Math.max(1, parseInt(e.target.value, 10) || 64),
+                        }))
+                      }
+                      className="w-24 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Height (px)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={encounterForm.walking_frame_height}
+                      onChange={(e) =>
+                        setEncounterForm((prev) => ({
+                          ...prev,
+                          walking_frame_height: Math.max(1, parseInt(e.target.value, 10) || 64),
+                        }))
+                      }
+                      className="w-24 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white"
+                    />
+                  </div>
+                </div>
               </div>
             )}
 

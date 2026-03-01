@@ -20,11 +20,20 @@ function toNumber(value: unknown): number | null {
   return null;
 }
 
-export function getPetSpriteSource(petDetails: any): string | null {
+export function getPetSpriteSource(petDetails: any, animationType: 'idle' | 'walking' = 'idle'): string | null {
   const metadata = petDetails?.metadata;
   const visuals = metadata?.visuals;
 
-  // Prefer explicit sprite urls in metadata (Wild Shiba uses visuals.monster_url)
+  // Try walking specific source first if requested
+  if (animationType === 'walking') {
+    const walkingUrl =
+      toStringOrNull(visuals?.walking_spritesheet?.url) ??
+      toStringOrNull(visuals?.walking_spritesheet_url) ??
+      toStringOrNull(metadata?.walking_spritesheet_url);
+    if (walkingUrl) return walkingUrl;
+  }
+
+  // Default / Idle source
   const fromMetadata =
     toStringOrNull(visuals?.monster_url) ??
     toStringOrNull(visuals?.sprite_url) ??
@@ -40,15 +49,19 @@ export function getPetSpriteSource(petDetails: any): string | null {
   );
 }
 
-export function getPetSpriteConfig(petDetails: any): PetSpriteConfig | null {
+export function getPetSpriteConfig(petDetails: any, animationType: 'idle' | 'walking' = 'idle'): PetSpriteConfig | null {
   const metadata = petDetails?.metadata;
 
-  // 1) Primary source: metadata.visuals.spritesheet (Admin Panel MobsTab.tsx)
-  let visualsSheet: any = null;
+  // 1) Primary source: metadata.visuals (from Admin Panel MobsTab.tsx)
+  let sheet: any = null;
   if (metadata && typeof metadata === 'object') {
     const visuals = (metadata as any).visuals;
     if (visuals && typeof visuals === 'object') {
-      visualsSheet = (visuals as any).spritesheet ?? null;
+      if (animationType === 'walking') {
+        sheet = (visuals as any).walking_spritesheet ?? (visuals as any).spritesheet ?? null;
+      } else {
+        sheet = (visuals as any).spritesheet ?? null;
+      }
     }
   }
 
@@ -57,13 +70,13 @@ export function getPetSpriteConfig(petDetails: any): PetSpriteConfig | null {
   let totalFrames: number | null = null;
   let durationMs: number | null = null;
 
-  if (visualsSheet && typeof visualsSheet === 'object') {
-    frameWidth = toNumber((visualsSheet as any).frame_width);
-    frameHeight = toNumber((visualsSheet as any).frame_height);
-    totalFrames = toNumber((visualsSheet as any).frame_count);
-    durationMs = toNumber((visualsSheet as any).duration_ms);
-  } else if (metadata && typeof metadata === 'object') {
-    // 2) Fallback: legacy/shop items via animation_config
+  if (sheet && typeof sheet === 'object') {
+    frameWidth = toNumber((sheet as any).frame_width);
+    frameHeight = toNumber((sheet as any).frame_height);
+    totalFrames = toNumber((sheet as any).frame_count);
+    durationMs = toNumber((sheet as any).duration_ms);
+  } else if (metadata && typeof metadata === 'object' && animationType === 'idle') {
+    // 2) Fallback: legacy/shop items via animation_config (only for idle)
     const animCfg = (metadata as any).animation_config;
     if (animCfg && typeof animCfg === 'object') {
       frameWidth =

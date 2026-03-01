@@ -13,6 +13,7 @@ interface PetLayeredAvatarProps {
   breathe?: boolean;
   borderRadius?: number;
   background?: string | null; // Added prop for background URL
+  isWalking?: boolean; // New prop for walking animation
 }
 
 const PetLayeredAvatarInternal = ({
@@ -22,18 +23,25 @@ const PetLayeredAvatarInternal = ({
   square = true,
   hideBackground = false,
   animate = true,
-  breathe = true,
+  breathe: breatheProp = true,
   borderRadius: customBorderRadius,
   background, // Destructure new prop
+  isWalking = false,
 }: PetLayeredAvatarProps): JSX.Element => {
-  const uri = useMemo(() => getPetSpriteSource(petDetails), [petDetails]);
-  const spriteConfig = useMemo(() => getPetSpriteConfig(petDetails), [petDetails]);
+  const animationType = isWalking ? 'walking' : 'idle';
+  const uri = useMemo(() => getPetSpriteSource(petDetails, animationType), [petDetails, animationType]);
+  const spriteConfig = useMemo(() => getPetSpriteConfig(petDetails, animationType), [petDetails, animationType]);
 
   const safeSize = Math.floor(size);
   const totalFrames = spriteConfig?.totalFrames ?? 1;
   const fps = spriteConfig?.fps ?? 10;
 
   const frameAnim = useRef(new Animated.Value(0)).current;
+
+  // Reset frame when switching animation types
+  useEffect(() => {
+    frameAnim.setValue(0);
+  }, [animationType, frameAnim]);
 
   useEffect(() => {
     if (!spriteConfig || !animate || totalFrames <= 1) {
@@ -58,7 +66,7 @@ const PetLayeredAvatarInternal = ({
     const loop = Animated.loop(Animated.sequence(steps));
     loop.start();
     return () => loop.stop();
-  }, [spriteConfig, animate, totalFrames, fps, frameAnim]);
+  }, [spriteConfig, animate, totalFrames, fps, frameAnim, animationType]);
 
   const interpFrames = Math.max(2, totalFrames);
   const translateX = frameAnim.interpolate({
@@ -67,9 +75,13 @@ const PetLayeredAvatarInternal = ({
     extrapolate: 'clamp',
   });
 
+  const breathe = breatheProp && !isWalking; // Disable breathe while walking
   const breatheAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (!breathe) return;
+    if (!breathe) {
+      breatheAnim.setValue(0);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(breatheAnim, {
@@ -170,6 +182,7 @@ export const PetLayeredAvatar = React.memo(PetLayeredAvatarInternal, (prev, next
   if (prev.breathe !== next.breathe) return false;
   if (prev.hideBackground !== next.hideBackground) return false;
   if (prev.background !== next.background) return false;
+  if (prev.isWalking !== next.isWalking) return false;
   
   if (prev.petDetails?.id !== next.petDetails?.id) return false;
   if (prev.petDetails?.image_url !== next.petDetails?.image_url) return false;

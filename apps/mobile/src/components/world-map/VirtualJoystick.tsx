@@ -1,6 +1,8 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Animated, PanResponder, StyleSheet } from 'react-native';
 
+import Reanimated, { useSharedValue } from 'react-native-reanimated';
+
 type Dir = 'N' | 'S' | 'E' | 'W' | 'NE' | 'NW' | 'SE' | 'SW';
 
 const OUTER_R = 90;
@@ -10,58 +12,21 @@ const DEAD_ZONE = 0.12;
 const SPRINT_THRESHOLD = 0.65;
 const SPRINT_R = OUTER_R * SPRINT_THRESHOLD;
 
-const WALK_MS = 380;
-const SPRINT_MS = 200;
-
-function snapDir(dx: number, dy: number): Dir {
-  const a = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360;
-  if (a >= 337.5 || a < 22.5)  return 'E';
-  if (a < 67.5)                 return 'SE';
-  if (a < 112.5)                return 'S';
-  if (a < 157.5)                return 'SW';
-  if (a < 202.5)                return 'W';
-  if (a < 247.5)                return 'NW';
-  if (a < 292.5)                return 'N';
-  return 'NE';
-}
-
 interface VirtualJoystickProps {
-  onMove: (dir: Dir) => void;
+  velocityX: Reanimated.SharedValue<number>;
+  velocityY: Reanimated.SharedValue<number>;
+  isSprinting: Reanimated.SharedValue<boolean>;
 }
 
-export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({ onMove }) => {
+export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({ velocityX, velocityY, isSprinting }) => {
   const knobX = useRef(new Animated.Value(0)).current;
   const knobY = useRef(new Animated.Value(0)).current;
   const sprintAnim = useRef(new Animated.Value(0)).current;
 
-  const activeDir = useRef<Dir | null>(null);
-  const isSprint = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const onMoveRef = useRef(onMove);
-  useEffect(() => { onMoveRef.current = onMove; }, [onMove]);
-
-  const clearTimer = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  };
-
-  const startMovement = (dir: Dir, sprint: boolean) => {
-    clearTimer();
-    activeDir.current = dir;
-    isSprint.current = sprint;
-    const interval = sprint ? SPRINT_MS : WALK_MS;
-    onMoveRef.current(dir);
-    timerRef.current = setInterval(() => {
-      if (activeDir.current) onMoveRef.current(activeDir.current);
-    }, interval);
-  };
-
   const stopMovement = () => {
-    clearTimer();
-    activeDir.current = null;
-    isSprint.current = false;
+    velocityX.value = 0;
+    velocityY.value = 0;
+    isSprinting.value = false;
     Animated.spring(knobX, { toValue: 0, useNativeDriver: false, friction: 8, tension: 120 }).start();
     Animated.spring(knobY, { toValue: 0, useNativeDriver: false, friction: 8, tension: 120 }).start();
     Animated.timing(sprintAnim, { toValue: 0, duration: 150, useNativeDriver: false }).start();
@@ -82,24 +47,34 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({ onMove }) => {
       knobY.setValue(dy * ratio);
 
       if (mag < DEAD_ZONE) {
-        clearTimer();
-        activeDir.current = null;
+        velocityX.value = 0;
+        velocityY.value = 0;
+        isSprinting.value = false;
         Animated.timing(sprintAnim, { toValue: 0, duration: 100, useNativeDriver: false }).start();
         return;
       }
 
-      const dir = snapDir(dx, dy);
+      // Normalized direction vector
+      const nx = dx / dist;
+      const ny = dy / dist;
+
       const sprint = mag >= SPRINT_THRESHOLD;
+      isSprinting.value = sprint;
+
+      // Snapping to 8 directions for consistency with tile logic if needed,
+      // but for "true continuous" we could just use nx/ny directly.
+      // Let's snap to 45 degree increments to keep the "retro" feel.
+      const angle = Math.atan2(dy, dx);
+      const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+      
+      velocityX.value = Math.cos(snappedAngle);
+      velocityY.value = Math.sin(snappedAngle);
 
       Animated.timing(sprintAnim, {
         toValue: sprint ? 1 : 0,
         duration: 120,
         useNativeDriver: false,
       }).start();
-
-      if (dir !== activeDir.current || sprint !== isSprint.current) {
-        startMovement(dir, sprint);
-      }
     },
 
     onPanResponderRelease: () => stopMovement(),

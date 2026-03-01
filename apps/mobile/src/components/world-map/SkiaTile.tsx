@@ -25,10 +25,11 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
   const frameWidth = dictionaryData?.frame_width ?? tile.frameWidth ?? tile.frame_width ?? 48;
   const frameHeight = dictionaryData?.frame_height ?? tile.frameHeight ?? tile.frame_height ?? 48;
 
-  const displayWidth = Math.round(frameWidth * (tileSize / 48));
-  const displayHeight = Math.round(frameHeight * (tileSize / 48));
-  const offsetX = Math.round(tile.offsetX || 0);
-  const offsetY = Math.round(tile.offsetY || 0);
+  // REMOVED Math.round to prevent sub-pixel "snapping" jitter during map movement
+  const displayWidth = frameWidth * (tileSize / 48);
+  const displayHeight = frameHeight * (tileSize / 48);
+  const offsetX = tile.offsetX || 0;
+  const offsetY = tile.offsetY || 0;
 
   const destRect = useMemo(() => rect(
     absPx - (displayWidth - tileSize) / 2 + offsetX,

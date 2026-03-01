@@ -22,7 +22,7 @@ import { TravelMenu } from '@/components/modals/TravelMenu';
 import { useNavigation } from '@react-navigation/native';
 import { usePets } from '@/hooks/usePets';
 import { useActivePet } from '@/contexts/ActivePetContext';
-import Reanimated, { useAnimatedRef } from 'react-native-reanimated';
+import Reanimated, { useAnimatedRef, useSharedValue } from 'react-native-reanimated';
 import { useTransition } from '@/context/TransitionContext';
 import { makeImageFromView, SkImage, Canvas, RadialGradient, vec, Rect as SkiaRect, Text as SkiaText, useFont, Blur, Skia, Paint } from '@shopify/react-native-skia';
 import { mapNodeIcon } from '@/utils/assetMapper';
@@ -175,7 +175,7 @@ export const WorldMapScreen = () => {
   const presenceChannelRef = useRef<any>(null);
 
   const {
-    move,
+    onTileEnter,
     refreshVision,
     visionGrid,
     nodesInVision,
@@ -187,6 +187,11 @@ export const WorldMapScreen = () => {
     setCheckpointAlert,
     loading: movingOnMap // Use this to track movement state
   } = useExploration(setEncounter, setInteractionVisible, setActiveRaid, setRaidModalVisible, activeMapId);
+
+  // --- SHARED VELOCITY STATE ---
+  const velocityX = useSharedValue(0);
+  const velocityY = useSharedValue(0);
+  const isSprinting = useSharedValue(false);
 
   // Sync complex state interactions to a single "active" state to prevent modal stacking/flicker
   useEffect(() => {
@@ -226,14 +231,8 @@ export const WorldMapScreen = () => {
     fetchShopItems();
   }, []);
 
-  // Joystick movement — the VirtualJoystick handles its own interval/sprint logic.
-  // We keep moveRef current so the joystick callback always sees the latest move function.
-  const moveRef = useRef(move);
-  useEffect(() => { moveRef.current = move; }, [move]);
-
-  const handleJoystickMove = useCallback((dir: 'N' | 'S' | 'E' | 'W' | 'NE' | 'NW' | 'SE' | 'SW') => {
-    moveRef.current(dir);
-  }, []);
+  // Joystick movement now handled via shared values
+  // We no longer need handleJoystickMove or moveRef
 
   const loadData = async () => {
     setLoadingMap(true);
@@ -525,47 +524,57 @@ export const WorldMapScreen = () => {
         {/* 1. THE MAP LAYER (Moving Background or Fallback Color) */}
         <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1a1c0e' }]} />
 
-        {/* 2. THE MAP: Powered by Skia */}
+        {/* 2. THE MAP: Powered by Skia with Velocity Engine */}
         <SkiaWorldMap
           visionGrid={visionGrid}
           mapSettings={mapSettings}
           user={user}
           tileSize={TILE_SIZE}
           showWalkabilityOverlay={showWalkabilityOverlay}
-        >
-          {/* STATIC PLAYER AVATAR (Centered, Persistent) */}
-          {user && (
-            <View 
-              style={[
-                styles.playerContainer, 
-                { 
-                  position: 'absolute', 
-                  left: (user?.world_x || 0) * TILE_SIZE,
-                  top: (user?.world_y || 0) * TILE_SIZE,
-                  width: TILE_SIZE, 
-                  height: TILE_SIZE,
-                  zIndex: 10000 
-                }
-              ]}
-              pointerEvents="box-none"
-            >
-              <View style={styles.playerAvatar}>
-                <LayeredAvatar user={user} size={72} isMoving={movingOnMap} />
-              </View>
-              {activePet?.pet_details && (
-                <View style={styles.petAvatarOnMap} pointerEvents="none">
-                  <PetLayeredAvatar petDetails={activePet.pet_details} size={34} square hideBackground />
+          velocityX={velocityX}
+          velocityY={velocityY}
+          isSprinting={isSprinting}
+          onTileEnter={onTileEnter}
+          overlayChildren={
+            user && (
+              <View 
+                style={[
+                  styles.playerContainer, 
+                  { 
+                    position: 'absolute', 
+                    // Fixed center position - the map moves under the player
+                    left: width / 2 - TILE_SIZE / 2,
+                    top: height / 2 - TILE_SIZE / 2,
+                    width: TILE_SIZE, 
+                    height: TILE_SIZE,
+                  }
+                ]}
+                pointerEvents="box-none"
+              >
+                <View style={styles.playerAvatar}>
+                  <LayeredAvatar user={user} size={72} isMoving={movingOnMap} />
                 </View>
-              )}
-            </View>
-          )}
-
-          {nodesInVision.map((node) => {
-            const nodeLeft = Math.round(node.x * TILE_SIZE);
-            const nodeTop = Math.round(node.y * TILE_SIZE);
+                {activePet?.pet_details && (
+                  <View style={styles.petAvatarOnMap} pointerEvents="none">
+                    <PetLayeredAvatar 
+                      petDetails={activePet.pet_details} 
+                      size={34} 
+                      square 
+                      hideBackground 
+                      isWalking={movingOnMap} 
+                    />
+                  </View>
+                )}
+              </View>
+            )
+          }
+        >
+          {(nodesInVision || []).map((node) => {
+            const nodeLeft = node.x * TILE_SIZE;
+            const nodeTop = node.y * TILE_SIZE;
 
             return (
-              <MotiView 
+              <View 
                 key={`node-${node.id}`}
                 style={[
                   styles.tile, 
@@ -573,11 +582,11 @@ export const WorldMapScreen = () => {
                     width: TILE_SIZE, 
                     height: TILE_SIZE, 
                     position: 'absolute',
+                    left: nodeLeft,
+                    top: nodeTop,
                     zIndex: (1000 - Math.floor(node.y))
                   }
                 ]}
-                animate={{ left: nodeLeft, top: nodeTop }}
-                transition={{ type: 'timing', duration: 300 }}
               >
                 <TouchableOpacity 
                   onPress={() => setSelectedNode(node)}
@@ -592,7 +601,7 @@ export const WorldMapScreen = () => {
                     <Text style={styles.nodeLabel}>{node.name}</Text>
                   </View>
                 </TouchableOpacity>
-              </MotiView>
+              </View>
             );
           })}
 
@@ -606,7 +615,7 @@ export const WorldMapScreen = () => {
                 key={`party-${member.id}`}
                 style={[styles.partyMemberContainer, { position: 'absolute', left: memberLeft, top: memberTop, zIndex: 1000 - member.world_y }]}
                 animate={{ left: memberLeft, top: memberTop }}
-                transition={{ type: 'timing', duration: 500 }}
+                transition={{ type: 'timing', duration: 250 }}
               >
                 <View style={styles.partyMemberAvatar}>
                   <LayeredAvatar 
@@ -662,26 +671,6 @@ export const WorldMapScreen = () => {
           <Text style={[styles.mapBtnText, { color: '#ef4444' }]}>BATTLE</Text>
         </TouchableOpacity>
 
-        {/* TEST STEPS BUTTON */}
-        <TouchableOpacity
-          style={[styles.floatingMapBtn, { top: 180, borderColor: '#22d3ee' }]}
-          onPress={() => setPendingSteps(100)}
-        >
-          <Ionicons name="footsteps" size={24} color="#22d3ee" />
-          <Text style={[styles.mapBtnText, { color: '#22d3ee' }]}>STEPS</Text>
-        </TouchableOpacity>
-
-        {/* DEBUG: WALKABILITY OVERLAY TOGGLE */}
-        {__DEV__ && (
-          <TouchableOpacity
-            style={[styles.floatingMapBtn, { top: 240, borderColor: '#f97316' }]}
-            onPress={() => setShowWalkabilityOverlay(!showWalkabilityOverlay)}
-          >
-            <Ionicons name={showWalkabilityOverlay ? "eye" : "eye-off"} size={24} color="#f97316" />
-            <Text style={[styles.mapBtnText, { color: '#f97316' }]}>WALK</Text>
-          </TouchableOpacity>
-        )}
-
         {/* Enter Temple — only when standing on a Temple tile */}
         {isOnTempleTile && (
           <TouchableOpacity
@@ -693,9 +682,13 @@ export const WorldMapScreen = () => {
           </TouchableOpacity>
         )}
 
-        {/* Virtual Joystick — centered on player avatar */}
+        {/* Virtual Joystick — feeds SharedValues directly to the Map Engine */}
         <View style={styles.joystickLayer} pointerEvents="box-none">
-          <VirtualJoystick onMove={handleJoystickMove} />
+          <VirtualJoystick 
+            velocityX={velocityX} 
+            velocityY={velocityY} 
+            isSprinting={isSprinting} 
+          />
         </View>
 
         {/* --- MODALS --- */}
