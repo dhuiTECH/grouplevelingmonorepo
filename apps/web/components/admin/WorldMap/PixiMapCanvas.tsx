@@ -177,7 +177,9 @@ const SmartPixiTile = React.memo(({
   let mainUrl = tile.imageUrl;
   let effectiveSmartType = tile.smartType || 'grass';
 
-  if (tile.isAutoTile) {
+  // Apply sheet URL for both live auto-tiles AND frozen pasted smart tiles (isAutoTile=false but smartType set)
+  const isFrozenSmartTile = !tile.isAutoTile && !!tile.smartType && tile.bitmask !== undefined;
+  if (tile.isAutoTile || isFrozenSmartTile) {
     if (effectiveSmartType === 'water' && waterSheetUrl) mainUrl = waterSheetUrl;
     else if (effectiveSmartType === 'dirt' && dirtSheetUrl) mainUrl = dirtSheetUrl;
     else if (autoTileSheetUrl) mainUrl = autoTileSheetUrl;
@@ -187,8 +189,10 @@ const SmartPixiTile = React.memo(({
   const foamUrl = (isFoamEnabled && foamStripTile?.url && (tile.foamBitmask || 0) > 0) ? foamStripTile.url : null;
   const foamTextureBase = useTexture(foamUrl);
 
-  const displayHeight = tile.isAutoTile ? TILE_SIZE : (liveCustomTile?.frameHeight || tile.frameHeight || TILE_SIZE);
-  const displayWidth = tile.isAutoTile ? TILE_SIZE : (liveCustomTile?.frameWidth || tile.frameWidth || displayHeight);
+  // Frozen smart tiles use TILE_SIZE just like live auto-tiles (they come from the same bitmask grid)
+  const isSmartRendered = tile.isAutoTile || isFrozenSmartTile;
+  const displayHeight = isSmartRendered ? TILE_SIZE : (liveCustomTile?.frameHeight || tile.frameHeight || TILE_SIZE);
+  const displayWidth = isSmartRendered ? TILE_SIZE : (liveCustomTile?.frameWidth || tile.frameWidth || displayHeight);
 
   // ANIMATION LOGIC
   const frameCount = liveCustomTile?.frameCount || tile.frameCount || 1;
@@ -204,7 +208,7 @@ const SmartPixiTile = React.memo(({
   );
 
   const quarterTextures = useMemo(() => {
-    if (!mainTextureBase || !mainTextureBase.source || !tile.isAutoTile) return null;
+    if (!mainTextureBase || !mainTextureBase.source || !isSmartRendered) return null;
 
     // Create a unique cache key based on the image URL and bitmask
     const cacheKeyBase = `${mainUrl}-${tile.bitmask}-${tile.blockCol}-${tile.blockRow}`;
@@ -227,7 +231,7 @@ const SmartPixiTile = React.memo(({
         return textureCache[cacheKey];
       });
     } catch(e) { return null; }
-  }, [mainTextureBase, tile.isAutoTile, tile.bitmask, tile.blockCol, tile.blockRow, mainUrl, effectiveSmartType]);
+  }, [mainTextureBase, isSmartRendered, tile.bitmask, tile.blockCol, tile.blockRow, mainUrl, effectiveSmartType]);
 
   const foamQuarterTextures = useMemo(() => {
     if (!foamTextureBase || !foamTextureBase.source || (tile.foamBitmask || 0) === 0) return null;
@@ -395,8 +399,10 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
       const normalizedTileUrl = normalizeUrl(tile.imageUrl);
       const customTile = customTileLookup.get(normalizedTileUrl);
       
-      const displayWidth = (tile.isAutoTile && (tile.layer || 0) === 0) ? TILE_SIZE : (customTile?.frameWidth || tile.frameWidth || TILE_SIZE);
-      const displayHeight = (tile.isAutoTile && (tile.layer || 0) === 0) ? TILE_SIZE : (customTile?.frameHeight || tile.frameHeight || TILE_SIZE);
+      const isFrozenSmart = !tile.isAutoTile && !!tile.smartType && tile.bitmask !== undefined;
+      const isSmartSize = (tile.isAutoTile || isFrozenSmart) && (tile.layer || 0) === 0;
+      const displayWidth = isSmartSize ? TILE_SIZE : (customTile?.frameWidth || tile.frameWidth || TILE_SIZE);
+      const displayHeight = isSmartSize ? TILE_SIZE : (customTile?.frameHeight || tile.frameHeight || TILE_SIZE);
 
       // CRITICAL: Ensure x and y are actually numbers before doing math, otherwise they become NaN
       if (typeof tile.x !== 'number' || typeof tile.y !== 'number' || isNaN(tile.x) || isNaN(tile.y)) {

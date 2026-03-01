@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { WinluPalette } from './WinluPalette';
 import { DebugOverlay } from './DebugOverlay';
+import { getPixiTextureCoords, getLiquidTextureCoords } from './mapUtils';
 import { generateAsset } from '@/lib/services/mapGeminiService';
 import NodeEditModal, { NodeFormData } from '../NodeEditModal';
 import { supabase } from '@/lib/supabase';
@@ -170,7 +171,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     loadTilesFromSupabase, isDraggingTile, draggingTileId,
     setDraggingTile, isDraggingNode, draggingNodeId, setDraggingNode,
     moveTile, removeTileById, rotateTile,
-    isSmartMode, isRaiseMode, smartBrushLock, setSmartBrushLock, isFoamEnabled, autoTileSheetUrl, waterSheetUrl,
+    isSmartMode, isRaiseMode, smartBrushLock, setSmartBrushLock, isFoamEnabled, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl,
     selectedSmartType, setSelectedSmartType, setSelectedBlock, smartBrushLayer, setSmartBrushLayer, setRaiseMode, waterBaseTile, foamStripTile, setTool,
     sidebarWidth, setSidebarWidth, rightSidebarWidth, setRightSidebarWidth,
     favorites, setFavorite, selectTile,
@@ -2091,6 +2092,47 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
                       }}
                    >
                      {currentStamp.map(tile => {
+                       // --- Frozen smart tile: render using bitmask + sheet url ---
+                       const isFrozenSmart = !!tile.smartType && tile.bitmask !== undefined;
+                       if (isFrozenSmart) {
+                         const smartType = tile.smartType!;
+                         let sheetUrl: string | null = null;
+                         if (smartType === 'water' && waterSheetUrl) sheetUrl = waterSheetUrl;
+                         else if (smartType === 'dirt' && dirtSheetUrl) sheetUrl = dirtSheetUrl;
+                         else if (autoTileSheetUrl) sheetUrl = autoTileSheetUrl;
+
+                         if (!sheetUrl) {
+                           return (
+                             <div key={`${tile.x}-${tile.y}`}
+                               className="absolute bg-green-500/30 border border-green-500/50"
+                               style={{ left: tile.x * TILE_SIZE, top: tile.y * TILE_SIZE, width: TILE_SIZE, height: TILE_SIZE, imageRendering: 'pixelated' }}
+                             />
+                           );
+                         }
+
+                         const coords = smartType === 'water'
+                           ? getLiquidTextureCoords(tile.bitmask || 0, tile.blockCol || 0, tile.blockRow || 0)
+                           : getPixiTextureCoords(tile.bitmask || 0, tile.blockCol || 0, tile.blockRow || 0);
+                         const { sourceX, sourceY } = coords[0];
+
+                         return (
+                           <div key={`${tile.x}-${tile.y}`}
+                             className="absolute"
+                             style={{
+                               left: tile.x * TILE_SIZE,
+                               top: tile.y * TILE_SIZE,
+                               width: TILE_SIZE,
+                               height: TILE_SIZE,
+                               backgroundImage: `url(${sheetUrl})`,
+                               backgroundPosition: `-${sourceX}px -${sourceY}px`,
+                               backgroundRepeat: 'no-repeat',
+                               imageRendering: 'pixelated',
+                             }}
+                           />
+                         );
+                       }
+
+                       // --- Regular palette tile ---
                        const customTile = customTiles.find(ct => normalizeUrl(ct.url) === normalizeUrl(tile.imageUrl));
                        if (!customTile) return null;
                        
