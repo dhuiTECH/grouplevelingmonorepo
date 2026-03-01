@@ -1,6 +1,6 @@
 'use client';
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import { Application, extend } from '@pixi/react';
+import { Application, extend, useTick } from '@pixi/react';
 import * as PIXI from 'pixi.js';
 import { useMapStore, useTickStore, Tile, CustomTile } from '@/lib/store/mapStore';
 import { getPixiTextureCoords, getLiquidTextureCoords, getTileIdFromMask } from './mapUtils';
@@ -22,7 +22,7 @@ interface PixiMapCanvasProps {
   width: number; 
   height: number; 
   worldSize: number; 
-  transform: { x: number; y: number; scale: number }; 
+  transformRef: React.MutableRefObject<{ x: number; y: number; scale: number }>;
   onPropMouseDown?: (tileId: string, e: any) => void;
   onNodeMouseDown?: (nodeId: string, e: any) => void;
   waterBaseTile?: CustomTile;
@@ -323,8 +323,114 @@ const SmartPixiTile = React.memo(({
 
 SmartPixiTile.displayName = 'SmartPixiTile';
 
+// --- Inner scene: lives inside <Application> so useTick is available ---
+interface PixiSceneProps {
+  transformRef: React.MutableRefObject<{ x: number; y: number; scale: number }>;
+  width: number;
+  height: number;
+  worldSize: number;
+  tileElements: React.ReactNode;
+  tiles: Tile[];
+  selection: any;
+  showWalkabilityOverlay: boolean;
+  cullBox: { minX: number; minY: number; maxX: number; maxY: number };
+  setCullBox: (box: { minX: number; minY: number; maxX: number; maxY: number }) => void;
+}
+
+const PixiScene: React.FC<PixiSceneProps> = ({
+  transformRef, width, height, worldSize, tileElements, tiles, selection,
+  showWalkabilityOverlay, cullBox, setCullBox
+}) => {
+  const containerRef = useRef<PIXI.Container>(null);
+  const walkabilityOverlayRef = useRef<PIXI.Graphics>(null);
+  const selectionRef = useRef<PIXI.Graphics>(null);
+
+  // Each Pixi tick: sync transform ref → container (no React state, no re-render)
+  useTick(() => {
+    const c = containerRef.current;
+    if (!c) return;
+    const t = transformRef.current;
+    c.x = t.x;
+    c.y = t.y;
+    c.scale.set(t.scale);
+
+    // Cull box lazy update: only recalculate when viewport approaches the safe-zone edge
+    if (width && height && t.scale) {
+      const viewportLeft = -t.x / t.scale;
+      const viewportTop = -t.y / t.scale;
+      const viewportRight = viewportLeft + width / t.scale;
+      const viewportBottom = viewportTop + height / t.scale;
+      const safeBuffer = TILE_SIZE * 20;
+
+      if (
+        viewportLeft < cullBox.minX + safeBuffer ||
+        viewportTop < cullBox.minY + safeBuffer ||
+        viewportRight > cullBox.maxX - safeBuffer ||
+        viewportBottom > cullBox.maxY - safeBuffer
+      ) {
+        const vw = viewportRight - viewportLeft;
+        const vh = viewportBottom - viewportTop;
+        setCullBox({
+          minX: viewportLeft - vw,
+          minY: viewportTop - vh,
+          maxX: viewportRight + vw,
+          maxY: viewportBottom + vh
+        });
+      }
+    }
+  });
+
+  // Walkability overlay: redraw when tiles/visibility/cullBox change
+  useEffect(() => {
+    const g = walkabilityOverlayRef.current;
+    if (!g) return;
+    g.clear();
+    if (!showWalkabilityOverlay) return;
+    const { minX, minY, maxX, maxY } = cullBox;
+    tiles.forEach(tile => {
+      if (tile.isWalkable !== false) return;
+      if (typeof tile.x !== 'number' || typeof tile.y !== 'number') return;
+      const wx = tile.x * TILE_SIZE + worldSize / 2;
+      const wy = tile.y * TILE_SIZE + worldSize / 2;
+      if (wx + TILE_SIZE < minX || wx > maxX || wy + TILE_SIZE < minY || wy > maxY) return;
+      g.rect(wx, wy, TILE_SIZE, TILE_SIZE).fill({ color: 0xDC2626, alpha: 0.35 });
+    });
+  }, [showWalkabilityOverlay, tiles, cullBox, worldSize]);
+
+  // Selection overlay
+  useEffect(() => {
+    const g = selectionRef.current;
+    if (!g) return;
+    g.clear();
+    if (!selection) return;
+
+    const startX = Math.min(selection.start.x, selection.end.x);
+    const endX = Math.max(selection.start.x, selection.end.x);
+    const startY = Math.min(selection.start.y, selection.end.y);
+    const endY = Math.max(selection.start.y, selection.end.y);
+
+    const selWidth = (endX - startX + 1) * TILE_SIZE;
+    const selHeight = (endY - startY + 1) * TILE_SIZE;
+    const sx = startX * TILE_SIZE + worldSize / 2;
+    const sy = startY * TILE_SIZE + worldSize / 2;
+    const strokeWidth = 2 / (transformRef.current.scale || 1);
+
+    g.rect(sx, sy, selWidth, selHeight)
+      .fill({ color: 0x22d3ee, alpha: 0.2 })
+      .stroke({ width: strokeWidth, color: 0x22d3ee });
+  }, [selection, worldSize, transformRef]);
+
+  return (
+    <PixiContainer ref={containerRef}>
+      {tileElements}
+      <PixiGraphics ref={walkabilityOverlayRef} />
+      <PixiGraphics ref={selectionRef} />
+    </PixiContainer>
+  );
+};
+
 export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({ 
-  width, height, worldSize, transform, onPropMouseDown, waterBaseTile, foamStripTile, showDebugNumbers,
+  width, height, worldSize, transformRef, onPropMouseDown, waterBaseTile, foamStripTile, showDebugNumbers,
   showWalkabilityOverlay,
   nodes, cursorCoords, selectedTool, isSpacePressed, brushMode, brushSize, selectedTileId
 }) => {
@@ -357,39 +463,8 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
     }
   }, []);
 
-  // Culling box state to prevent re-filtering tiles every frame during pan/zoom
+  // Culling box — updated lazily by PixiScene's useTick, not on every transform change
   const [cullBox, setCullBox] = useState({ minX: -999999, minY: -999999, maxX: 999999, maxY: 999999 });
-
-  useEffect(() => {
-    if (!width || !height || !transform.scale) return;
-
-    const viewportLeft = -transform.x / transform.scale;
-    const viewportTop = -transform.y / transform.scale;
-    const viewportRight = viewportLeft + width / transform.scale;
-    const viewportBottom = viewportTop + height / transform.scale;
-
-    // Safe zone buffer (e.g., 20 tiles)
-    const safeBuffer = TILE_SIZE * 20;
-
-    // Only update cull box if viewport gets too close to the edge of the current cull box
-    if (
-      viewportLeft < cullBox.minX + safeBuffer ||
-      viewportTop < cullBox.minY + safeBuffer ||
-      viewportRight > cullBox.maxX - safeBuffer ||
-      viewportBottom > cullBox.maxY - safeBuffer
-    ) {
-      const vw = viewportRight - viewportLeft;
-      const vh = viewportBottom - viewportTop;
-      
-      // Make the new cull box ~3x the size of the viewport to allow plenty of panning before next recalculation
-      setCullBox({
-        minX: viewportLeft - vw,
-        minY: viewportTop - vh,
-        maxX: viewportRight + vw,
-        maxY: viewportBottom + vh
-      });
-    }
-  }, [transform.x, transform.y, transform.scale, width, height, cullBox]);
 
   const sortedTiles = useMemo(() => {
     // 1. Frustum Culling using the debounced cullBox
@@ -436,53 +511,6 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
     });
   }, [tiles, customTileLookup, cullBox, worldSize]);
 
-  const drawWalkabilityOverlay = React.useCallback((g: PIXI.Graphics) => {
-    g.clear();
-    if (!showWalkabilityOverlay) return;
-    const { minX, minY, maxX, maxY } = cullBox;
-    tiles.forEach(tile => {
-      if (tile.isWalkable !== false) return;
-      if (typeof tile.x !== 'number' || typeof tile.y !== 'number') return;
-      const wx = tile.x * TILE_SIZE + worldSize / 2;
-      const wy = tile.y * TILE_SIZE + worldSize / 2;
-      if (wx + TILE_SIZE < minX || wx > maxX || wy + TILE_SIZE < minY || wy > maxY) return;
-      g.rect(wx, wy, TILE_SIZE, TILE_SIZE).fill({ color: 0xDC2626, alpha: 0.35 });
-    });
-  }, [showWalkabilityOverlay, tiles, cullBox, worldSize]);
-
-  const walkabilityOverlayRef = React.useRef<PIXI.Graphics>(null);
-  React.useEffect(() => {
-    if (walkabilityOverlayRef.current) {
-      drawWalkabilityOverlay(walkabilityOverlayRef.current);
-    }
-  }, [drawWalkabilityOverlay]);
-
-  const drawSelection = React.useCallback((g: PIXI.Graphics) => {
-    g.clear();
-    if (!selection) return;
-    
-    const startX = Math.min(selection.start.x, selection.end.x);
-    const endX = Math.max(selection.start.x, selection.end.x);
-    const startY = Math.min(selection.start.y, selection.end.y);
-    const endY = Math.max(selection.start.y, selection.end.y);
-
-    const selWidth = (endX - startX + 1) * TILE_SIZE;
-    const selHeight = (endY - startY + 1) * TILE_SIZE;
-    
-    const x = startX * TILE_SIZE + worldSize / 2;
-    const y = startY * TILE_SIZE + worldSize / 2;
-
-    g.rect(x, y, selWidth, selHeight).fill({ color: 0x22d3ee, alpha: 0.2 }).stroke({ width: 2 / transform.scale, color: 0x22d3ee });
-  }, [selection, transform.scale, worldSize]);
-
-  const selectionRef = React.useRef<PIXI.Graphics>(null);
-
-  React.useEffect(() => {
-    if (selectionRef.current) {
-      drawSelection(selectionRef.current);
-    }
-  }, [drawSelection]);
-
   const tileElements = useMemo(() => {
     return sortedTiles.map(tile => (
       <SmartPixiTile
@@ -505,13 +533,18 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
         width={width || 800} height={height || 600} backgroundColor={0x000000} backgroundAlpha={0}      
         antialias={false} resolution={window.devicePixelRatio || 1} autoDensity={true}
       >
-        <PixiContainer x={transform.x} y={transform.y} scale={transform.scale}>
-          
-          {tileElements}
-
-          <PixiGraphics ref={walkabilityOverlayRef} />
-          <PixiGraphics ref={selectionRef} />
-        </PixiContainer>
+        <PixiScene
+          transformRef={transformRef}
+          width={width}
+          height={height}
+          worldSize={worldSize}
+          tileElements={tileElements}
+          tiles={tiles}
+          selection={selection}
+          showWalkabilityOverlay={showWalkabilityOverlay ?? false}
+          cullBox={cullBox}
+          setCullBox={setCullBox}
+        />
       </Application>
     </div>
   );

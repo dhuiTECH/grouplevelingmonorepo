@@ -218,9 +218,13 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   const [seed, setSeed] = useState<string>(Math.random().toString(36).substring(7));
   
   // Transform State for Pixi
-  const [scale, setScale] = useState(1);
-  const [positionX, setPositionX] = useState(0);
-  const [positionY, setPositionY] = useState(0);
+  // pixiTransformRef holds the live pan/zoom without triggering React re-renders on every frame.
+  // PixiScene reads this ref each tick and applies it directly to the Pixi container.
+  const pixiTransformRef = useRef({ x: 0, y: 0, scale: 0.5 });
+  // scale/positionX/positionY as state are only used for initial TransformWrapper positioning (read once on mount)
+  const [scale] = useState(0.5);
+  const [positionX] = useState(0);
+  const [positionY] = useState(0);
   const [viewport, setViewport] = useState({ width: 1200, height: 800 }); // Reasonable default
 
   const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -456,11 +460,29 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
   }, [loadTilesFromSupabase, sidebarWidth, rightSidebarWidth]);
 
   useEffect(() => {
-    // Initialize zoom scale for CSS
+    // Initialize zoom scale for CSS and seed the pixiTransformRef with the initial position
     if (dropTargetRef.current) {
       dropTargetRef.current.style.setProperty('--zoom-scale', '0.5');
     }
+    const initX = -(WORLD_SIZE / 2 * 0.5) + (viewport.width / 2);
+    const initY = -(WORLD_SIZE / 2 * 0.5) + (viewport.height / 2);
+    pixiTransformRef.current = { x: initX, y: initY, scale: 0.5 };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    // Sync viewport-dependent initial transform when viewport size is first known
+    if (viewport.width > 0 && viewport.height > 0) {
+      const initX = -(WORLD_SIZE / 2 * 0.5) + (viewport.width / 2);
+      const initY = -(WORLD_SIZE / 2 * 0.5) + (viewport.height / 2);
+      // Only seed if TransformWrapper hasn't moved yet (ref still at 0,0)
+      if (pixiTransformRef.current.x === 0 && pixiTransformRef.current.y === 0) {
+        pixiTransformRef.current = { x: initX, y: initY, scale: 0.5 };
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewport.width, viewport.height]);
+
 
   const goToNode = useCallback((nodeId: string) => {
     selectNode(nodeId);
@@ -1402,8 +1424,9 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     if (!nodeType || !activeNodeType) return;
 
     const rect = dropTargetRef.current!.getBoundingClientRect();
-    const worldX = (e.clientX - rect.left - positionX) / scale;
-    const worldY = (e.clientY - rect.top - positionY) / scale;
+    const { x: dropX, y: dropY, scale: dropScale } = pixiTransformRef.current;
+    const worldX = (e.clientX - rect.left - dropX) / dropScale;
+    const worldY = (e.clientY - rect.top - dropY) / dropScale;
 
     // Use grid coordinates if snapping to grid (with 0.5 precision), otherwise use world coordinates
     const nodeX = nodeSnapToGrid ? Math.round(((worldX - WORLD_SIZE / 2) / TILE_SIZE) * 2) / 2 : (worldX - WORLD_SIZE / 2) / TILE_SIZE;
@@ -2032,7 +2055,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
               width={viewport.width} 
               height={viewport.height} 
               worldSize={WORLD_SIZE}
-              transform={{ x: positionX, y: positionY, scale }} 
+              transformRef={pixiTransformRef}
               onPropMouseDown={handlePropMouseDown}
               onNodeMouseDown={handleNodeMouseDown}
               waterBaseTile={waterBaseTile()}
@@ -2059,10 +2082,12 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
             initialPositionX={-(WORLD_SIZE / 2 * 0.5) + (viewport.width / 2)}
             initialPositionY={-(WORLD_SIZE / 2 * 0.5) + (viewport.height / 2)}
             onTransformed={(p) => {
-              setScale(p.state.scale);
-              setPositionX(p.state.positionX);
-              setPositionY(p.state.positionY);
-              
+              // Write directly to the ref — no React setState, no re-render cascade
+              pixiTransformRef.current = {
+                x: p.state.positionX,
+                y: p.state.positionY,
+                scale: p.state.scale
+              };
               if (dropTargetRef.current) {
                 dropTargetRef.current.style.setProperty('--zoom-scale', p.state.scale.toString());
               }

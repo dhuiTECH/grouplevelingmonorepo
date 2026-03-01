@@ -665,21 +665,32 @@ export const useMapStore = create<MapState>((set, get) => ({
 
     // 1. Update local state (keep full data for instant web rendering)
     set((state) => {
-      // Logic for finding "same" tile to replace:
-      // - If snapped: same x, y, layer
-      // - If non-snapped: same x, y, layer AND offset is very close (within 8px)
-      const existingIdx = state.tiles.findIndex(t => {
-        const isSameCell = t.x === x && t.y === y && (t.layer || 0) === (layer || 0);
-        if (!isSameCell) return false;
-        
-        // If both are non-snapped, we allow multiple tiles per cell unless they are in the exact same spot
-        if (snapToGrid === false && t.snapToGrid === false) {
-          return Math.abs(t.offsetX - (offsetX || 0)) < 8 && Math.abs(t.offsetY - (offsetY || 0)) < 8;
-        }
-        
-        // If either is snapped, we enforce one tile per cell per layer
-        return true;
+      // Build a fast O(1) index keyed by "x,y,layer" for snapped lookups
+      const cellKey = `${x},${y},${layer || 0}`;
+      const snappedIndex = new Map<string, number>();
+      state.tiles.forEach((t, i) => {
+        snappedIndex.set(`${t.x},${t.y},${t.layer || 0}`, i);
       });
+
+      // Logic for finding "same" tile to replace:
+      // - If snapped: same x, y, layer — use O(1) map lookup
+      // - If non-snapped: same x, y, layer AND offset is very close (within 8px)
+      let existingIdx = -1;
+      if (snapToGrid !== false) {
+        // Either this tile or the candidate is snapped — one tile per cell per layer
+        existingIdx = snappedIndex.get(cellKey) ?? -1;
+      } else {
+        // Both are free-positioned — scan only the small subset at this cell (usually 0–3 tiles)
+        const atCell = state.tiles
+          .map((t, i) => ({ t, i }))
+          .filter(({ t }) => t.x === x && t.y === y && (t.layer || 0) === (layer || 0));
+        const match = atCell.find(({ t }) =>
+          t.snapToGrid === false &&
+          Math.abs(t.offsetX - (offsetX || 0)) < 8 &&
+          Math.abs(t.offsetY - (offsetY || 0)) < 8
+        );
+        if (match) existingIdx = match.i;
+      }
 
       const newTile = {
         id: uuidv4(),
@@ -912,8 +923,12 @@ export const useMapStore = create<MapState>((set, get) => ({
 
       const newTiles = [...tiles];
 
+      // Build O(1) index for neighbor lookups — avoids 9 × O(N) findIndex calls
+      const tileIndexMap = new Map<string, number>();
+      newTiles.forEach((t, i) => tileIndexMap.set(`${t.x},${t.y},${t.layer || 0}`, i));
+
       const updateSingleTile = (tx: number, ty: number) => {
-        const tileIndex = newTiles.findIndex(t => t.x === tx && t.y === ty && (t.layer || 0) === layer);
+        const tileIndex = tileIndexMap.get(`${tx},${ty},${layer}`) ?? -1;
         if (tileIndex === -1) return;
         const tile = newTiles[tileIndex];
         
