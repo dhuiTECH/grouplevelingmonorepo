@@ -483,6 +483,11 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewport.width, viewport.height]);
 
+  useEffect(() => {
+    if (selectedTool === 'collision') {
+      setShowWalkabilityOverlay(true);
+    }
+  }, [selectedTool]);
 
   const goToNode = useCallback((nodeId: string) => {
     selectNode(nodeId);
@@ -1226,16 +1231,16 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         }
       }
     } else if (tool === 'collision') {
-      if (forceErase) {
-        // Right-click: remove the collision tile at this cell
-        const collisionTile = useMapStore.getState().tiles.find(
-          t => t.x === gx && t.y === gy && (t.layer || 0) === COLLISION_LAYER
-        );
+      const collisionTile = useMapStore.getState().tiles.find(
+        t => t.x === gx && t.y === gy && (t.layer || 0) === COLLISION_LAYER
+      );
+      if (forceErase || (collisionTile && !isMove)) {
+        // Right-click OR left-click on an existing collision tile: remove it (toggle off)
         if (collisionTile) {
           removeTileById(collisionTile.id);
         }
-      } else {
-        // Left-click/drag: paint an invisible non-walkable collision tile
+      } else if (!collisionTile) {
+        // Left-click/drag on empty cell: paint an invisible non-walkable collision tile
         await addTileSimple(
           gx, gy, 'collision', '',
           false, 0, TILE_SIZE, TILE_SIZE, 0,
@@ -2021,7 +2026,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
               <div className="flex items-center gap-1.5 border-l border-slate-700 pl-3 text-red-400">
                 <ShieldOff size={10} className="animate-pulse" />
                 <span>Collision Brush</span>
-                <span className="text-[8px] text-slate-500">RMB erase</span>
+                <span className="text-[8px] text-slate-500">click to toggle</span>
               </div>
             )}
 
