@@ -1148,6 +1148,49 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
         await Promise.all(tasks);
       }
     } else if (tool === 'erase') {
+      const { brushMode: currentBrushMode, brushSize: currentBrushSize, smartBrushLock } = useMapStore.getState();
+
+      let brushArea = [{dx: 0, dy: 0}];
+      if (currentBrushMode && currentBrushSize > 1) {
+        const half = Math.floor(currentBrushSize / 2);
+        const isEven = currentBrushSize % 2 === 0;
+        brushArea = [];
+        for (let dy = -half; dy < (isEven ? half : half + 1); dy++) {
+          for (let dx = -half; dx < (isEven ? half : half + 1); dx++) {
+            brushArea.push({dx, dy});
+          }
+        }
+      }
+
+      const tasks = [];
+      for (const {dx, dy} of brushArea) {
+        const tx = gx + dx;
+        const ty = gy + dy;
+        tasks.push((async () => {
+          const removedTile = await removeTileAt(tx, ty, smartBrushLock);
+          if (removedTile) {
+            if (!isMove || (dx === 0 && dy === 0)) {
+              setUndoStack(prev => [...prev, {
+                action: 'erase_tile',
+                x: tx,
+                y: ty,
+                layer: removedTile.layer || 0,
+                previousTile: removedTile
+              }]);
+            }
+            if (removedTile.isAutoTile) {
+              await updateTileAndNeighbors(tx, ty, removedTile.layer || 0, true, removedTile.smartType, removedTile.blockCol, removedTile.blockRow);
+            }
+          }
+          const n = nodes.find(node => node.x === tx && node.y === ty);
+          if (n && !isMove) {
+            setUndoStack(prev => [...prev, { action: 'erase_node', nodeData: n }]);
+            removeNode(n.id);
+          }
+        })());
+      }
+      await Promise.all(tasks);
+    } else if (tool === 'stamp') {
       if (currentStamp) {
         await handlePasteStamp(gx, gy);
       } else {
