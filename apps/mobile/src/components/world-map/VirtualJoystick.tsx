@@ -62,8 +62,8 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({ onMove }) => {
     clearTimer();
     activeDir.current = null;
     isSprint.current = false;
-    Animated.spring(knobX, { toValue: 0, useNativeDriver: true, friction: 8, tension: 120 }).start();
-    Animated.spring(knobY, { toValue: 0, useNativeDriver: true, friction: 8, tension: 120 }).start();
+    Animated.spring(knobX, { toValue: 0, useNativeDriver: false, friction: 8, tension: 120 }).start();
+    Animated.spring(knobY, { toValue: 0, useNativeDriver: false, friction: 8, tension: 120 }).start();
     Animated.timing(sprintAnim, { toValue: 0, duration: 150, useNativeDriver: false }).start();
   };
 
