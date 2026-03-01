@@ -26,6 +26,7 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
     const urls = new Set<string>();
     if (mapSettings?.autotile_sheet_url) urls.add(mapSettings.autotile_sheet_url);
     if (mapSettings?.dirt_sheet_url) urls.add(mapSettings.dirt_sheet_url);
+    if (mapSettings?.water_sheet_url) urls.add(mapSettings.water_sheet_url);
     if (mapSettings?.foam_sheet_url) urls.add(mapSettings.foam_sheet_url);
 
     visionGrid.forEach(cell => {
@@ -62,10 +63,9 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
 
   // Map translation
   // The target is the negative position to center the player
-  // Since we also offset the group by +width/2 and +height/2 in the transform,
-  // we just need the map to end up at the player's negative coordinate.
-  const mapLeftTarget = -(user?.world_x || 0) * tileSize;
-  const mapTopTarget = -(user?.world_y || 0) * tileSize;
+  // We offset by an additional half-tile to center on the TILE itself, not the top-left vertex.
+  const mapLeftTarget = -(user?.world_x || 0) * tileSize - (tileSize / 2);
+  const mapTopTarget = -(user?.world_y || 0) * tileSize - (tileSize / 2);
 
   const mapLeft = useSharedValue(mapLeftTarget);
   const mapTop = useSharedValue(mapTopTarget);
@@ -76,8 +76,8 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
   }, [mapLeftTarget, mapTopTarget]);
 
   const transform = useDerivedValue(() => [
-    { translateX: mapLeft.value + (width / 2) },
-    { translateY: mapTop.value + (height / 2) }
+    { translateX: Math.floor(mapLeft.value + (width / 2)) },
+    { translateY: Math.floor(mapTop.value + (height / 2)) }
   ]);
 
   // Extract layers and perform Y-sorting
@@ -91,9 +91,18 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
 
     visionGrid.forEach(cell => {
       cell.tiles?.forEach((t: any, index: number) => {
-        const enrichedTile = { ...t, absX: cell.x, absY: cell.y, index };
+          const enrichedTile = { ...t, absX: cell.x, absY: cell.y, index };
         const cleanUrl = t.imageUrl?.split('?')[0];
         const dictData = tileLibrary.get(cleanUrl);
+
+        // For smart tiles, map settings needs to provide 'isAutoTile', 'smartType', 'bitmask' properties
+        // Ensure these properties from the raw chunk are present on the tile object
+        enrichedTile.isAutoTile = t.isAutoTile ?? false;
+        enrichedTile.smartType = t.smartType || dictData?.type || 'grass';
+        enrichedTile.bitmask = t.bitmask || 0;
+        enrichedTile.foamBitmask = t.foamBitmask || 0;
+        enrichedTile.blockCol = t.blockCol ?? t.block_col ?? 0;
+        enrichedTile.blockRow = t.blockRow ?? t.block_row ?? 0;
 
         // Determine logical layer. Priority: Chunk Data -> Dictionary Data -> Default 0
         let tileLayer = (t.layer !== undefined && t.layer !== null) ? Number(t.layer) : Number(dictData?.layer);
@@ -145,7 +154,7 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
           {layerMinus1Tiles.map((tile) => (
             <SkiaTile
               key={`tile-${tile.absX}-${tile.absY}-${tile.index}-${tile.imageUrl?.split('?')[0]}-water`}
-              tile={tile} absPx={tile.absX * tileSize} absPy={tile.absY * tileSize}
+              tile={tile} absPx={Math.floor(tile.absX * tileSize)} absPy={Math.floor(tile.absY * tileSize)}
               tileSize={tileSize} images={images} mapSettings={mapSettings}
               animationFrame={animationFrame} foamOpacity={foamOpacity} isProp={false}
               dictionaryData={tileLibrary.get(tile.imageUrl?.split('?')[0])}
@@ -155,7 +164,7 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
           {layer0Tiles.map((tile) => (
             <SkiaTile
               key={`tile-${tile.absX}-${tile.absY}-${tile.index}-${tile.imageUrl?.split('?')[0]}-l0`}
-              tile={tile} absPx={tile.absX * tileSize} absPy={tile.absY * tileSize}
+              tile={tile} absPx={Math.floor(tile.absX * tileSize)} absPy={Math.floor(tile.absY * tileSize)}
               tileSize={tileSize} images={images} mapSettings={mapSettings}
               animationFrame={animationFrame} foamOpacity={foamOpacity} isProp={false}
               dictionaryData={tileLibrary.get(tile.imageUrl?.split('?')[0])}
@@ -164,7 +173,7 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
           {propsBelow.map((tile) => (
             <SkiaTile
               key={`tile-${tile.absX}-${tile.absY}-${tile.index}-${tile.imageUrl?.split('?')[0]}-prop-below`}
-              tile={tile} absPx={tile.absX * tileSize} absPy={tile.absY * tileSize}
+              tile={tile} absPx={Math.floor(tile.absX * tileSize)} absPy={Math.floor(tile.absY * tileSize)}
               tileSize={tileSize} images={images} mapSettings={mapSettings}
               animationFrame={animationFrame} foamOpacity={foamOpacity} isProp={true}
               dictionaryData={tileLibrary.get(tile.imageUrl?.split('?')[0])}
@@ -174,7 +183,7 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
       </Canvas>
 
               {/* REACT NATIVE LAYER: Player, Party, Nodes */}
-              <View style={{ position: 'absolute', zIndex: 5, width, height }} pointerEvents="box-none">
+              <View style={{ position: 'absolute', zIndex: 100, width, height }} pointerEvents="box-none">
                 {children}
               </View>
 
@@ -184,7 +193,7 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
                   {propsAbove.map((tile) => (
                     <SkiaTile
                       key={`tile-${tile.absX}-${tile.absY}-${tile.index}-${tile.imageUrl?.split('?')[0]}-prop-above`}
-                      tile={tile} absPx={tile.absX * tileSize} absPy={tile.absY * tileSize}
+                      tile={tile} absPx={Math.floor(tile.absX * tileSize)} absPy={Math.floor(tile.absY * tileSize)}
                       tileSize={tileSize} images={images} mapSettings={mapSettings}
                       animationFrame={animationFrame} foamOpacity={foamOpacity} isProp={true}
                       dictionaryData={tileLibrary.get(tile.imageUrl?.split('?')[0])}

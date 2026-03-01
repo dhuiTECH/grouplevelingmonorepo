@@ -612,8 +612,6 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
             }
 
             // Skin tinting logic - ONLY for hand_grip items to match the user's base body tint
-            const isHandGrip = getSlot(item) === 'hand_grip';
-            
             // Note: Hand grips ALWAYS use the active body's skin color, whether that body is a 
             // base_body or a unique avatar (which provides its own skin_tint_hex)
             const tintColor = isHandGrip ? activeSkinColor : null;

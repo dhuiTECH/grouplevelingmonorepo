@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
-import { Group, Image, rect, SkImage } from '@shopify/react-native-skia';
+import { Group, Image, rect, SkImage, Paint, FilterMode } from '@shopify/react-native-skia';
 import { SharedValue } from 'react-native-reanimated';
 import { SkiaSpritesheet } from './SkiaSpritesheet';
 import { CustomTileMetadata } from '../../contexts/TileContext';
+import { getPixiTextureCoords, getLiquidTextureCoords } from './mapUtils';
 
 interface SkiaTileProps {
   tile: any;
@@ -17,13 +18,6 @@ interface SkiaTileProps {
   dictionaryData?: CustomTileMetadata;
 }
 
-const DIRT_TILE_MAP: Record<number, {x: number, y: number}> = {
-  0:  { x: 6, y: 5 }, 8:  { x: 4, y: 5 }, 1:  { x: 5, y: 4 }, 2:  { x: 4, y: 1 },
-  4:  { x: 8, y: 4 }, 10: { x: 4, y: 3 }, 5:  { x: 6, y: 4 }, 9:  { x: 5, y: 5 },
-  3:  { x: 5, y: 2 }, 6:  { x: 8, y: 2 }, 12: { x: 8, y: 5 }, 11: { x: 5, y: 3 },
-  7:  { x: 6, y: 2 }, 14: { x: 8, y: 3 }, 13: { x: 6, y: 6 }, 15: { x: 6, y: 3 }
-};
-
 const SkiaTileInternal: React.FC<SkiaTileProps> = ({
   tile, absPx, absPy, tileSize, images, mapSettings, animationFrame, foamOpacity, isProp, dictionaryData
 }) => {
@@ -37,31 +31,38 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
   const offsetY = tile.offsetY || 0;
 
   const destRect = useMemo(() => rect(
-    absPx - (displayWidth - tileSize) / 2 + offsetX,
-    absPy - (displayHeight - tileSize) + offsetY,
-    displayWidth,
-    displayHeight
-  ), [absPx, absPy, displayWidth, displayHeight, offsetX, offsetY, tileSize]);
+    Math.floor(absPx - (displayWidth - tileSize) / 2 + offsetX),
+    Math.floor(absPy - (displayHeight - tileSize) + offsetY),
+    Math.round(displayWidth) + (isProp ? 0 : 1),
+    Math.round(displayHeight) + (isProp ? 0 : 1)
+  ), [absPx, absPy, displayWidth, displayHeight, offsetX, offsetY, tileSize, isProp]);
 
   // Handle Foam Layer (Now uses dictionary lookup for foam strip)
   let foamLayer = null;
   if (!isProp && tile.foamBitmask > 0 && mapSettings?.foam_sheet_url) {
     const foamImg = images.get(mapSettings.foam_sheet_url);
     if (foamImg) {
-      // Corrected Foam Logic matching MapCanvas.tsx
-      const col = (tile.foamBitmask || 0) % 4;
-      const row = Math.floor((tile.foamBitmask || 0) / 4);
-      
-      // Calculate source rect for the foam sprite
-      // Assumes 48x48 foam tiles in sheet
-      const foamSrcRect = rect(col * 48, row * 48, 48, 48);
+      // Use mapUtils mapping for foam strip
+      // Default to 0,0 since foam only has one row, and column doesn't matter for Pixi mapping
+      const coords = getPixiTextureCoords(tile.foamBitmask || 0, 0, 0)[0];
       
       // Foam is rendered at the base tile position (48x48), ignoring the prop size
-      const foamDestRect = rect(absPx, absPy, tileSize, tileSize);
+      // We apply 1px overlap to seaming
+      const foamDestRect = rect(absPx, absPy, tileSize + 1, tileSize + 1);
       
       foamLayer = (
-        <Group opacity={foamOpacity}>
-          <Image image={foamImg} src={foamSrcRect} rect={foamDestRect} />
+        <Group opacity={foamOpacity} clip={foamDestRect}>
+          <Paint antiAlias={false} />
+          <Image 
+            image={foamImg} 
+            sampling="nearest"
+            rect={{
+              x: absPx - coords.sourceX,
+              y: absPy - coords.sourceY,
+              width: foamImg.width(),
+              height: foamImg.height()
+            }}
+          />
         </Group>
       );
     }
@@ -69,34 +70,58 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
 
   // Handle Auto-Tile Layer (Layer 0 only)
   let baseLayer = null;
-  if (!isProp && tile.isAutoTile) {
+  
+  // NOTE: If tile.isAutoTile is true, we MUST use the sprite sheet logic.
+  // We allow this even for "props" (Layer > 0) because smart tiles can be placed on any layer.
+  if (tile.isAutoTile) {
     let activeUrl = mapSettings?.autotile_sheet_url;
     let smartType = tile.smartType || 'grass';
     
+    // Fallbacks to use the appropriate sprite sheet URL based on the tile type
     if (smartType === 'dirt' && mapSettings?.dirt_sheet_url) {
       activeUrl = mapSettings.dirt_sheet_url;
+    } else if (smartType === 'water' && mapSettings?.water_sheet_url) {
+      activeUrl = mapSettings.water_sheet_url;
     }
 
-    const img = images.get(activeUrl);
-    if (img) {
-      const baseDestRect = rect(absPx, absPy, tileSize, tileSize);
+    // DEBUG LOG TO SEE WHAT URL IS BEING USED
+    // console.log(`Tile ${tile.x},${tile.y} [${smartType}] activeUrl:`, activeUrl, 'isProp:', isProp, 'isAutoTile:', tile.isAutoTile);
 
-      if (smartType === 'grass') {
-        const variantSeed = Math.abs((tile.absX * 73856093) ^ (tile.absY * 19349663)) % 81;
-        const col = variantSeed % 9;
-        const row = Math.floor(variantSeed / 9);
-        const srcRect = rect(col * 48, row * 48, 48, 48);
-        baseLayer = <Image image={img} src={srcRect} rect={baseDestRect} />;
-      } else if (smartType === 'dirt') {
-        const mapping = DIRT_TILE_MAP[tile.bitmask || 0] || DIRT_TILE_MAP[0];
-        const srcRect = rect(mapping.x * 48, mapping.y * 48, 48, 48);
-        baseLayer = <Image image={img} src={srcRect} rect={baseDestRect} />;
-      } else {
-        const col = (tile.bitmask || 0) % 4;
-        const row = Math.floor((tile.bitmask || 0) / 4);
-        const srcRect = rect(col * 48, row * 48, 48, 48);
-        baseLayer = <Image image={img} src={srcRect} rect={baseDestRect} />;
-      }
+    // Try finding the preloaded image for this URL 
+    const img = activeUrl ? images.get(activeUrl.split('?')[0]) : null;
+    
+    // Even if it's on a higher layer, smart tiles typically use the base 48x48 grid
+    // We apply 1px overlap for seaming
+    let baseDestRect = rect(absPx, absPy, tileSize + 1, tileSize + 1);
+
+    if (img) {
+      // Re-calculate the bitmask for the mobile app using the shared function
+      const mask = tile.bitmask || 0;
+      const blockCol = tile.blockCol !== undefined ? tile.blockCol : (smartType === 'grass' ? 1 : 0);
+      const blockRow = tile.blockRow || 0;
+      
+      const coordsList = smartType === 'water'
+        ? getLiquidTextureCoords(mask, blockCol, blockRow)
+        : getPixiTextureCoords(mask, blockCol, blockRow);
+
+      const coords = coordsList[0];
+      
+      // Use clipping instead of src prop to ensure correct cropping of large sheets
+      baseLayer = (
+        <Group clip={baseDestRect}>
+          <Paint antiAlias={false} />
+          <Image 
+            image={img} 
+            sampling="nearest"
+            rect={{
+              x: absPx - coords.sourceX,
+              y: absPy - coords.sourceY,
+              width: img.width(),
+              height: img.height()
+            }}
+          />
+        </Group>
+      );
     }
     
     return (
@@ -107,7 +132,7 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
     );
   }
 
-  // Standard or Spritesheet Tile
+  // Standard or Spritesheet Tile (NOT Auto-Tiled)
   const cleanUrl = tile.imageUrl?.split('?')[0];
   const img = cleanUrl ? images.get(cleanUrl) : null;
   if (img) {
@@ -138,7 +163,8 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
       return (
         <Group origin={{ x: destRect.x + destRect.width / 2, y: destRect.y + destRect.height / 2 }} transform={tile.rotation ? [{ rotate: (tile.rotation * Math.PI) / 180 }] : []}>
           {foamLayer}
-          <Image image={img} rect={destRect} />
+          <Paint antiAlias={false} />
+          <Image image={img} rect={destRect} fit="fill" sampling="nearest" />
         </Group>
       );
     }
@@ -158,8 +184,24 @@ export const SkiaTile = React.memo(SkiaTileInternal, (prev, next) => {
   
   // CRITICAL: Don't compare the whole images Map reference.
   // Only re-render if the specific image this tile needs has changed/loaded.
-  const prevCleanUrl = prev.tile.imageUrl?.split('?')[0];
-  const nextCleanUrl = next.tile.imageUrl?.split('?')[0];
+  let prevCleanUrl = prev.tile.imageUrl?.split('?')[0];
+  let nextCleanUrl = next.tile.imageUrl?.split('?')[0];
+
+  // If it's a smart tile, we actually care about the sprite sheet url, not the fake icon url
+  if (prev.tile.isAutoTile) {
+    let smartType = prev.tile.smartType || 'grass';
+    if (smartType === 'dirt' && prev.mapSettings?.dirt_sheet_url) prevCleanUrl = prev.mapSettings.dirt_sheet_url.split('?')[0];
+    else if (smartType === 'water' && prev.mapSettings?.water_sheet_url) prevCleanUrl = prev.mapSettings.water_sheet_url.split('?')[0];
+    else prevCleanUrl = prev.mapSettings?.autotile_sheet_url?.split('?')[0];
+  }
+  
+  if (next.tile.isAutoTile) {
+    let smartType = next.tile.smartType || 'grass';
+    if (smartType === 'dirt' && next.mapSettings?.dirt_sheet_url) nextCleanUrl = next.mapSettings.dirt_sheet_url.split('?')[0];
+    else if (smartType === 'water' && next.mapSettings?.water_sheet_url) nextCleanUrl = next.mapSettings.water_sheet_url.split('?')[0];
+    else nextCleanUrl = next.mapSettings?.autotile_sheet_url?.split('?')[0];
+  }
+
   if (prevCleanUrl !== nextCleanUrl) return false;
   if (prev.images.get(prevCleanUrl || '') !== next.images.get(nextCleanUrl || '')) return false;
 
@@ -174,6 +216,8 @@ export const SkiaTile = React.memo(SkiaTileInternal, (prev, next) => {
   if (t1.bitmask !== t2.bitmask) return false;
   if (t1.foamBitmask !== t2.foamBitmask) return false;
   if (t1.smartType !== t2.smartType) return false;
+  if (t1.blockCol !== t2.blockCol) return false;
+  if (t1.blockRow !== t2.blockRow) return false;
   
   return true;
 });

@@ -2,8 +2,14 @@
  * Maps string paths from the Next.js Admin Panel / Supabase 
  * to local React Native require() statements.
  */
-export const mapNodeIcon = (iconUrl: string | null) => {
-  if (!iconUrl) return require('../../assets/exclamation.png');
+export const mapNodeIcon = (iconUrl: string | null, type?: string) => {
+  if (!iconUrl) {
+    if (type === 'spawn') return require('../../assets/world.png');
+    if (type === 'enemy') return require('../../assets/exclamation.png');
+    if (type === 'npc') return require('../../assets/NoobMan.png');
+    if (type === 'loot') return require('../../assets/icons/smallchest.png');
+    return require('../../assets/exclamation.png');
+  }
 
   // Handle common admin paths or direct filenames
   const path = iconUrl.toLowerCase();
@@ -39,6 +45,7 @@ export const mapNodeIcon = (iconUrl: string | null) => {
     return { uri: iconUrl };
   }
 
+  if (type === 'spawn') return require('../../assets/world.png');
   return require('../../assets/exclamation.png');
 };
 

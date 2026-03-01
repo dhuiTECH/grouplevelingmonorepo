@@ -176,6 +176,7 @@ export const WorldMapScreen = () => {
     move,
     refreshVision,
     visionGrid,
+    nodesInVision,
     fastTravel,
     bankSteps,
     autoTravelReport,
@@ -538,12 +539,12 @@ export const WorldMapScreen = () => {
             ]} 
             pointerEvents="box-none"
           >
-            {/* Map Group inside Native View to apply the same transform as Skia Canvas */}
+            {/* Map Group inside Native View to apply the same transform as Skia Canvas (Center on Tile) */}
             <View 
               style={{ 
                 transform: [
-                  { translateX: -(user?.world_x || 0) * TILE_SIZE }, 
-                  { translateY: -(user?.world_y || 0) * TILE_SIZE }
+                  { translateX: -(user?.world_x || 0) * TILE_SIZE - (TILE_SIZE / 2) }, 
+                  { translateY: -(user?.world_y || 0) * TILE_SIZE - (TILE_SIZE / 2) }
                 ] 
               }} 
               pointerEvents="box-none"
@@ -555,8 +556,8 @@ export const WorldMapScreen = () => {
                     styles.playerContainer, 
                     { 
                       position: 'absolute', 
-                      left: (user?.world_x || 0) * TILE_SIZE - (TILE_SIZE / 2),
-                      top: (user?.world_y || 0) * TILE_SIZE - (TILE_SIZE / 2),
+                      left: (user?.world_x || 0) * TILE_SIZE,
+                      top: (user?.world_y || 0) * TILE_SIZE,
                       width: TILE_SIZE, 
                       height: TILE_SIZE,
                       zIndex: 10000 
@@ -575,49 +576,41 @@ export const WorldMapScreen = () => {
               </View>
             )}
 
-            {visionGrid.map((tile) => {
-              // const isPlayer = tile.x === user?.world_x && tile.y === user?.world_y; // REMOVED
-              // If using absolute position, the group is centered, so the coordinates themselves just place them
-              // relative to 0,0 center.
-              const tileLeft = Math.round(tile.x * TILE_SIZE) - (TILE_SIZE / 2);
-              const tileTop = Math.round(tile.y * TILE_SIZE) - (TILE_SIZE / 2);
-
-              if (!tile.node) return null; // Only render Nodes here now
+            {nodesInVision.map((node) => {
+              const nodeLeft = Math.round(node.x * TILE_SIZE);
+              const nodeTop = Math.round(node.y * TILE_SIZE);
 
               return (
                 <MotiView 
-                  key={`obj-${tile.x},${tile.y}`}
+                  key={`node-${node.id}`}
                   style={[
                     styles.tile, 
                     { 
                       width: TILE_SIZE, 
                       height: TILE_SIZE, 
                       position: 'absolute',
-                      zIndex: (1000 - tile.y)
+                      zIndex: (1000 - Math.floor(node.y))
                     }
                   ]}
-                  animate={{ left: tileLeft, top: tileTop }}
+                  animate={{ left: nodeLeft, top: nodeTop }}
                   transition={{ type: 'timing', duration: 300 }}
                 >
-                  {/* Locations */}
-                  {tile.node && (
-                    <View style={styles.nodeContainer}>
-                      <Image 
-                        source={mapNodeIcon(tile.node.icon_url)} 
-                        style={styles.nodeIcon} 
-                        contentFit="contain"
-                      />
-                      <Text style={styles.nodeLabel}>{tile.node.name}</Text>
-                    </View>
-                  )}
+                  <View style={styles.nodeContainer}>
+                    <Image 
+                      source={mapNodeIcon(node.icon_url, node.type)} 
+                      style={styles.nodeIcon} 
+                      contentFit="contain"
+                    />
+                    <Text style={styles.nodeLabel}>{node.name}</Text>
+                  </View>
                 </MotiView>
               );
             })}
 
             {/* PARTY MEMBERS */}
             {user?.current_party_id && partyMembersOnline.size > 0 && Array.from(partyMembersOnline.values()).map((member) => {
-              const memberLeft = member.world_x * TILE_SIZE - (TILE_SIZE / 2);
-              const memberTop = member.world_y * TILE_SIZE - (TILE_SIZE / 2);
+              const memberLeft = member.world_x * TILE_SIZE;
+              const memberTop = member.world_y * TILE_SIZE;
               
               return (
                 <MotiView

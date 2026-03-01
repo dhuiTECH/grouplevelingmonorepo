@@ -17,6 +17,7 @@ export const useExploration = (
   const { user, setUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [visionGrid, setVisionGrid] = useState<any[]>([]); 
+  const [nodesInVision, setNodesInVision] = useState<any[]>([]);
   const [autoTravelReport, setAutoTravelReport] = useState<any | null>(null);
   const [checkpointAlert, setCheckpointAlert] = useState<any | null>(null);
 
@@ -54,7 +55,9 @@ export const useExploration = (
       }
     }
 
-    const missingChunks = neededChunks.filter(key => !chunkCache.current.has(key) && !inFlightChunks.current.has(key));
+    const missingChunks = neededChunks.filter(key => 
+      force || (!chunkCache.current.has(key) && !inFlightChunks.current.has(key))
+    );
 
     // 1. Fetch data if needed
     const promises: Promise<any>[] = [];
@@ -63,7 +66,7 @@ export const useExploration = (
     promises.push(supabase.from('player_discoveries').select('x, y').eq('user_id', user.id));
 
     // Only fetch nodes once or periodically (nodes are usually few)
-    if (nodesCache.current.length === 0) {
+    if (force || nodesCache.current.length === 0) {
       promises.push(supabase.from('world_map_nodes').select('*'));
     } else {
       promises.push(Promise.resolve({ data: nodesCache.current }));
@@ -98,8 +101,12 @@ export const useExploration = (
     }
 
     const unlocked = discoveriesRes.data;
-    if (nodesRes.data && nodesCache.current.length === 0) {
-      nodesCache.current = nodesRes.data;
+    if (nodesRes.data && (force || nodesCache.current.length === 0)) {
+      nodesCache.current = nodesRes.data.map((n: any) => ({
+        ...n,
+        x: Number(n.global_x ?? n.x ?? 0),
+        y: Number(n.global_y ?? n.y ?? 0)
+      }));
     }
     const nodes = nodesCache.current;
 
@@ -142,6 +149,13 @@ export const useExploration = (
     });
 
     const grid = [];
+    const visibleNodesList: any[] = [];
+
+    // Filter nodes that are within the vision range (expanded buffer)
+    const activeNodes = nodes?.filter(n => 
+      n.x >= minX - 2 && n.x <= maxX + 2 && 
+      n.y >= minY - 2 && n.y <= maxY + 2
+    ) || [];
 
     // Expanded Grid (e.g., 15x21) to cover 9:16 screen with buffer for large props
     for (let dy = 10; dy >= -10; dy--) {
@@ -152,19 +166,33 @@ export const useExploration = (
         
         const isUnlocked = unlockedSet.has(key) || (tx === 0 && ty === 0);
         const isCurrent = (dx === 0 && dy === 0);
-        const node = nodes?.find(n => n.x === tx && n.y === ty);
+        
+        // Only attach nodes that are EXACTLY on this integer cell for the legacy grid loop
+        // But for display, we'll use the separate visibleNodesList
+        const nodeAtSpot = activeNodes.find(n => n.x === tx && n.y === ty);
         const spotTiles = tileMap.get(key) || [];
 
         grid.push({ 
           x: tx, 
           y: ty, 
           isVisible: isCurrent || isUnlocked, 
-          node,
+          node: nodeAtSpot,
           tiles: spotTiles
         });
       }
     }
+
+    // Process visible nodes for independent rendering
+    activeNodes.forEach(n => {
+      const isUnlocked = unlockedSet.has(`${Math.floor(n.x)},${Math.floor(n.y)}`) || (n.x === 0 && n.y === 0);
+      visibleNodesList.push({
+        ...n,
+        isVisible: isUnlocked
+      });
+    });
+
     setVisionGrid(grid);
+    setNodesInVision(visibleNodesList);
   }, [user?.id]);
 
   // ⚡️ 2. AUTO-HUNT (The "Skip" Option)
@@ -239,33 +267,46 @@ export const useExploration = (
     if (dir.includes('W')) nx -= 1;
 
     // --- COLLISION DETECTION ---
-    // Check if the target tile (nx, ny) is walkable.
-    // Water is generally Layer -1. We can find if the cell exists in visionGrid.
+    // Check for edge-based or cell-based collision at target tile and the boundary
     const targetCell = visionGrid.find(cell => cell.x === nx && cell.y === ny);
+    
+    // Calculate the boundary position (edge) between current and target
+    const bx = (user.world_x + nx) / 2;
+    const by = (user.world_y + ny) / 2;
+
     if (targetCell) {
-      // Find the highest layer tile at this coordinate (excluding props that might just be visual)
-      // Actually, we want to know what the BASE ground tile is (Layer 0 or Layer -1)
+      // 1. Check for Cell-level collision (integer coordinate)
+      // Also check if ANY tile at this location is explicitly marked non-walkable
+      const hasCellBlock = targetCell.tiles?.some((t: any) => t.isWalkable === false);
+      
+      // 2. Check for Edge-level collision (half-integer coordinate)
+      // Edge collisions are stored as tiles in the chunk data at .5 coordinates
+      const edgeKey = `${bx},${by}`;
+      
+      // We need to find if there's any tile in the visionGrid at this half-grid position
+      // Note: visionGrid currently only contains integer cells. 
+      // We should check the tileMap instead, or better, search all tiles in visionGrid
+      const hasEdgeBlock = visionGrid.some(cell => 
+        cell.tiles?.some((t: any) => t.x === bx && t.y === by && t.isWalkable === false)
+      );
+
+      if (hasCellBlock || hasEdgeBlock) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setLoading(false);
+        return;
+      }
+
+      // Check ground/water layer
       const baseTiles = targetCell.tiles?.filter((t: any) => {
-        // Assume missing layer is 0
         const layer = t.layer !== undefined && t.layer !== null ? Number(t.layer) : 0;
         return layer <= 0;
       });
-      
       const groundTile = baseTiles?.sort((a: any, b: any) => (Number(b.layer) || 0) - (Number(a.layer) || 0))[0];
       
-      // If there is no ground tile, or the ground tile is water (Layer -1), block movement.
       if (!groundTile || (Number(groundTile.layer) < 0 || groundTile.type === 'water')) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        setLoading(false); // Make sure to reset loading!
+        setLoading(false);
         return; 
-      }
-      
-      // Also check if ANY tile at this location is explicitly marked non-walkable
-      const hasBlockingTile = targetCell.tiles?.some((t: any) => t.isWalkable === false);
-      if (hasBlockingTile) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        setLoading(false); // Make sure to reset loading!
-        return;
       }
     } else {
         // If the cell isn't loaded yet, don't let them walk there
@@ -345,5 +386,5 @@ export const useExploration = (
     } catch (e) { console.log(e); } finally { setLoading(false); }
   };
 
-  return { move, refreshVision, visionGrid, loading, fastTravel, bankSteps, autoTravelReport, setAutoTravelReport, checkpointAlert, setCheckpointAlert };
+  return { move, refreshVision, visionGrid, nodesInVision, loading, fastTravel, bankSteps, autoTravelReport, setAutoTravelReport, checkpointAlert, setCheckpointAlert };
 };
