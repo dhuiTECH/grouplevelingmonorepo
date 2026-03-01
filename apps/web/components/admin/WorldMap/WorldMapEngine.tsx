@@ -2386,3 +2386,5 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
     </div>
   );
 };
+
+export default WorldMapEngine;
