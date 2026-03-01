@@ -40,5 +40,13 @@ The workflow runs: `cd apps/web && node_modules/.bin/next dev -p 5000 -H 0.0.0.0
 - Native binding fix: `@tailwindcss/oxide-linux-x64-gnu` must be installed for Linux (Tailwind CSS v4 uses Rust native binding)
 - There's also a `package-lock.json` in `apps/web` alongside the root `pnpm-lock.yaml` - Next.js warns about this but it works fine
 
+## Mobile App Key Features (apps/mobile)
+- **World map**: `SkiaWorldMap` (Skia canvas) + `SkiaTile` + `SkiaSpritesheet` for smooth sprite-sheet animation
+- **Animation clock**: `useClock()` from React Native Skia (canvas-thread, no Reanimated drift)
+- **Frozen smart tiles**: `SkiaTile` renders `isAutoTile:false` tiles that have `smartType+bitmask` via the same sprite-sheet path as live auto-tiles
+- **Virtual joystick**: `VirtualJoystick.tsx` — 220px centered ring, PanResponder-driven, 8-direction angle snap (45° slices), inner walk zone (380ms/tile), outer sprint zone >65% magnitude (200ms/tile), knob snaps back on release, cyan→orange color transition at sprint threshold
+- **Directional edge collision**: `EDGE_BLOCK_LAYER=-3`, `edgeBlocks` bitmask (N=1,E=2,S=4,W=8), two-sided check in `useExploration.ts`
+- **Movement**: `useExploration.ts` → `move(dir)` — handles walkability, edge collision, Supabase sync
+
 ## Deployment
 Configured for autoscale deployment. Build: `cd apps/web && npm run build`. Run: `node_modules/.bin/next start -p 5000 -H 0.0.0.0`

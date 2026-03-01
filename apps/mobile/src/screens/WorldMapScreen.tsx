@@ -29,6 +29,7 @@ import { mapNodeIcon } from '@/utils/assetMapper';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, G, Rect, Line, Polygon, Text as SvgText } from 'react-native-svg';
 import { SkiaWorldMap } from '../components/world-map/SkiaWorldMap';
+import { VirtualJoystick } from '../components/world-map/VirtualJoystick';
 
 // --- SVGs ---
 const TargetCrosshairIcon = ({ color = '#ff4444', size = 28 }) => (
@@ -225,33 +226,14 @@ export const WorldMapScreen = () => {
     fetchShopItems();
   }, []);
 
-  // 4. MANUAL MOVE (D-Pad) with Hold Support
-  const movementTimer = useRef<any>(null);
+  // Joystick movement — the VirtualJoystick handles its own interval/sprint logic.
+  // We keep moveRef current so the joystick callback always sees the latest move function.
   const moveRef = useRef(move);
+  useEffect(() => { moveRef.current = move; }, [move]);
 
-  // Keep moveRef current so interval sees latest state/function
-  useEffect(() => {
-    moveRef.current = move;
-  }, [move]);
-
-  const startMoving = (dir: 'N' | 'S' | 'E' | 'W' | 'NE' | 'NW' | 'SE' | 'SW') => {
-    if (movementTimer.current) return; // Prevent multiple intervals
-
-    // Move immediately once
+  const handleJoystickMove = useCallback((dir: 'N' | 'S' | 'E' | 'W' | 'NE' | 'NW' | 'SE' | 'SW') => {
     moveRef.current(dir);
-
-    // Then continue moving every 350ms (slightly slower than animation)
-    movementTimer.current = setInterval(() => {
-      moveRef.current(dir);
-    }, 350);
-  };
-
-  const stopMoving = () => {
-    if (movementTimer.current) {
-      clearInterval(movementTimer.current);
-      movementTimer.current = null;
-    }
-  };
+  }, []);
 
   const loadData = async () => {
     setLoadingMap(true);
@@ -711,88 +693,9 @@ export const WorldMapScreen = () => {
           </TouchableOpacity>
         )}
 
-        {/* Invisible Touch Controls (Ghost Buttons) */}
-        <View style={styles.controlsLayer} pointerEvents="box-none">
-          {/* N */}
-          <TouchableOpacity
-            onPressIn={() => startMoving('N')}
-            onPressOut={stopMoving}
-            activeOpacity={0.5}
-            style={[styles.ctrlBtn, { top: '25%', alignSelf: 'center' }]}
-          >
-            <Ionicons name="chevron-up" size={40} color="#fff" />
-          </TouchableOpacity>
-
-          {/* S */}
-          <TouchableOpacity
-            onPressIn={() => startMoving('S')}
-            onPressOut={stopMoving}
-            activeOpacity={0.5}
-            style={[styles.ctrlBtn, { bottom: '25%', alignSelf: 'center' }]}
-          >
-            <Ionicons name="chevron-down" size={40} color="#fff" />
-          </TouchableOpacity>
-
-          {/* W */}
-          <TouchableOpacity
-            onPressIn={() => startMoving('W')}
-            onPressOut={stopMoving}
-            activeOpacity={0.5}
-            style={[styles.ctrlBtn, { left: '10%', top: '50%', marginTop: -20 }]}
-          >
-            <Ionicons name="chevron-back" size={40} color="#fff" />
-          </TouchableOpacity>
-
-          {/* E */}
-          <TouchableOpacity
-            onPressIn={() => startMoving('E')}
-            onPressOut={stopMoving}
-            activeOpacity={0.5}
-            style={[styles.ctrlBtn, { right: '10%', top: '50%', marginTop: -20 }]}
-          >
-            <Ionicons name="chevron-forward" size={40} color="#fff" />
-          </TouchableOpacity>
-
-          {/* DIAGONALS - Placed in corners */}
-          {/* NW */}
-          <TouchableOpacity
-            onPressIn={() => startMoving('NW')}
-            onPressOut={stopMoving}
-            activeOpacity={0.5}
-            style={[styles.ctrlBtn, { top: '30%', left: '15%' }]}
-          >
-            <Ionicons name="arrow-up" size={35} color="#fff" style={{ transform: [{ rotate: '-45deg' }] }} />
-          </TouchableOpacity>
-
-          {/* NE */}
-          <TouchableOpacity
-            onPressIn={() => startMoving('NE')}
-            onPressOut={stopMoving}
-            activeOpacity={0.5}
-            style={[styles.ctrlBtn, { top: '30%', right: '15%' }]}
-          >
-            <Ionicons name="arrow-up" size={35} color="#fff" style={{ transform: [{ rotate: '45deg' }] }} />
-          </TouchableOpacity>
-
-          {/* SW */}
-          <TouchableOpacity
-            onPressIn={() => startMoving('SW')}
-            onPressOut={stopMoving}
-            activeOpacity={0.5}
-            style={[styles.ctrlBtn, { bottom: '30%', left: '15%' }]}
-          >
-            <Ionicons name="arrow-up" size={35} color="#fff" style={{ transform: [{ rotate: '-135deg' }] }} />
-          </TouchableOpacity>
-
-          {/* SE */}
-          <TouchableOpacity
-            onPressIn={() => startMoving('SE')}
-            onPressOut={stopMoving}
-            activeOpacity={0.5}
-            style={[styles.ctrlBtn, { bottom: '30%', right: '15%' }]}
-          >
-            <Ionicons name="arrow-up" size={35} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
-          </TouchableOpacity>
+        {/* Virtual Joystick — centered on player avatar */}
+        <View style={styles.joystickLayer} pointerEvents="box-none">
+          <VirtualJoystick onMove={handleJoystickMove} />
         </View>
 
         {/* --- MODALS --- */}
@@ -1080,8 +983,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
-  controlsLayer: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 30 },
-  ctrlBtn: { position: 'absolute', padding: 20, textShadowColor: '#000', textShadowRadius: 5 },
+  joystickLayer: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 30 },
 
   // MODALS
   modalOverlay: { 
