@@ -532,6 +532,7 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
       <Application 
         width={width || 800} height={height || 600} backgroundColor={0x000000} backgroundAlpha={0}      
         antialias={false} resolution={window.devicePixelRatio || 1} autoDensity={true}
+        roundPixels={true}
       >
         <PixiScene
           transformRef={transformRef}

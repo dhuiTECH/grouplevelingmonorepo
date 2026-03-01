@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect } from 'react';
 import { Dimensions, View, StyleSheet } from 'react-native';
-import { Canvas, Group } from '@shopify/react-native-skia';
+import { Canvas, Group, Fill } from '@shopify/react-native-skia';
 import { useSharedValue, useDerivedValue, withTiming, withRepeat, Easing } from 'react-native-reanimated';
 import { useSkiaAssets } from './useSkiaAssets';
 import { SkiaTile } from './SkiaTile';
@@ -149,6 +149,8 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
     <View style={StyleSheet.absoluteFill}>
       {/* BACKGROUND CANVAS: Ground & Props Behind Player */}
       <Canvas style={{ position: 'absolute', width, height, zIndex: 1 }} pointerEvents="none">
+        {/* Background fill prevents black flash when tiles are loading or at canvas edges */}
+        <Fill color="#1a1c0e" />
         <Group transform={transform}>
           {/* Layer -1: Water (Always at the very bottom) */}
           {layerMinus1Tiles.map((tile) => (
@@ -189,6 +191,8 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
 
               {/* FOREGROUND CANVAS: Props In Front of Player */}
               <Canvas style={{ position: 'absolute', width, height, zIndex: 10 }} pointerEvents="none">
+                {/* Transparent fill so this canvas doesn't occlude the background canvas */}
+                <Fill color="transparent" />
                 <Group transform={transform}>
                   {propsAbove.map((tile) => (
                     <SkiaTile
