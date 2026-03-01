@@ -2081,7 +2081,7 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
               }
             }}
             limitToBounds={false} 
-            wheel={{ step: 0.2 }} 
+            wheel={{ step: 0.08 }} 
             doubleClick={{ disabled: true }}
             panning={{ 
               disabled: !isSpacePressed && (selectedTool !== 'select' || isDraggingTile),
