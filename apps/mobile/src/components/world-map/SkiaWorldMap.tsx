@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect } from 'react';
 import { Dimensions, View, StyleSheet } from 'react-native';
-import { Canvas, Group, Fill, Rect as SkiaRect } from '@shopify/react-native-skia';
+import { Canvas, Group, Fill, Rect as SkiaRect, useClock } from '@shopify/react-native-skia';
 import Reanimated, { useSharedValue, useDerivedValue, withTiming, withRepeat, Easing, useAnimatedStyle } from 'react-native-reanimated';
 import { useSkiaAssets } from './useSkiaAssets';
 import { SkiaTile } from './SkiaTile';
@@ -41,19 +41,14 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
   const images = useSkiaAssets(urlsToLoad);
 
   // Animation values
-  const animationFrame = useSharedValue(0);
+  // useClock() from Skia is tied directly to the canvas render thread — smoother than
+  // Reanimated's withRepeat/withTiming which runs on the JS/UI thread with timer drift.
+  const clockMs = useClock();
+  // Convert ms → seconds so SkiaSpritesheet receives the same unit as before
+  const animationFrame = useDerivedValue(() => clockMs.value / 1000);
+
   const foamOpacity = useSharedValue(0.6);
-
   useEffect(() => {
-    // A linear ticker for spritesheets (0 to 10,000)
-    // We treat the value as elapsed time in seconds.
-    // Loop every ~2.7 hours (10,000 seconds) to prevent Reanimated precision issues with massive numbers.
-    animationFrame.value = withRepeat(
-      withTiming(10000, { duration: 10000 * 1000, easing: Easing.linear }), 
-      -1, 
-      false
-    );
-
     // Foam breathing animation (0.6 to 0.9)
     foamOpacity.value = withRepeat(
       withTiming(0.9, { duration: 1000, easing: Easing.inOut(Easing.sin) }),

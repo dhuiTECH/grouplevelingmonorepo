@@ -71,9 +71,11 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
   // Handle Auto-Tile Layer (Layer 0 only)
   let baseLayer = null;
   
-  // NOTE: If tile.isAutoTile is true, we MUST use the sprite sheet logic.
-  // We allow this even for "props" (Layer > 0) because smart tiles can be placed on any layer.
-  if (tile.isAutoTile) {
+  // NOTE: Render sprite-sheet tiles when:
+  //   • tile.isAutoTile === true  → live auto-tile (bitmask recalculated by neighbours)
+  //   • tile.smartType set + tile.bitmask defined → frozen/pasted copy (isAutoTile: false, fixed bitmask)
+  const isFrozenSmart = !tile.isAutoTile && !!tile.smartType && tile.bitmask !== undefined;
+  if (tile.isAutoTile || isFrozenSmart) {
     let activeUrl = mapSettings?.autotile_sheet_url;
     let smartType = tile.smartType || 'grass';
     
@@ -191,15 +193,18 @@ export const SkiaTile = React.memo(SkiaTileInternal, (prev, next) => {
   let prevCleanUrl = prev.tile.cleanUrl || prev.tile.imageUrl?.split('?')[0];
   let nextCleanUrl = next.tile.cleanUrl || next.tile.imageUrl?.split('?')[0];
 
-  // If it's a smart tile, we actually care about the sprite sheet url, not the fake icon url
-  if (prev.tile.isAutoTile) {
+  // For smart tiles (live or frozen), care about the sprite sheet url, not the icon url
+  const prevIsSmart = prev.tile.isAutoTile || (!prev.tile.isAutoTile && !!prev.tile.smartType && prev.tile.bitmask !== undefined);
+  const nextIsSmart = next.tile.isAutoTile || (!next.tile.isAutoTile && !!next.tile.smartType && next.tile.bitmask !== undefined);
+
+  if (prevIsSmart) {
     let smartType = prev.tile.smartType || 'grass';
     if (smartType === 'dirt' && prev.mapSettings?.dirt_sheet_url) prevCleanUrl = prev.mapSettings.dirt_sheet_url.split('?')[0];
     else if (smartType === 'water' && prev.mapSettings?.water_sheet_url) prevCleanUrl = prev.mapSettings.water_sheet_url.split('?')[0];
     else prevCleanUrl = prev.mapSettings?.autotile_sheet_url?.split('?')[0];
   }
   
-  if (next.tile.isAutoTile) {
+  if (nextIsSmart) {
     let smartType = next.tile.smartType || 'grass';
     if (smartType === 'dirt' && next.mapSettings?.dirt_sheet_url) nextCleanUrl = next.mapSettings.dirt_sheet_url.split('?')[0];
     else if (smartType === 'water' && next.mapSettings?.water_sheet_url) nextCleanUrl = next.mapSettings.water_sheet_url.split('?')[0];
