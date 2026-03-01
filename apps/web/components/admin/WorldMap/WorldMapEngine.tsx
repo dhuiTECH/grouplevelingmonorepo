@@ -1091,6 +1091,11 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
           tasks.push((async () => {
             const prevTile = useMapStore.getState().tiles.find(t => t.x === tx && t.y === ty && (t.layer || 0) === (activeTileLayer || 0));
 
+            // Smart brush lock: protect existing smart tiles on the same layer from being overwritten
+            if (state.smartBrushLock && prevTile?.isAutoTile) {
+              return;
+            }
+
             // Only add to undo if it's the center tile or we are not moving (single click)
             if (!isMove || (dx === 0 && dy === 0)) {
               setUndoStack(prev => [...prev, {
@@ -1110,7 +1115,8 @@ export const WorldMapEngine: React.FC<WorldMapEngineProps> = ({ shopItems = [] }
               state.selectedBlockCol, state.selectedBlockRow
             );
 
-            if (isAutoTile) {
+            // Smart brush lock: skip neighbor bitmask recalculation to preserve surrounding terrain
+            if (isAutoTile && !state.smartBrushLock) {
                await updateTileAndNeighbors(tx, ty, activeTileLayer || 0, false, smartType, state.selectedBlockCol, state.selectedBlockRow);
             }
           })());
