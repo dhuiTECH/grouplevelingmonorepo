@@ -76,8 +76,8 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
   }, [mapLeftTarget, mapTopTarget]);
 
   const transform = useDerivedValue(() => [
-    { translateX: Math.floor(mapLeft.value + (width / 2)) },
-    { translateY: Math.floor(mapTop.value + (height / 2)) }
+    { translateX: Math.round(mapLeft.value + (width / 2)) },
+    { translateY: Math.round(mapTop.value + (height / 2)) }
   ]);
 
   // Extract layers and perform Y-sorting

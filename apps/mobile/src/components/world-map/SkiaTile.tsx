@@ -25,16 +25,16 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
   const frameWidth = dictionaryData?.frame_width ?? tile.frameWidth ?? tile.frame_width ?? 48;
   const frameHeight = dictionaryData?.frame_height ?? tile.frameHeight ?? tile.frame_height ?? 48;
 
-  const displayWidth = frameWidth * (tileSize / 48);
-  const displayHeight = frameHeight * (tileSize / 48);
-  const offsetX = tile.offsetX || 0;
-  const offsetY = tile.offsetY || 0;
+  const displayWidth = Math.round(frameWidth * (tileSize / 48));
+  const displayHeight = Math.round(frameHeight * (tileSize / 48));
+  const offsetX = Math.round(tile.offsetX || 0);
+  const offsetY = Math.round(tile.offsetY || 0);
 
   const destRect = useMemo(() => rect(
-    Math.floor(absPx - (displayWidth - tileSize) / 2 + offsetX),
-    Math.floor(absPy - (displayHeight - tileSize) + offsetY),
-    Math.round(displayWidth) + (isProp ? 0 : 1),
-    Math.round(displayHeight) + (isProp ? 0 : 1)
+    Math.round(absPx - (displayWidth - tileSize) / 2 + offsetX),
+    Math.round(absPy - (displayHeight - tileSize) + offsetY),
+    displayWidth + (isProp ? 0 : 1),
+    displayHeight + (isProp ? 0 : 1)
   ), [absPx, absPy, displayWidth, displayHeight, offsetX, offsetY, tileSize, isProp]);
 
   // Handle Foam Layer (Now uses dictionary lookup for foam strip)
