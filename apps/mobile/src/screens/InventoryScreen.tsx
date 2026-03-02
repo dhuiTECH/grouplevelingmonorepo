@@ -693,7 +693,7 @@ export const InventoryScreen: React.FC = () => {
                     petDetails={activePet.pet_details}
                     size={width < 640 ? width * 0.7 : 224}
                     square
-                    hideBackground={false} 
+                    hideBackground={false}
                     background={activePet.metadata?.equipped_background}
                   />
                 ) : (

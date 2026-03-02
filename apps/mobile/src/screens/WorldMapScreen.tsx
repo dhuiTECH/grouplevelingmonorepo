@@ -17,7 +17,7 @@ import { useExploration } from '@/hooks/useExploration';
 import { useStepTracker } from '@/hooks/useStepTracker';
 import { useTutorial } from '@/context/TutorialContext';
 import LayeredAvatar from '@/components/LayeredAvatar';
-import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
+import { WorldMapPetAvatar } from '@/components/world-map/WorldMapPetAvatar';
 import { TravelMenu } from '@/components/modals/TravelMenu';
 import { useNavigation } from '@react-navigation/native';
 import { usePets } from '@/hooks/usePets';
@@ -194,15 +194,15 @@ export const WorldMapScreen = () => {
   const isSprinting = useSharedValue(false);
 
   // --- AVATAR FACING DIRECTION (flip based on horizontal movement) ---
-  const lastFacingDirection = useSharedValue(1); // 1 = right, -1 = left
+  const lastFacingDirection = useSharedValue(1); // Default scale
   const facingScaleX = useDerivedValue(() => {
     if (velocityX.value > 0) {
-      lastFacingDirection.value = 1;
-      return 1;
-    }
-    if (velocityX.value < 0) {
       lastFacingDirection.value = -1;
       return -1;
+    }
+    if (velocityX.value < 0) {
+      lastFacingDirection.value = 1;
+      return 1;
     }
     return lastFacingDirection.value;
   });
@@ -576,7 +576,7 @@ export const WorldMapScreen = () => {
                 {activePet?.pet_details && (
                   <View style={styles.petAvatarOnMap} pointerEvents="none">
                     <Reanimated.View style={avatarFlipStyle}>
-                      <PetLayeredAvatar 
+                      <WorldMapPetAvatar 
                         petDetails={activePet.pet_details} 
                         size={34} 
                         square 
@@ -867,8 +867,8 @@ const styles = StyleSheet.create({
 
   petAvatarOnMap: {
     position: 'absolute',
-    right: -20, // Moved slightly further right to avoid getting cut off by the circle
-    bottom: -15, // Moved slightly further down
+    right: -25, // Moved further right to completely clear the player circle
+    bottom: -20, // Moved further down
     zIndex: 12,
   },
 
