@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from 'react';
-import { Loader2, Pencil, Plus, Trash2, PawPrint, Zap, ArrowUpCircle, Search, X } from 'lucide-react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { Loader2, Pencil, Plus, Trash2, PawPrint, Zap, ArrowUpCircle, Search, X, Upload, Play, Pause, Film, Footprints } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { motion } from 'framer-motion';
 
@@ -19,13 +19,159 @@ interface PetSpecies {
   metadata: any;
 }
 
+interface AnimConfig {
+  idleUrl: string;
+  idleFrameCount: number;
+  idleFrameWidth: number;
+  idleFrameHeight: number;
+  idleAnimSpeed: number;
+  idleFrame: number;
+  walkingUrl: string;
+  walkingFrameCount: number;
+  walkingFrameWidth: number;
+  walkingFrameHeight: number;
+  walkingAnimSpeed: number;
+}
+
+const defaultAnimConfig = (): AnimConfig => ({
+  idleUrl: '',
+  idleFrameCount: 4,
+  idleFrameWidth: 64,
+  idleFrameHeight: 64,
+  idleAnimSpeed: 800,
+  idleFrame: 0,
+  walkingUrl: '',
+  walkingFrameCount: 4,
+  walkingFrameWidth: 64,
+  walkingFrameHeight: 64,
+  walkingAnimSpeed: 800,
+});
+
+function PetAnimPreview({ cfg }: { cfg: AnimConfig }) {
+  const [walkFrame, setWalkFrame] = useState(0);
+  const [previewMode, setPreviewMode] = useState<'idle' | 'walk'>('idle');
+
+  useEffect(() => {
+    if (previewMode !== 'walk' || !cfg.walkingUrl || cfg.walkingFrameCount <= 1) {
+      setWalkFrame(0);
+      return;
+    }
+    const fps = cfg.walkingAnimSpeed > 0 ? (cfg.walkingFrameCount * 1000) / cfg.walkingAnimSpeed : 10;
+    const interval = setInterval(() => {
+      setWalkFrame((p) => (p + 1) % cfg.walkingFrameCount);
+    }, 1000 / Math.min(30, Math.max(1, fps)));
+    return () => clearInterval(interval);
+  }, [previewMode, cfg.walkingUrl, cfg.walkingFrameCount, cfg.walkingAnimSpeed]);
+
+  const hasIdle = !!cfg.idleUrl;
+  const hasWalk = !!cfg.walkingUrl;
+  const idleScale = hasIdle ? Math.min(2, 96 / Math.max(cfg.idleFrameWidth, cfg.idleFrameHeight)) : 2;
+  const walkScale = hasWalk ? Math.min(2, 96 / Math.max(cfg.walkingFrameWidth, cfg.walkingFrameHeight)) : 2;
+
+  return (
+    <div className="mt-4 p-4 rounded-xl border border-gray-800 bg-black/30 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest flex items-center gap-2">
+          <Film size={12} /> Animation Preview
+        </span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setPreviewMode('idle')}
+            className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors ${previewMode === 'idle' ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+          >
+            Idle
+          </button>
+          <button
+            type="button"
+            onClick={() => setPreviewMode('walk')}
+            className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors ${previewMode === 'walk' ? 'bg-cyan-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+          >
+            Walking
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-6 items-end">
+        {/* Idle Preview */}
+        <div className="flex flex-col items-center gap-2">
+          <span className="text-[9px] font-black uppercase text-purple-400 tracking-widest">Idle Frame {cfg.idleFrame}</span>
+          <div
+            className={`relative rounded-xl border-2 transition-colors overflow-hidden flex items-center justify-center bg-gray-900/60 ${previewMode === 'idle' ? 'border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.4)]' : 'border-gray-800'}`}
+            style={{ width: 100, height: 100 }}
+          >
+            {hasIdle ? (
+              <div
+                style={{
+                  width: `${cfg.idleFrameWidth}px`,
+                  height: `${cfg.idleFrameHeight}px`,
+                  backgroundImage: `url(${cfg.idleUrl})`,
+                  backgroundSize: `${cfg.idleFrameCount * 100}% 100%`,
+                  backgroundPosition: `${cfg.idleFrameCount > 1 ? (cfg.idleFrame / (cfg.idleFrameCount - 1)) * 100 : 0}% 0px`,
+                  backgroundRepeat: 'no-repeat',
+                  imageRendering: 'pixelated',
+                  transform: `scale(${idleScale})`,
+                  transformOrigin: 'center center',
+                }}
+              />
+            ) : (
+              <div className="text-gray-600 text-[9px] text-center uppercase font-bold px-2">No idle<br/>spritesheet</div>
+            )}
+          </div>
+          <span className="text-[9px] text-gray-500 italic">Static frame</span>
+        </div>
+
+        {/* Walking Preview */}
+        <div className="flex flex-col items-center gap-2">
+          <span className="text-[9px] font-black uppercase text-cyan-400 tracking-widest">Walking</span>
+          <div
+            className={`relative rounded-xl border-2 transition-colors overflow-hidden flex items-center justify-center bg-gray-900/60 ${previewMode === 'walk' ? 'border-cyan-500 shadow-[0_0_12px_rgba(6,182,212,0.4)]' : 'border-gray-800'}`}
+            style={{ width: 100, height: 100 }}
+          >
+            {hasWalk ? (
+              <div
+                style={{
+                  width: `${cfg.walkingFrameWidth}px`,
+                  height: `${cfg.walkingFrameHeight}px`,
+                  backgroundImage: `url(${cfg.walkingUrl})`,
+                  backgroundSize: `${cfg.walkingFrameCount * 100}% 100%`,
+                  backgroundPosition: `${cfg.walkingFrameCount > 1 ? (walkFrame / (cfg.walkingFrameCount - 1)) * 100 : 0}% 0px`,
+                  backgroundRepeat: 'no-repeat',
+                  imageRendering: 'pixelated',
+                  transform: `scale(${walkScale})`,
+                  transformOrigin: 'center center',
+                }}
+              />
+            ) : (
+              <div className="text-gray-600 text-[9px] text-center uppercase font-bold px-2">No walk<br/>spritesheet</div>
+            )}
+          </div>
+          <span className="text-[9px] text-gray-500 italic">Animated</span>
+        </div>
+
+        <div className="flex-1 text-[9px] text-gray-500 italic leading-relaxed">
+          <p className="mb-1"><span className="text-purple-400 font-bold">Idle Frame:</span> shown when pet stands still on the world map.</p>
+          <p><span className="text-cyan-400 font-bold">Walking:</span> plays when joystick is active.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PetsTab() {
+  const idleInputRef = useRef<HTMLInputElement>(null);
+  const walkingInputRef = useRef<HTMLInputElement>(null);
+
   const [pets, setPets] = useState<PetSpecies[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingPet, setEditingPet] = useState<PetSpecies | null>(null);
   const [saving, setSaving] = useState(false);
   const [skillSearchTerm, setSkillSearchTerm] = useState('');
+  const [uploadingIdle, setUploadingIdle] = useState(false);
+  const [uploadingWalking, setUploadingWalking] = useState(false);
+  const [animConfig, setAnimConfig] = useState<AnimConfig>(defaultAnimConfig());
+  const [activeSection, setActiveSection] = useState<'config' | 'animation'>('config');
 
   const filteredSkills = useMemo(() => {
     const lowerSearch = skillSearchTerm.toLowerCase();
@@ -58,14 +204,95 @@ export default function PetsTab() {
     setLoading(false);
   };
 
+  const openEdit = (pet: PetSpecies) => {
+    setEditingPet(pet);
+    setActiveSection('config');
+
+    const visuals = pet.metadata?.visuals || {};
+    const sheet = visuals.spritesheet || {};
+    const walkSheet = visuals.walking_spritesheet || {};
+
+    setAnimConfig({
+      idleUrl: sheet.url || visuals.monster_url || pet.icon_url || '',
+      idleFrameCount: sheet.frame_count ?? 4,
+      idleFrameWidth: sheet.frame_width ?? 64,
+      idleFrameHeight: sheet.frame_height ?? 64,
+      idleAnimSpeed: sheet.duration_ms ?? 800,
+      idleFrame: sheet.idle_frame ?? 0,
+      walkingUrl: walkSheet.url || '',
+      walkingFrameCount: walkSheet.frame_count ?? 4,
+      walkingFrameWidth: walkSheet.frame_width ?? 64,
+      walkingFrameHeight: walkSheet.frame_height ?? 64,
+      walkingAnimSpeed: walkSheet.duration_ms ?? 800,
+    });
+  };
+
+  const handleUploadIdle = async (file: File) => {
+    if (!file) return;
+    setUploadingIdle(true);
+    try {
+      const filePath = `encounters/pets/${Date.now()}_idle_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true });
+      if (error) throw error;
+      const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
+      setAnimConfig(prev => ({ ...prev, idleUrl: `${data.publicUrl}?t=${Date.now()}` }));
+      if (idleInputRef.current) idleInputRef.current.value = '';
+    } catch (e: any) {
+      alert('Upload failed: ' + (e?.message || e));
+    } finally {
+      setUploadingIdle(false);
+    }
+  };
+
+  const handleUploadWalking = async (file: File) => {
+    if (!file) return;
+    setUploadingWalking(true);
+    try {
+      const filePath = `encounters/pets/${Date.now()}_walking_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true });
+      if (error) throw error;
+      const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
+      setAnimConfig(prev => ({ ...prev, walkingUrl: `${data.publicUrl}?t=${Date.now()}` }));
+      if (walkingInputRef.current) walkingInputRef.current.value = '';
+    } catch (e: any) {
+      alert('Upload failed: ' + (e?.message || e));
+    } finally {
+      setUploadingWalking(false);
+    }
+  };
+
   const handleUpdatePet = async () => {
     if (!editingPet) return;
     setSaving(true);
+
+    const updatedVisuals = {
+      ...(editingPet.metadata?.visuals || {}),
+      monster_url: animConfig.idleUrl || editingPet.icon_url || '',
+      spritesheet: animConfig.idleUrl ? {
+        url: animConfig.idleUrl,
+        frame_count: animConfig.idleFrameCount,
+        frame_width: animConfig.idleFrameWidth,
+        frame_height: animConfig.idleFrameHeight,
+        duration_ms: animConfig.idleAnimSpeed,
+        idle_frame: animConfig.idleFrame,
+      } : (editingPet.metadata?.visuals?.spritesheet || null),
+      walking_spritesheet: animConfig.walkingUrl ? {
+        url: animConfig.walkingUrl,
+        frame_count: animConfig.walkingFrameCount,
+        frame_width: animConfig.walkingFrameWidth,
+        frame_height: animConfig.walkingFrameHeight,
+        duration_ms: animConfig.walkingAnimSpeed,
+      } : (editingPet.metadata?.visuals?.walking_spritesheet || null),
+    };
+
+    const updatedMetadata = {
+      ...editingPet.metadata,
+      visuals: updatedVisuals,
+    };
+
     const { error } = await supabase
       .from('encounter_pool')
-      .update({
-        metadata: editingPet.metadata
-      })
+      .update({ metadata: updatedMetadata })
       .eq('id', editingPet.id);
 
     if (error) {
@@ -94,22 +321,39 @@ export default function PetsTab() {
       </div>
 
       {editingPet && (
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           className="bg-gray-900/40 p-6 rounded-2xl border border-purple-900/50 mb-6"
         >
+          {/* Header */}
           <div className="flex justify-between items-start mb-6 border-b border-gray-800 pb-4">
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-black/50 rounded-xl border border-purple-500/30 flex items-center justify-center">
-                <img src={editingPet.icon_url} className="w-12 h-12 object-contain" />
+              <div className="w-16 h-16 bg-black/50 rounded-xl border border-purple-500/30 flex items-center justify-center overflow-hidden">
+                {animConfig.idleUrl ? (
+                  <div
+                    style={{
+                      width: `${animConfig.idleFrameWidth}px`,
+                      height: `${animConfig.idleFrameHeight}px`,
+                      backgroundImage: `url(${animConfig.idleUrl})`,
+                      backgroundSize: `${animConfig.idleFrameCount * 100}% 100%`,
+                      backgroundPosition: `${animConfig.idleFrameCount > 1 ? (animConfig.idleFrame / (animConfig.idleFrameCount - 1)) * 100 : 0}% 0px`,
+                      backgroundRepeat: 'no-repeat',
+                      imageRendering: 'pixelated',
+                      transform: `scale(${Math.min(3, 48 / Math.max(animConfig.idleFrameWidth, animConfig.idleFrameHeight))})`,
+                      transformOrigin: 'center center',
+                    }}
+                  />
+                ) : (
+                  <img src={editingPet.icon_url} className="w-12 h-12 object-contain" />
+                )}
               </div>
               <div>
                 <h3 className="text-xl font-black text-white uppercase italic">{editingPet.name}</h3>
                 <p className="text-[10px] text-purple-400 font-bold uppercase tracking-wider">Species Configuration</p>
               </div>
             </div>
-            <button 
+            <button
               onClick={() => setEditingPet(null)}
               className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors"
             >
@@ -117,198 +361,432 @@ export default function PetsTab() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Catching Protocols */}
-            <div className="space-y-3">
-              <h4 className="text-[10px] font-black uppercase text-gray-500 tracking-widest flex items-center gap-2">
-                <PawPrint size={12} /> Catching Protocols
-              </h4>
-              <div className="grid grid-cols-2 gap-4 bg-black/20 p-4 rounded-xl border border-gray-800">
-                <div>
-                  <label className="block text-[9px] font-bold text-gray-600 uppercase mb-1">Base Catch Rate</label>
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0"
-                    max="1"
-                    value={editingPet.metadata?.base_catch_rate ?? 0.3}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setEditingPet({
-                        ...editingPet,
-                        metadata: { ...editingPet.metadata, base_catch_rate: val }
-                      });
-                    }}
-                    className="w-full bg-black border border-gray-800 rounded-lg p-2 text-sm text-white focus:border-purple-500 outline-none"
-                  />
-                  <p className="text-[9px] text-gray-500 mt-1 italic">0.3 = 30% chance</p>
-                </div>
-                <div>
-                  <label className="block text-[9px] font-bold text-gray-600 uppercase mb-1">Flee Rate</label>
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0"
-                    max="1"
-                    value={editingPet.metadata?.flee_rate ?? 0.1}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setEditingPet({
-                        ...editingPet,
-                        metadata: { ...editingPet.metadata, flee_rate: val }
-                      });
-                    }}
-                    className="w-full bg-black border border-gray-800 rounded-lg p-2 text-sm text-white focus:border-purple-500 outline-none"
-                  />
-                  <p className="text-[9px] text-gray-500 mt-1 italic">0.1 = 10% chance</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Evolution Logic */}
-            <div className="space-y-3">
-              <h4 className="text-[10px] font-black uppercase text-gray-500 tracking-widest flex items-center gap-2">
-                <ArrowUpCircle size={12} /> Evolution Chain
-              </h4>
-              <div className="grid grid-cols-2 gap-4 bg-purple-900/10 p-4 rounded-xl border border-purple-500/20">
-                <div>
-                  <label className="block text-[9px] font-bold text-gray-600 uppercase mb-1">Evolves To</label>
-                  <select
-                    value={editingPet.metadata?.pet_config?.evolution?.next_form_id || ''}
-                    onChange={(e) => {
-                      const val = e.target.value || null;
-                      setEditingPet({
-                        ...editingPet,
-                        metadata: {
-                          ...editingPet.metadata,
-                          pet_config: {
-                            ...(editingPet.metadata?.pet_config || {}),
-                            evolution: {
-                              ...(editingPet.metadata?.pet_config?.evolution || {}),
-                              next_form_id: val
-                            }
-                          }
-                        }
-                      });
-                    }}
-                    className="w-full bg-black border border-gray-800 rounded-lg p-2 text-xs text-white focus:border-purple-500 outline-none"
-                  >
-                    <option value="">No further evolution</option>
-                    {pets.filter(p => p.id !== editingPet.id).map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[9px] font-bold text-gray-600 uppercase mb-1">Level Required</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={editingPet.metadata?.pet_config?.evolution?.level || 20}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      setEditingPet({
-                        ...editingPet,
-                        metadata: {
-                          ...editingPet.metadata,
-                          pet_config: {
-                            ...(editingPet.metadata?.pet_config || {}),
-                            evolution: {
-                              ...(editingPet.metadata?.pet_config?.evolution || {}),
-                              level: val
-                            }
-                          }
-                        }
-                      });
-                    }}
-                    className="w-full bg-black border border-gray-800 rounded-lg p-2 text-xs text-white focus:border-purple-500 outline-none"
-                  />
-                </div>
-              </div>
-            </div>
+          {/* Section Tabs */}
+          <div className="flex gap-2 mb-6">
+            <button
+              type="button"
+              onClick={() => setActiveSection('config')}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${activeSection === 'config' ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+            >
+              <PawPrint size={10} className="inline mr-1" /> Species Config
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSection('animation')}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${activeSection === 'animation' ? 'bg-cyan-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+            >
+              <Footprints size={10} className="inline mr-1" /> Animations
+            </button>
           </div>
 
-          {/* Skill Pool */}
-          <div className="space-y-3 mt-6">
-            <h4 className="text-[10px] font-black uppercase text-gray-500 tracking-widest flex items-center gap-2">
-              <Zap size={12} /> Battle Skill Pool
-            </h4>
-            <div className="bg-black/40 rounded-xl p-4 border border-gray-800">
-              <div className="relative mb-4">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
-                <input
-                  type="text"
-                  placeholder="Search available skills..."
-                  className="w-full bg-black border border-gray-700 rounded-lg py-2 pl-9 pr-4 text-sm text-white focus:border-purple-500 outline-none"
-                  value={skillSearchTerm}
-                  onChange={(e) => setSkillSearchTerm(e.target.value)}
-                />
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-                {/* Basic Attack (NULL) Toggle */}
-                {(!skillSearchTerm || "basic attack (null)".includes(skillSearchTerm.toLowerCase())) && (
-                  <label className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg cursor-pointer transition-colors border border-purple-500/20 bg-purple-900/5">
-                    <input
-                      type="checkbox"
-                      checked={!!editingPet.metadata?.pet_config?.skill_pool?.includes(null)}
-                      onChange={(e) => {
-                        const pool = editingPet.metadata?.pet_config?.skill_pool || [];
-                        const nextPool = e.target.checked
-                          ? [...pool, null]
-                          : pool.filter((id: any) => id !== null);
-                        
-                        setEditingPet({
-                          ...editingPet,
-                          metadata: {
-                            ...editingPet.metadata,
-                            pet_config: {
-                              ...(editingPet.metadata?.pet_config || {}),
-                              skill_pool: nextPool
-                            }
-                          }
-                        });
-                      }}
-                      className="rounded border-gray-700 bg-black text-purple-500 w-4 h-4"
-                    />
-                    <span className="text-xs text-purple-300 font-black truncate uppercase tracking-tighter">Basic Attack (NULL)</span>
-                  </label>
-                )}
-
-                {filteredSkills.map((skill) => {
-                  const isPool = editingPet.metadata?.pet_config?.skill_pool?.includes(skill.id);
-                  return (
-                    <label key={skill.id} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors border ${isPool ? 'bg-purple-500/10 border-purple-500/50' : 'hover:bg-white/5 border-transparent'}`}>
+          {/* Config Section */}
+          {activeSection === 'config' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Catching Protocols */}
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-black uppercase text-gray-500 tracking-widest flex items-center gap-2">
+                    <PawPrint size={12} /> Catching Protocols
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4 bg-black/20 p-4 rounded-xl border border-gray-800">
+                    <div>
+                      <label className="block text-[9px] font-bold text-gray-600 uppercase mb-1">Base Catch Rate</label>
                       <input
-                      type="checkbox"
-                      checked={!!isPool}
-                      onChange={(e) => {
-                          const pool = editingPet.metadata?.pet_config?.skill_pool || [];
-                          const nextPool = e.target.checked
-                            ? [...pool, skill.id]
-                            : pool.filter((id: string) => id !== skill.id);
-                          
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="1"
+                        value={editingPet.metadata?.base_catch_rate ?? 0.3}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          setEditingPet({
+                            ...editingPet,
+                            metadata: { ...editingPet.metadata, base_catch_rate: val }
+                          });
+                        }}
+                        className="w-full bg-black border border-gray-800 rounded-lg p-2 text-sm text-white focus:border-purple-500 outline-none"
+                      />
+                      <p className="text-[9px] text-gray-500 mt-1 italic">0.3 = 30% chance</p>
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-gray-600 uppercase mb-1">Flee Rate</label>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="1"
+                        value={editingPet.metadata?.flee_rate ?? 0.1}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          setEditingPet({
+                            ...editingPet,
+                            metadata: { ...editingPet.metadata, flee_rate: val }
+                          });
+                        }}
+                        className="w-full bg-black border border-gray-800 rounded-lg p-2 text-sm text-white focus:border-purple-500 outline-none"
+                      />
+                      <p className="text-[9px] text-gray-500 mt-1 italic">0.1 = 10% chance</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Evolution Logic */}
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-black uppercase text-gray-500 tracking-widest flex items-center gap-2">
+                    <ArrowUpCircle size={12} /> Evolution Chain
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4 bg-purple-900/10 p-4 rounded-xl border border-purple-500/20">
+                    <div>
+                      <label className="block text-[9px] font-bold text-gray-600 uppercase mb-1">Evolves To</label>
+                      <select
+                        value={editingPet.metadata?.pet_config?.evolution?.next_form_id || ''}
+                        onChange={(e) => {
+                          const val = e.target.value || null;
                           setEditingPet({
                             ...editingPet,
                             metadata: {
                               ...editingPet.metadata,
                               pet_config: {
                                 ...(editingPet.metadata?.pet_config || {}),
-                                skill_pool: nextPool
+                                evolution: {
+                                  ...(editingPet.metadata?.pet_config?.evolution || {}),
+                                  next_form_id: val
+                                }
                               }
                             }
                           });
                         }}
-                        className="rounded border-gray-700 bg-black text-purple-500 w-4 h-4"
+                        className="w-full bg-black border border-gray-800 rounded-lg p-2 text-xs text-white focus:border-purple-500 outline-none"
+                      >
+                        <option value="">No further evolution</option>
+                        {pets.filter(p => p.id !== editingPet.id).map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-gray-600 uppercase mb-1">Level Required</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={editingPet.metadata?.pet_config?.evolution?.level || 20}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          setEditingPet({
+                            ...editingPet,
+                            metadata: {
+                              ...editingPet.metadata,
+                              pet_config: {
+                                ...(editingPet.metadata?.pet_config || {}),
+                                evolution: {
+                                  ...(editingPet.metadata?.pet_config?.evolution || {}),
+                                  level: val
+                                }
+                              }
+                            }
+                          });
+                        }}
+                        className="w-full bg-black border border-gray-800 rounded-lg p-2 text-xs text-white focus:border-purple-500 outline-none"
                       />
-                      <span className={`text-xs font-bold truncate ${isPool ? 'text-purple-200' : 'text-gray-400'}`}>{skill.name}</span>
-                    </label>
-                  );
-                })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Skill Pool */}
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-black uppercase text-gray-500 tracking-widest flex items-center gap-2">
+                  <Zap size={12} /> Battle Skill Pool
+                </h4>
+                <div className="bg-black/40 rounded-xl p-4 border border-gray-800">
+                  <div className="relative mb-4">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
+                    <input
+                      type="text"
+                      placeholder="Search available skills..."
+                      className="w-full bg-black border border-gray-700 rounded-lg py-2 pl-9 pr-4 text-sm text-white focus:border-purple-500 outline-none"
+                      value={skillSearchTerm}
+                      onChange={(e) => setSkillSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                    {(!skillSearchTerm || "basic attack (null)".includes(skillSearchTerm.toLowerCase())) && (
+                      <label className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg cursor-pointer transition-colors border border-purple-500/20 bg-purple-900/5">
+                        <input
+                          type="checkbox"
+                          checked={!!editingPet.metadata?.pet_config?.skill_pool?.includes(null)}
+                          onChange={(e) => {
+                            const pool = editingPet.metadata?.pet_config?.skill_pool || [];
+                            const nextPool = e.target.checked
+                              ? [...pool, null]
+                              : pool.filter((id: any) => id !== null);
+                            setEditingPet({
+                              ...editingPet,
+                              metadata: {
+                                ...editingPet.metadata,
+                                pet_config: {
+                                  ...(editingPet.metadata?.pet_config || {}),
+                                  skill_pool: nextPool
+                                }
+                              }
+                            });
+                          }}
+                          className="rounded border-gray-700 bg-black text-purple-500 w-4 h-4"
+                        />
+                        <span className="text-xs text-purple-300 font-black truncate uppercase tracking-tighter">Basic Attack (NULL)</span>
+                      </label>
+                    )}
+
+                    {filteredSkills.map((skill) => {
+                      const isPool = editingPet.metadata?.pet_config?.skill_pool?.includes(skill.id);
+                      return (
+                        <label key={skill.id} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors border ${isPool ? 'bg-purple-500/10 border-purple-500/50' : 'hover:bg-white/5 border-transparent'}`}>
+                          <input
+                            type="checkbox"
+                            checked={!!isPool}
+                            onChange={(e) => {
+                              const pool = editingPet.metadata?.pet_config?.skill_pool || [];
+                              const nextPool = e.target.checked
+                                ? [...pool, skill.id]
+                                : pool.filter((id: string) => id !== skill.id);
+                              setEditingPet({
+                                ...editingPet,
+                                metadata: {
+                                  ...editingPet.metadata,
+                                  pet_config: {
+                                    ...(editingPet.metadata?.pet_config || {}),
+                                    skill_pool: nextPool
+                                  }
+                                }
+                              });
+                            }}
+                            className="rounded border-gray-700 bg-black text-purple-500 w-4 h-4"
+                          />
+                          <span className={`text-xs font-bold truncate ${isPool ? 'text-purple-200' : 'text-gray-400'}`}>{skill.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
+          {/* Animation Section */}
+          {activeSection === 'animation' && (
+            <div className="space-y-6">
+              {/* Idle Spritesheet */}
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-black uppercase text-purple-400 tracking-widest flex items-center gap-2">
+                  <Film size={12} /> Idle Spritesheet (Horizontal Strip)
+                </h4>
+                <div className="bg-black/30 p-4 rounded-xl border border-purple-500/20 space-y-3">
+                  <div className="flex gap-2">
+                    <input
+                      value={animConfig.idleUrl}
+                      onChange={(e) => setAnimConfig(prev => ({ ...prev, idleUrl: e.target.value }))}
+                      placeholder="Idle spritesheet URL or upload below"
+                      className="flex-1 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white focus:border-purple-500 outline-none"
+                    />
+                    <input
+                      type="file"
+                      ref={idleInputRef}
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadIdle(f); }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => idleInputRef.current?.click()}
+                      disabled={uploadingIdle}
+                      className="px-3 py-2 bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 text-white rounded-lg text-[10px] font-bold uppercase flex items-center gap-1 shrink-0"
+                    >
+                      {uploadingIdle ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                      {uploadingIdle ? 'Uploading…' : 'Upload Idle'}
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-4">
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-gray-500 mb-1">Frames</label>
+                      <input
+                        type="number" min={1}
+                        value={animConfig.idleFrameCount}
+                        onChange={(e) => setAnimConfig(prev => ({ ...prev, idleFrameCount: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
+                        className="w-20 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-gray-500 mb-1">Speed (ms)</label>
+                      <input
+                        type="number" min={10} step={50}
+                        value={animConfig.idleAnimSpeed}
+                        onChange={(e) => setAnimConfig(prev => ({ ...prev, idleAnimSpeed: Math.max(10, parseInt(e.target.value, 10) || 800) }))}
+                        className="w-24 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-gray-500 mb-1">Width (px)</label>
+                      <input
+                        type="number" min={1}
+                        value={animConfig.idleFrameWidth}
+                        onChange={(e) => setAnimConfig(prev => ({ ...prev, idleFrameWidth: Math.max(1, parseInt(e.target.value, 10) || 64) }))}
+                        className="w-24 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-gray-500 mb-1">Height (px)</label>
+                      <input
+                        type="number" min={1}
+                        value={animConfig.idleFrameHeight}
+                        onChange={(e) => setAnimConfig(prev => ({ ...prev, idleFrameHeight: Math.max(1, parseInt(e.target.value, 10) || 64) }))}
+                        className="w-24 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Idle Frame Picker */}
+                  <div className="border-t border-gray-800 pt-3">
+                    <div className="flex items-start gap-4">
+                      <div>
+                        <label className="block text-[9px] font-black uppercase text-purple-400 mb-1">Idle Frame Index</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={Math.max(0, animConfig.idleFrameCount - 1)}
+                          value={animConfig.idleFrame}
+                          onChange={(e) => setAnimConfig(prev => ({ ...prev, idleFrame: Math.max(0, Math.min(prev.idleFrameCount - 1, parseInt(e.target.value, 10) || 0)) }))}
+                          className="w-20 bg-black border border-purple-700 rounded-lg p-2 text-sm text-white"
+                        />
+                        <p className="text-[9px] text-gray-500 mt-1 italic">Frame 0 = first</p>
+                      </div>
+                      <div className="text-[9px] text-gray-400 leading-relaxed mt-4">
+                        This is the <span className="text-purple-400 font-bold">exact frame</span> shown on the world map when the pet is standing still. The spritesheet can still have multiple frames for future battle animations.
+                      </div>
+                    </div>
+
+                    {/* Frame strip thumbnail picker */}
+                    {animConfig.idleUrl && animConfig.idleFrameCount > 1 && (
+                      <div className="mt-3">
+                        <p className="text-[9px] font-black uppercase text-gray-500 mb-2">Click a frame to set as idle:</p>
+                        <div className="flex gap-1 flex-wrap">
+                          {Array.from({ length: Math.min(animConfig.idleFrameCount, 16) }, (_, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => setAnimConfig(prev => ({ ...prev, idleFrame: i }))}
+                              className={`relative border-2 rounded overflow-hidden transition-all ${animConfig.idleFrame === i ? 'border-purple-500 scale-110 shadow-[0_0_8px_rgba(168,85,247,0.6)]' : 'border-gray-700 hover:border-purple-500/50'}`}
+                              style={{ width: 40, height: 40 }}
+                              title={`Frame ${i}`}
+                            >
+                              <div
+                                style={{
+                                  width: `${animConfig.idleFrameWidth}px`,
+                                  height: `${animConfig.idleFrameHeight}px`,
+                                  backgroundImage: `url(${animConfig.idleUrl})`,
+                                  backgroundSize: `${animConfig.idleFrameCount * 100}% 100%`,
+                                  backgroundPosition: `${animConfig.idleFrameCount > 1 ? (i / (animConfig.idleFrameCount - 1)) * 100 : 0}% 0px`,
+                                  backgroundRepeat: 'no-repeat',
+                                  imageRendering: 'pixelated',
+                                  transform: `scale(${Math.min(2, 36 / Math.max(animConfig.idleFrameWidth, animConfig.idleFrameHeight))})`,
+                                  transformOrigin: 'center center',
+                                  position: 'absolute',
+                                  left: '50%',
+                                  top: '50%',
+                                  marginLeft: `-${animConfig.idleFrameWidth / 2}px`,
+                                  marginTop: `-${animConfig.idleFrameHeight / 2}px`,
+                                }}
+                              />
+                              <span className="absolute bottom-0 right-0 text-[7px] text-white bg-black/70 px-1">{i}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Walking Animation */}
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-black uppercase text-cyan-400 tracking-widest flex items-center gap-2">
+                  <Footprints size={12} /> Walking Spritesheet (Horizontal Strip)
+                </h4>
+                <div className="bg-black/30 p-4 rounded-xl border border-cyan-500/20 space-y-3">
+                  <div className="flex gap-2">
+                    <input
+                      value={animConfig.walkingUrl}
+                      onChange={(e) => setAnimConfig(prev => ({ ...prev, walkingUrl: e.target.value }))}
+                      placeholder="Walking spritesheet URL or upload below"
+                      className="flex-1 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white focus:border-cyan-500 outline-none"
+                    />
+                    <input
+                      type="file"
+                      ref={walkingInputRef}
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadWalking(f); }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => walkingInputRef.current?.click()}
+                      disabled={uploadingWalking}
+                      className="px-3 py-2 bg-cyan-700 hover:bg-cyan-600 disabled:bg-gray-700 text-white rounded-lg text-[10px] font-bold uppercase flex items-center gap-1 shrink-0"
+                    >
+                      {uploadingWalking ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                      {uploadingWalking ? 'Uploading…' : 'Upload Walk'}
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-4">
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-gray-500 mb-1">Frames</label>
+                      <input
+                        type="number" min={1}
+                        value={animConfig.walkingFrameCount}
+                        onChange={(e) => setAnimConfig(prev => ({ ...prev, walkingFrameCount: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
+                        className="w-20 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-gray-500 mb-1">Speed (ms)</label>
+                      <input
+                        type="number" min={10} step={50}
+                        value={animConfig.walkingAnimSpeed}
+                        onChange={(e) => setAnimConfig(prev => ({ ...prev, walkingAnimSpeed: Math.max(10, parseInt(e.target.value, 10) || 800) }))}
+                        className="w-24 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-gray-500 mb-1">Width (px)</label>
+                      <input
+                        type="number" min={1}
+                        value={animConfig.walkingFrameWidth}
+                        onChange={(e) => setAnimConfig(prev => ({ ...prev, walkingFrameWidth: Math.max(1, parseInt(e.target.value, 10) || 64) }))}
+                        className="w-24 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-gray-500 mb-1">Height (px)</label>
+                      <input
+                        type="number" min={1}
+                        value={animConfig.walkingFrameHeight}
+                        onChange={(e) => setAnimConfig(prev => ({ ...prev, walkingFrameHeight: Math.max(1, parseInt(e.target.value, 10) || 64) }))}
+                        className="w-24 bg-black border border-gray-700 rounded-lg p-2 text-sm text-white"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[9px] text-gray-500 italic">Plays in a loop when the player moves the joystick on the world map.</p>
+                </div>
+              </div>
+
+              {/* Preview */}
+              <PetAnimPreview cfg={animConfig} />
+            </div>
+          )}
+
+          {/* Footer Buttons */}
           <div className="flex gap-4 mt-6">
             <button
               onClick={() => setEditingPet(null)}
@@ -339,30 +817,51 @@ export default function PetsTab() {
                   ? 'border-purple-500 ring-1 ring-purple-500'
                   : 'border-gray-800 hover:border-purple-500/50'
               }`}
-              onClick={() => setEditingPet(pet)}
+              onClick={() => openEdit(pet)}
             >
               <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
-                {/* Thumbnail Logic */}
                 {(() => {
                   const visuals = pet.metadata?.visuals || {};
                   const spritesheet = visuals.spritesheet;
-                  
+                  const idleFrameIdx = spritesheet?.idle_frame ?? 0;
+
+                  if (spritesheet?.url || visuals.monster_url) {
+                    const url = spritesheet?.url || visuals.monster_url;
+                    const frameWidth = spritesheet?.frame_width || 64;
+                    const frameHeight = spritesheet?.frame_height || 64;
+                    const frameCount = spritesheet?.frame_count || 1;
+                    const scale = 64 / Math.max(frameWidth, frameHeight);
+
+                    return (
+                      <div
+                        className="mb-3 drop-shadow-[0_0_10px_rgba(0,0,0,0.5)] transition-transform group-hover:scale-110"
+                        style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+                      >
+                        <div
+                          style={{
+                            width: `${frameWidth}px`,
+                            height: `${frameHeight}px`,
+                            backgroundImage: `url(${url})`,
+                            backgroundSize: `${frameCount * 100}% 100%`,
+                            backgroundPosition: `${frameCount > 1 ? (idleFrameIdx / (frameCount - 1)) * 100 : 0}% 0px`,
+                            backgroundRepeat: 'no-repeat',
+                            imageRendering: 'pixelated',
+                            transform: `scale(${scale})`,
+                            transformOrigin: 'center center'
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+
                   if (spritesheet) {
                     const frameWidth = spritesheet.frame_width || 64;
                     const frameHeight = spritesheet.frame_height || 64;
                     const scale = 64 / Math.max(frameWidth, frameHeight);
-
                     return (
-                      <div 
+                      <div
                         className="mb-3 drop-shadow-[0_0_10px_rgba(0,0,0,0.5)] transition-transform group-hover:scale-110"
-                        style={{
-                          width: '64px',
-                          height: '64px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          overflow: 'hidden'
-                        }}
+                        style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
                       >
                         <div
                           style={{
@@ -370,7 +869,7 @@ export default function PetsTab() {
                             height: `${frameHeight}px`,
                             backgroundImage: `url(${pet.icon_url || visuals.monster_url})`,
                             backgroundSize: `${(spritesheet.frame_count || 1) * 100}% 100%`,
-                            backgroundPosition: '0px 0px',
+                            backgroundPosition: `${spritesheet.frame_count > 1 ? (idleFrameIdx / (spritesheet.frame_count - 1)) * 100 : 0}% 0px`,
                             backgroundRepeat: 'no-repeat',
                             imageRendering: 'pixelated',
                             transform: `scale(${scale})`,
@@ -382,16 +881,14 @@ export default function PetsTab() {
                   }
 
                   return (
-                    <img 
-                      src={pet.icon_url || '/placeholder.png'} 
-                      className="w-16 h-16 object-contain mb-3 drop-shadow-[0_0_10px_rgba(0,0,0,0.5)] transition-transform group-hover:scale-110" 
+                    <img
+                      src={pet.icon_url || '/placeholder.png'}
+                      className="w-16 h-16 object-contain mb-3 drop-shadow-[0_0_10px_rgba(0,0,0,0.5)] transition-transform group-hover:scale-110"
                     />
                   );
                 })()}
                 <div className="text-xs font-black text-white leading-tight mb-1">{pet.name}</div>
-                <div className="text-[10px] text-gray-500 font-bold">
-                  HP {pet.base_hp}
-                </div>
+                <div className="text-[10px] text-gray-500 font-bold">HP {pet.base_hp}</div>
               </div>
 
               {/* Hover Details */}
@@ -406,6 +903,12 @@ export default function PetsTab() {
                     <span>DMG</span>
                     <span className="text-red-400 font-mono">{pet.base_dmg}</span>
                   </div>
+                  {pet.metadata?.visuals?.walking_spritesheet?.url && (
+                    <div className="flex justify-between text-[10px] text-cyan-400 bg-cyan-900/20 p-1 rounded border border-cyan-500/20">
+                      <span>Walk Anim</span>
+                      <span className="font-mono">✓</span>
+                    </div>
+                  )}
                 </div>
                 <div className="mt-3 text-[10px] text-purple-400 font-bold uppercase tracking-widest flex items-center gap-1">
                   <Pencil size={10} /> Click to Edit

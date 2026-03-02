@@ -49,6 +49,16 @@ export function getPetSpriteSource(petDetails: any, animationType: 'idle' | 'wal
   );
 }
 
+export function getPetIdleFrame(petDetails: any): number | null {
+  const metadata = petDetails?.metadata;
+  const visuals = metadata?.visuals;
+  const sheet = visuals?.spritesheet;
+  if (!sheet) return null;
+  const idleFrame = toNumber(sheet?.idle_frame);
+  if (idleFrame == null || idleFrame < 0) return null;
+  return Math.floor(idleFrame);
+}
+
 export function getPetSpriteConfig(petDetails: any, animationType: 'idle' | 'walking' = 'idle'): PetSpriteConfig | null {
   const metadata = petDetails?.metadata;
 
@@ -119,4 +129,3 @@ export function getPetSpriteConfig(petDetails: any, animationType: 'idle' | 'wal
     frameHeight: Math.max(1, Math.floor(frameHeight)),
   };
 }
-
