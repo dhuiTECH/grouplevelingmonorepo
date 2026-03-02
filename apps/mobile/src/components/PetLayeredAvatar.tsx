@@ -221,7 +221,7 @@ export const PetLayeredAvatar = React.memo(PetLayeredAvatarInternal, (prev, next
   if (prev.petDetails?.id !== next.petDetails?.id) return false;
   if (prev.petDetails?.image_url !== next.petDetails?.image_url) return false;
   if (prev.petDetails?.metadata?.equipped_background !== next.petDetails?.metadata?.equipped_background) return false;
-  if (prev.petDetails?.metadata?.visuals?.spritesheet?.idle_frame !== next.petDetails?.metadata?.visuals?.spritesheet?.idle_frame) return false;
+  if (prev.petDetails?.metadata?.visuals?.walking_spritesheet?.idle_frame !== next.petDetails?.metadata?.visuals?.walking_spritesheet?.idle_frame) return false;
 
   return true;
 });
