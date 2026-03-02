@@ -22,7 +22,7 @@ import { TravelMenu } from '@/components/modals/TravelMenu';
 import { useNavigation } from '@react-navigation/native';
 import { usePets } from '@/hooks/usePets';
 import { useActivePet } from '@/contexts/ActivePetContext';
-import Reanimated, { useAnimatedRef, useSharedValue } from 'react-native-reanimated';
+import Reanimated, { useAnimatedRef, useSharedValue, useDerivedValue, useAnimatedStyle } from 'react-native-reanimated';
 import { useTransition } from '@/context/TransitionContext';
 import { makeImageFromView, SkImage, Canvas, RadialGradient, vec, Rect as SkiaRect, Text as SkiaText, useFont, Blur, Skia, Paint } from '@shopify/react-native-skia';
 import { mapNodeIcon } from '@/utils/assetMapper';
@@ -192,6 +192,23 @@ export const WorldMapScreen = () => {
   const velocityX = useSharedValue(0);
   const velocityY = useSharedValue(0);
   const isSprinting = useSharedValue(false);
+
+  // --- AVATAR FACING DIRECTION (flip based on horizontal movement) ---
+  const lastFacingDirection = useSharedValue(1); // 1 = right, -1 = left
+  const facingScaleX = useDerivedValue(() => {
+    if (velocityX.value > 0) {
+      lastFacingDirection.value = 1;
+      return 1;
+    }
+    if (velocityX.value < 0) {
+      lastFacingDirection.value = -1;
+      return -1;
+    }
+    return lastFacingDirection.value;
+  });
+  const avatarFlipStyle = useAnimatedStyle(() => ({
+    transform: [{ scaleX: facingScaleX.value }],
+  }));
 
   // Sync complex state interactions to a single "active" state to prevent modal stacking/flicker
   useEffect(() => {
@@ -552,17 +569,21 @@ export const WorldMapScreen = () => {
                 pointerEvents="box-none"
               >
                 <View style={styles.playerAvatar}>
-                  <LayeredAvatar user={user} size={72} isMoving={movingOnMap} />
+                  <Reanimated.View style={avatarFlipStyle}>
+                    <LayeredAvatar user={user} size={72} isMoving={movingOnMap} />
+                  </Reanimated.View>
                 </View>
                 {activePet?.pet_details && (
                   <View style={styles.petAvatarOnMap} pointerEvents="none">
-                    <PetLayeredAvatar 
-                      petDetails={activePet.pet_details} 
-                      size={34} 
-                      square 
-                      hideBackground 
-                      isWalking={movingOnMap} 
-                    />
+                    <Reanimated.View style={avatarFlipStyle}>
+                      <PetLayeredAvatar 
+                        petDetails={activePet.pet_details} 
+                        size={34} 
+                        square 
+                        hideBackground 
+                        isWalking={movingOnMap} 
+                      />
+                    </Reanimated.View>
                   </View>
                 )}
               </View>
