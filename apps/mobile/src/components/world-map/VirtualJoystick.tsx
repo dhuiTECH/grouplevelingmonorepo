@@ -78,13 +78,7 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({ velocityX, vel
     },
 
     onPanResponderRelease: () => stopMovement(),
-    onPanResponderTerminate: () => {
-      clearTimer();
-      activeDir.current = null;
-      knobX.setValue(0);
-      knobY.setValue(0);
-      sprintAnim.setValue(0);
-    },
+    onPanResponderTerminate: () => stopMovement(),
   })).current;
 
   const knobBorderColor = sprintAnim.interpolate({
@@ -144,7 +138,6 @@ const styles = StyleSheet.create({
     borderRadius: SPRINT_R,
     borderWidth: 1,
     borderColor: 'rgba(249, 115, 22, 0.35)',
-    borderStyle: 'dashed',
   },
   dirDot: {
     position: 'absolute',
