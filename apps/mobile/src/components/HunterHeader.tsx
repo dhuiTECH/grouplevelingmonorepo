@@ -20,7 +20,7 @@ import { XIcon } from './icons/XIcon';
 import { SkullIcon } from './icons/SkullIcon';
 import { GlobalTerminal } from './GlobalTerminal';
 import { BlurView } from 'expo-blur';
-import { AvatarViewerModal } from './modals/AvatarViewerModal';
+import { OptimizedAvatarModal } from './modals/OptimizedAvatarModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -105,7 +105,7 @@ export const HunterHeader: React.FC<HunterHeaderProps> = ({
         onLogout={logout}
       />
 
-      <AvatarViewerModal
+      <OptimizedAvatarModal
         visible={showAvatarViewer}
         onClose={() => setShowAvatarViewer(false)}
         user={user}

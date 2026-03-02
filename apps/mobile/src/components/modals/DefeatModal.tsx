@@ -13,7 +13,7 @@ import Svg, {
   Polyline,
 } from 'react-native-svg';
 import { MotiView, AnimatePresence } from 'moti';
-import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
+import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import LayeredAvatar from '@/components/LayeredAvatar';
 
 // --- Constants ---
@@ -219,7 +219,7 @@ export const DefeatModal: React.FC<DefeatModalProps> = ({
                         opacity: 0.9,
                       }}>
                         {member.type === 'pet' && member.petDetails ? (
-                          <PetLayeredAvatar petDetails={member.petDetails} size={40} square hideBackground />
+                          <OptimizedPetAvatar petDetails={member.petDetails} size={40} square hideBackground forceLegacy={true} />
                         ) : member.avatar ? (
                           <LayeredAvatar user={member.avatar} size={40} square hideBackground />
                         ) : null}

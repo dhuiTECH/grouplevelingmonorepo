@@ -19,7 +19,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTransition } from '@/context/TransitionContext';
 import LayeredAvatar from '@/components/LayeredAvatar';
-import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
+import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import type { PartyPreviewItem } from '@/context/TransitionContext';
 
 const { width, height } = Dimensions.get('window');
@@ -129,7 +129,7 @@ function PartyMemberWalk({
         )}
         {item.type === 'pet' && item.petDetails && (
           <View style={styles.avatarWrap}>
-            <PetLayeredAvatar petDetails={item.petDetails} size={110} square hideBackground style={styles.avatarNoBox} />
+            <OptimizedPetAvatar petDetails={item.petDetails} size={110} square hideBackground forceLegacy={true} />
           </View>
         )}
       </Animated.View>

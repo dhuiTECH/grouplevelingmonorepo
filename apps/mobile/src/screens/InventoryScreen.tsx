@@ -30,7 +30,7 @@ import { User, ShopItem, UserCosmetic } from '@/types/user';
 import { calculateLevel, getRank, calculateDerivedStats, calculateCombatPower } from '@/utils/stats';
 import { RANK_COLORS } from '@/constants/gameConstants';
 import LayeredAvatar from '@/components/LayeredAvatar';
-import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
+import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import { ShopItemMedia } from '@/components/ShopItemMedia';
 import { SkillLoadout } from '@/components/SkillLoadout';
 import { StatusWindowModal } from '@/components/modals/StatusWindowModal';
@@ -70,6 +70,7 @@ export const InventoryScreen: React.FC = () => {
   const [showBackgroundModal, setShowBackgroundModal] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState<User | null>(null);
   const [viewMode, setViewMode] = useState<'avatar' | 'pet'>('avatar');
+  const [petAction, setPetAction] = useState<'idle' | 'enter'>('idle');
   
   // Pet Renaming State
   const [isRenamingPet, setIsRenamingPet] = useState(false);
@@ -689,12 +690,14 @@ export const InventoryScreen: React.FC = () => {
                 pointerEvents={viewMode === 'pet' ? 'auto' : 'none'}
               >
                 {activePet ? (
-                  <PetLayeredAvatar
+                  <OptimizedPetAvatar
                     petDetails={activePet.pet_details}
                     size={width < 640 ? width * 0.7 : 224}
                     square
                     hideBackground={false}
                     background={activePet.metadata?.equipped_background}
+                    action={petAction}
+                    onEnterComplete={() => setPetAction('idle')}
                   />
                 ) : (
                   <View style={styles.noPetPlaceholder}>
@@ -727,7 +730,12 @@ export const InventoryScreen: React.FC = () => {
                   onPress={() => {
                     playHunterSound('swipe');
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    setViewMode(viewMode === 'avatar' ? 'pet' : 'avatar');
+                    const newMode = viewMode === 'avatar' ? 'pet' : 'avatar';
+                    setViewMode(newMode);
+                    // Play enter animation when switching to pet view
+                    if (newMode === 'pet') {
+                      setPetAction('enter');
+                    }
                   }}
                   style={[
                     styles.swapButton,
@@ -1032,6 +1040,7 @@ export const InventoryScreen: React.FC = () => {
                 onSelect={(pet) => {
                 setActivePetId(pet.id);
                 setViewMode('pet');
+                setPetAction('enter');
                 playHunterSound('click');
               }} />
             ) : getFilteredInventoryItems().length === 0 ? (

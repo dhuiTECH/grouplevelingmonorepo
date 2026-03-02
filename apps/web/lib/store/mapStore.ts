@@ -215,7 +215,12 @@ interface MapState {
   setShowDebugModal: (show: boolean) => void;
   showDebugNumbers: boolean;
   setShowDebugNumbers: (show: boolean) => void;
-  
+
+  // Undo stack for autofill and other actions
+  undoStack: { action: string; x?: number; y?: number; layer?: number; previousTile?: Tile | null; nodeData?: MapNode; previousFullTiles?: Tile[] }[];
+  setUndoStack: (updater: (prev: { action: string; x?: number; y?: number; layer?: number; previousTile?: Tile | null; nodeData?: MapNode; previousFullTiles?: Tile[] }[]) => { action: string; x?: number; y?: number; layer?: number; previousTile?: Tile | null; nodeData?: MapNode; previousFullTiles?: Tile[] }[]) => void;
+  pushUndo: (action: { action: string; x?: number; y?: number; layer?: number; previousTile?: Tile | null; nodeData?: MapNode; previousFullTiles?: Tile[] }) => void;
+
   setTiles: (tiles: Tile[]) => void;
   setNodes: (nodes: MapNode[]) => void;
   setCustomTiles: (tiles: CustomTile[]) => void;
@@ -345,6 +350,12 @@ export const useMapStore = create<MapState>((set, get) => ({
   setShowWalkabilityOverlay: (showWalkabilityOverlay) => set({ showWalkabilityOverlay }),
   setShowDebugModal: (showDebugModal) => set({ showDebugModal }),
   setShowDebugNumbers: (showDebugNumbers) => set({ showDebugNumbers }),
+
+  // Undo stack initial state and functions
+  undoStack: [],
+  setUndoStack: (updater) => set((state) => ({ undoStack: updater(state.undoStack) })),
+  pushUndo: (action) => set((state) => ({ undoStack: [...state.undoStack, action] })),
+
   setAutoTileSheetUrl: async (url) => {
     set({ autoTileSheetUrl: url });
     await supabase.from('world_map_settings').upsert({ id: 1, autotile_sheet_url: url }, { onConflict: 'id' });

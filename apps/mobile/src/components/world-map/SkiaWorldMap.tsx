@@ -1,7 +1,7 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import { Dimensions, View, StyleSheet } from 'react-native';
 import { Canvas, Group, Fill, Rect as SkiaRect, useClock } from '@shopify/react-native-skia';
-import Reanimated, { useSharedValue, useDerivedValue, withTiming, withRepeat, Easing, useAnimatedStyle, withSpring, useFrameCallback, runOnJS } from 'react-native-reanimated';
+import Reanimated, { useSharedValue, useDerivedValue, withTiming, withRepeat, Easing, useAnimatedStyle, useFrameCallback, runOnJS } from 'react-native-reanimated';
 import { useSkiaAssets } from './useSkiaAssets';
 import { SkiaTile } from './SkiaTile';
 import { useTileLibrary } from '../../contexts/TileContext';
@@ -10,10 +10,12 @@ interface SkiaWorldMapProps {
   visionGrid: any[];
   mapSettings: any;
   user: any;
+  activePet?: any;
   tileSize: number;
   showWalkabilityOverlay?: boolean;
   children?: React.ReactNode; 
   overlayChildren?: React.ReactNode;
+  petOverlay?: React.ReactNode;
   velocityX: Reanimated.SharedValue<number>;
   velocityY: Reanimated.SharedValue<number>;
   isSprinting: Reanimated.SharedValue<boolean>;
@@ -27,7 +29,7 @@ const WALK_SPEED = 4;
 const SPRINT_SPEED = 8;
 
 export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({ 
-  visionGrid, mapSettings, user, tileSize, showWalkabilityOverlay, children, overlayChildren,
+  visionGrid, mapSettings, user, activePet, tileSize, showWalkabilityOverlay, children, overlayChildren, petOverlay,
   velocityX, velocityY, isSprinting, onTileEnter
 }) => {
   const { tileLibrary } = useTileLibrary();
@@ -40,6 +42,10 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
     if (mapSettings?.water_sheet_url) urls.add(mapSettings.water_sheet_url);
     if (mapSettings?.foam_sheet_url) urls.add(mapSettings.foam_sheet_url);
 
+    // Add pet URL if it exists
+    const walkSheet = activePet?.pet_details?.metadata?.visuals?.walking_spritesheet;
+    if (walkSheet?.url) urls.add(walkSheet.url);
+
     (visionGrid || []).forEach(cell => {
       if (!cell) return;
       cell.tiles?.forEach((tile: any) => {
@@ -47,7 +53,7 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
       });
     });
     return Array.from(urls);
-  }, [visionGrid, mapSettings]);
+  }, [visionGrid, mapSettings, activePet]);
 
   const images = useSkiaAssets(urlsToLoad);
 
@@ -70,35 +76,113 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
   const mapLeft = useSharedValue(-(user?.world_x || 0) * tileSize - (tileSize / 2));
   const mapTop = useSharedValue(-(user?.world_y || 0) * tileSize - (tileSize / 2));
 
-  // Snap to user position when it changes via React (teleport/fast travel)
+  // Teleport-only snap
+  const prevUserX = useRef(user?.world_x || 0);
+  const prevUserY = useRef(user?.world_y || 0);
+
   useEffect(() => {
-    if (velocityX.value === 0 && velocityY.value === 0) {
-      mapLeft.value = -(user?.world_x || 0) * tileSize - (tileSize / 2);
-      mapTop.value = -(user?.world_y || 0) * tileSize - (tileSize / 2);
+    const ux = user?.world_x || 0;
+    const uy = user?.world_y || 0;
+    const dx = Math.abs(ux - prevUserX.current);
+    const dy = Math.abs(uy - prevUserY.current);
+
+    if (dx >= 2 || dy >= 2) {
+      mapLeft.value = -ux * tileSize - (tileSize / 2);
+      mapTop.value = -uy * tileSize - (tileSize / 2);
     }
+
+    prevUserX.current = ux;
+    prevUserY.current = uy;
   }, [user?.world_x, user?.world_y, tileSize]);
 
   // Track current tile to trigger logic
   const lastTileX = useSharedValue(user?.world_x || 0);
   const lastTileY = useSharedValue(user?.world_y || 0);
 
+  // Collision data -- MUST be declared before useFrameCallback so the worklet
+  // closure captures an initialized shared value (avoids temporal dead zone crash).
+  const collisionDataRef = useSharedValue<{[key: string]: {isWalkable: boolean; edgeBlocks: number}}>({});
+
+  // Cache the last-checked collision result so we only read the large shared
+  // value object on tile transitions, not every frame (60fps).
+  const lastCheckedTileX = useSharedValue(-99999);
+  const lastCheckedTileY = useSharedValue(-99999);
+  const lastCheckAllowX = useSharedValue(true);
+  const lastCheckAllowY = useSharedValue(true);
+
   useFrameCallback((frameInfo) => {
     'worklet';
     if (!frameInfo.timeSincePreviousFrame) return;
-    if (velocityX.value === 0 && velocityY.value === 0) return;
+
+    const vx = velocityX.value;
+    const vy = velocityY.value;
+    if (vx === 0 && vy === 0) return;
 
     const dt = frameInfo.timeSincePreviousFrame / 1000;
     const speed = (isSprinting.value ? SPRINT_SPEED : WALK_SPEED) * tileSize;
 
-    // Proposed movement
-    const dx = velocityX.value * speed * dt;
-    const dy = velocityY.value * speed * dt;
+    // Always allow movement by default
+    let allowX = vx !== 0;
+    let allowY = vy !== 0;
 
-    // Update positions
-    mapLeft.value -= dx;
-    mapTop.value -= dy;
+    // Only read the large collision object when we're about to enter a NEW tile
+    const proposedLeft = mapLeft.value - vx * speed * dt;
+    const proposedTop  = mapTop.value  - vy * speed * dt;
+    const nextX = Math.round(-(proposedLeft + tileSize / 2) / tileSize);
+    const nextY = Math.round(-(proposedTop  + tileSize / 2) / tileSize);
 
-    // Calculate current logical tile
+    const tileChanged = nextX !== lastCheckedTileX.value || nextY !== lastCheckedTileY.value;
+
+    if (tileChanged) {
+      // Read collision data only on tile boundary crossing
+      const collisionData = collisionDataRef.value;
+      const currentX = Math.round(-(mapLeft.value + tileSize / 2) / tileSize);
+      const currentY = Math.round(-(mapTop.value + tileSize / 2) / tileSize);
+
+      // Horizontal collision
+      if (allowX) {
+        const hKey = `${nextX},${currentY}`;
+        const hCol = collisionData[hKey];
+        if (hCol && !hCol.isWalkable) allowX = false;
+
+        const curKey = `${currentX},${currentY}`;
+        const curCol = collisionData[curKey];
+        if (curCol && curCol.edgeBlocks) {
+          if ((vx > 0 && (curCol.edgeBlocks & 2)) || (vx < 0 && (curCol.edgeBlocks & 8))) {
+            allowX = false;
+          }
+        }
+      }
+
+      // Vertical collision
+      if (allowY) {
+        const vKey = `${currentX},${nextY}`;
+        const vCol = collisionData[vKey];
+        if (vCol && !vCol.isWalkable) allowY = false;
+
+        const curKey = `${currentX},${currentY}`;
+        const curCol = collisionData[curKey];
+        if (curCol && curCol.edgeBlocks) {
+          if ((vy > 0 && (curCol.edgeBlocks & 4)) || (vy < 0 && (curCol.edgeBlocks & 1))) {
+            allowY = false;
+          }
+        }
+      }
+
+      lastCheckedTileX.value = nextX;
+      lastCheckedTileY.value = nextY;
+      lastCheckAllowX.value = allowX;
+      lastCheckAllowY.value = allowY;
+    } else {
+      // Re-use the cached collision result
+      allowX = allowX && lastCheckAllowX.value;
+      allowY = allowY && lastCheckAllowY.value;
+    }
+
+    if (allowX) mapLeft.value -= vx * speed * dt;
+    if (allowY) mapTop.value -= vy * speed * dt;
+
+    // Logical tile tracking for onTileEnter
     const curX = Math.round(-(mapLeft.value + tileSize / 2) / tileSize);
     const curY = Math.round(-(mapTop.value + tileSize / 2) / tileSize);
 
@@ -111,6 +195,8 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
     }
   });
 
+  // Sub-pixel smooth camera: tiles are on an integer grid relative to the
+  // group, so they all shift by the same fractional amount → zero seams.
   const transform = useDerivedValue(() => [
     { translateX: mapLeft.value + (width / 2) },
     { translateY: mapTop.value + (height / 2) }
@@ -119,6 +205,32 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
   const transformStyle = useAnimatedStyle(() => ({
     transform: transform.value,
   }));
+
+  // Build collision lookup from visionGrid
+  const collisionMap = useMemo(() => {
+    const map = new Map<string, { isWalkable: boolean; edgeBlocks: number }>();
+    (visionGrid || []).forEach(cell => {
+      if (!cell) return;
+      const key = `${cell.x},${cell.y}`;
+      const hasBlockedTile = cell.tiles?.some((t: any) => 
+        t.isWalkable === false || t.is_walk_able === false || t.is_walkable === false
+      );
+      const edgeBlocks = cell.tiles?.reduce((acc: number, t: any) => 
+        acc | (t.edgeBlocks || 0), 0
+      ) || 0;
+      map.set(key, { isWalkable: !hasBlockedTile, edgeBlocks });
+    });
+    return map;
+  }, [visionGrid]);
+
+  // Sync collision data to shared value for UI-thread access
+  useEffect(() => {
+    const collisionObj: {[key: string]: {isWalkable: boolean; edgeBlocks: number}} = {};
+    collisionMap.forEach((value, key) => {
+      collisionObj[key] = value;
+    });
+    collisionDataRef.value = collisionObj;
+  }, [collisionMap]);
 
   // Extract layers and sort props by zIndex (single pass, no Y-split canvas swap)
   const { layerMinus1Tiles, layer0Tiles, allProps } = useMemo(() => {
@@ -172,12 +284,9 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
 
   return (
     <View style={StyleSheet.absoluteFill}>
-      {/* BACKGROUND CANVAS: Ground & Props Behind Player */}
       <Canvas style={{ position: 'absolute', width, height, zIndex: 1 }} pointerEvents="none">
-        {/* Background fill prevents black flash when tiles are loading or at canvas edges */}
         <Fill color="#1a1c0e" />
         <Group transform={transform}>
-          {/* Layer -1: Water (Always at the very bottom) */}
           {layerMinus1Tiles.map((tile) => (
             <SkiaTile
               key={`tile-${tile.id || (tile.absX + ',' + tile.absY + ',' + (tile.layer || -1) + ',' + tile.index)}`}
@@ -187,7 +296,6 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
               dictionaryData={tileLibrary.get(tile.cleanUrl)}
             />
           ))}
-          {/* Layer 0: Ground/Dirt/Grass */}
           {layer0Tiles.map((tile) => (
             <SkiaTile
               key={`tile-${tile.id || (tile.absX + ',' + tile.absY + ',' + (tile.layer || 0) + ',' + tile.index)}`}
@@ -197,7 +305,6 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
               dictionaryData={tileLibrary.get(tile.cleanUrl)}
             />
           ))}
-          {/* Props: all Y-sorted in one pass — no canvas-swap jitter on player move */}
           {allProps.map((tile) => (
             <SkiaTile
               key={`tile-${tile.id || (tile.absX + ',' + tile.absY + ',' + (tile.layer || 1) + ',' + tile.index)}`}
@@ -207,8 +314,7 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
               dictionaryData={tileLibrary.get(tile.cleanUrl)}
             />
           ))}
-
-          {/* WALKABILITY OVERLAY: Blocked Cells & Directional Edge Blocks */}
+          {/* Pet moved to overlay layer to prevent clipping by player avatar */}
           {showWalkabilityOverlay && (visionGrid || []).map(cell => {
             if (!cell) return null;
             const blockedTiles = cell.tiles?.filter((t: any) => (t.isWalkable === false || t.is_walk_able === false || t.is_walkable === false));
@@ -240,8 +346,6 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
         </Group>
       </Canvas>
 
-      {/* REACT NATIVE LAYER: Player, Party, Nodes */}
-      {/* We use Reanimated.View with the SAME transform as the Canvas for pixel-perfect sync */}
       <Reanimated.View 
         style={[
           StyleSheet.absoluteFill, 
@@ -252,13 +356,12 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(({
       >
         {children}
       </Reanimated.View>
-
-      {/* OVERLAY LAYER: Fixed UI elements like the Player Avatar */}
       <View 
         style={[StyleSheet.absoluteFill, { zIndex: 10000 }]} 
         pointerEvents="box-none"
       >
         {overlayChildren}
+        {petOverlay}
       </View>
 
     </View>

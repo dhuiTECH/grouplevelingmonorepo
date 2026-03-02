@@ -17,12 +17,11 @@ import { useExploration } from '@/hooks/useExploration';
 import { useStepTracker } from '@/hooks/useStepTracker';
 import { useTutorial } from '@/context/TutorialContext';
 import LayeredAvatar from '@/components/LayeredAvatar';
-import { WorldMapPetAvatar } from '@/components/world-map/WorldMapPetAvatar';
 import { TravelMenu } from '@/components/modals/TravelMenu';
 import { useNavigation } from '@react-navigation/native';
 import { usePets } from '@/hooks/usePets';
 import { useActivePet } from '@/contexts/ActivePetContext';
-import Reanimated, { useAnimatedRef, useSharedValue, useDerivedValue, useAnimatedStyle } from 'react-native-reanimated';
+import Reanimated, { useAnimatedRef, useSharedValue, useDerivedValue, useAnimatedStyle, useAnimatedReaction, runOnJS, withTiming, useFrameCallback } from 'react-native-reanimated';
 import { useTransition } from '@/context/TransitionContext';
 import { makeImageFromView, SkImage, Canvas, RadialGradient, vec, Rect as SkiaRect, Text as SkiaText, useFont, Blur, Skia, Paint } from '@shopify/react-native-skia';
 import { mapNodeIcon } from '@/utils/assetMapper';
@@ -30,6 +29,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, G, Rect, Line, Polygon, Text as SvgText } from 'react-native-svg';
 import { SkiaWorldMap } from '../components/world-map/SkiaWorldMap';
 import { VirtualJoystick } from '../components/world-map/VirtualJoystick';
+import { PetSprite } from '../components/PetSprite';
 
 // --- SVGs ---
 const TargetCrosshairIcon = ({ color = '#ff4444', size = 28 }) => (
@@ -119,12 +119,32 @@ export const WorldMapScreen = () => {
   const activePet = pets.find(p => p.id === activePetId) ?? (pets.length > 0 ? pets[0] : null);
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
   const [mapSettings, setMapSettings] = useState<any>(null);
+  const [isJoystickActive, setIsJoystickActive] = useState(false);
+  const velocityX = useSharedValue(0);
+  const velocityY = useSharedValue(0);
+  const isSprinting = useSharedValue(false);
 
-  // 📷 TRANSITION LOGIC
+  // Core world + UI state
+  const [travelMenuVisible, setTravelMenuVisible] = useState(false);
+  const [encounter, setEncounter] = useState<any | null>(null);
+  const [interactionVisible, setInteractionVisible] = useState(false);
+  const [activeInteraction, setActiveInteraction] = useState<any | null>(null);
+  const [previousLevel, setPreviousLevel] = useState(user?.level || 1);
+  const [levelUpVisible, setLevelUpVisible] = useState(false);
+  const [raidModalVisible, setRaidModalVisible] = useState(false);
+  const [activeRaid, setActiveRaid] = useState<any | null>(null);
+  const [systemNews, setSystemNews] = useState<any[]>([]);
+  const [navigationTarget, setNavigationTarget] = useState<any | null>(null);
+
+  // Party presence
+  const [partyMembersOnline, setPartyMembersOnline] = useState<Map<string, any>>(new Map());
+  const presenceChannelRef = useRef<any>(null);
+
+  // World -> battle transition
   const viewRef = useAnimatedRef<View>();
   const { startTransition } = useTransition();
 
-  // Floating Animation Setup
+  // Floating / pulse animations for HUD
   const floatAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
@@ -151,7 +171,7 @@ export const WorldMapScreen = () => {
 
   const spin = rotateAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['0deg', '360deg']
+    outputRange: ['0deg', '360deg'],
   });
 
   useFocusEffect(
@@ -159,39 +179,6 @@ export const WorldMapScreen = () => {
       playTrack('Beginning Map');
     }, [playTrack])
   );
-  const [travelMenuVisible, setTravelMenuVisible] = useState(false);
-  const [encounter, setEncounter] = useState<any | null>(null);
-  const [interactionVisible, setInteractionVisible] = useState(false);
-  const [activeInteraction, setActiveInteraction] = useState<any | null>(null);
-  const [previousLevel, setPreviousLevel] = useState(user?.level || 1);
-  const [levelUpVisible, setLevelUpVisible] = useState(false);
-  const [raidModalVisible, setRaidModalVisible] = useState(false);
-  const [activeRaid, setActiveRaid] = useState<any | null>(null);
-  const [systemNews, setSystemNews] = useState<any[]>([]);
-  const [navigationTarget, setNavigationTarget] = useState<any | null>(null);
-
-  // 🎮 PARTY PRESENCE - Realtime tracking of party members on map
-  const [partyMembersOnline, setPartyMembersOnline] = useState<Map<string, any>>(new Map());
-  const presenceChannelRef = useRef<any>(null);
-
-  const {
-    onTileEnter,
-    refreshVision,
-    visionGrid,
-    nodesInVision,
-    fastTravel,
-    bankSteps,
-    autoTravelReport,
-    setAutoTravelReport,
-    checkpointAlert,
-    setCheckpointAlert,
-    loading: movingOnMap // Use this to track movement state
-  } = useExploration(setEncounter, setInteractionVisible, setActiveRaid, setRaidModalVisible, activeMapId);
-
-  // --- SHARED VELOCITY STATE ---
-  const velocityX = useSharedValue(0);
-  const velocityY = useSharedValue(0);
-  const isSprinting = useSharedValue(false);
 
   // --- AVATAR FACING DIRECTION (flip based on horizontal movement) ---
   const lastFacingDirection = useSharedValue(1); // Default scale
@@ -210,14 +197,124 @@ export const WorldMapScreen = () => {
     transform: [{ scaleX: facingScaleX.value }],
   }));
 
-  // Sync complex state interactions to a single "active" state to prevent modal stacking/flicker
-  useEffect(() => {
-    if (checkpointAlert) {
-      setActiveInteraction(checkpointAlert);
-    } else if (interactionVisible && encounter) {
-      setActiveInteraction(encounter);
+  // Pet leash system - uses velocity to determine trailing position
+  const petOffsetX = useSharedValue(80); // Start 80px to the right, well clear of joystick
+  const petScaleX = useSharedValue(1);
+  const petIsWalking = useSharedValue(false);
+
+  // Smooth trailing logic based on player movement
+  useAnimatedReaction(
+    () => ({ vx: velocityX.value, vy: velocityY.value, active: isJoystickActive }),
+    (state, prevState) => {
+      // Update walking state
+      petIsWalking.value = state.active;
+
+      if (!state.active) {
+        // When stopped, pet stays at current position (no change needed)
+        return;
+      }
+
+      // Calculate target position based on movement direction
+      // Pet should trail opposite to movement direction
+      const LEASH_DISTANCE = 80; // Keep pet well clear of joystick (220px wide)
+      let targetX = 0;
+      
+      if (state.vx > 0.1) {
+        // Moving right - pet trails to the left
+        targetX = -LEASH_DISTANCE;
+        petScaleX.value = -1; // Face right (flip base art)
+      } else if (state.vx < -0.1) {
+        // Moving left - pet trails to the right  
+        targetX = LEASH_DISTANCE;
+        petScaleX.value = 1; // Face left (no flip)
+      } else {
+        // Vertical movement only - keep current side but face appropriate direction
+        targetX = petOffsetX.value > 0 ? LEASH_DISTANCE : -LEASH_DISTANCE;
+      }
+
+      // Smoothly interpolate to target position (LERP)
+      petOffsetX.value += (targetX - petOffsetX.value) * 0.1;
     }
-  }, [checkpointAlert, interactionVisible, encounter]);
+  );
+
+  const petAnimatedStyle = useAnimatedStyle(() => ({
+    position: 'absolute',
+    left: width / 2 - TILE_SIZE / 2,
+    top: height / 2 - TILE_SIZE / 2 - 10,
+    transform: [
+      { translateX: petOffsetX.value },
+      { scaleX: petScaleX.value }
+    ],
+    zIndex: 101,
+  }));
+
+  // Stable avatar component - only re-renders when cosmetics actually change
+  const [avatarKey, setAvatarKey] = useState(0);
+  const prevEquippedRef = useRef<string>('');
+  
+  // Detect real cosmetics changes (equip/unequip) vs movement updates
+  useEffect(() => {
+    // Create a signature of currently equipped items
+    const equippedIds = user?.cosmetics
+      ?.filter((c: any) => c.equipped)
+      .map((c: any) => c.id)
+      .sort() || [];
+    const equippedSignature = equippedIds.join(',');
+    
+    if (equippedSignature !== prevEquippedRef.current) {
+      prevEquippedRef.current = equippedSignature;
+      setAvatarKey(k => k + 1);
+    }
+  }, [user?.cosmetics]);
+
+  // Build avatar data from user, but wrapped in useMemo to prevent object recreation
+  const avatarData = useMemo(() => {
+    if (!user) return null;
+    return {
+      id: user.id,
+      cosmetics: user.cosmetics,
+      gender: user.gender,
+      base_body_url: user.base_body_url,
+      base_body_silhouette_url: user.base_body_silhouette_url,
+      base_body_tint_hex: user.base_body_tint_hex,
+      avatar_url: user.avatar_url,
+    };
+    // Only recreate when avatarKey changes (which happens when equipped items change)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarKey]);
+
+  // Stable avatar component
+  const StableAvatar = useMemo(() => {
+    if (!avatarData) return null;
+    return (
+      <View style={styles.playerAvatar}>
+        <Reanimated.View style={avatarFlipStyle}>
+          {/* Key ensures component is only recreated when cosmetics change */}
+          <LayeredAvatar 
+            key={avatarKey}
+            user={avatarData as any} 
+            size={72} 
+            isMoving={false} 
+          />
+        </Reanimated.View>
+      </View>
+    );
+  }, [avatarData, avatarFlipStyle, avatarKey]);
+
+  // Exploration engine: tiles, nodes, encounters, auto-travel
+  const {
+    onTileEnter,
+    refreshVision,
+    visionGrid,
+    nodesInVision,
+    fastTravel,
+    bankSteps,
+    autoTravelReport,
+    setAutoTravelReport,
+    checkpointAlert,
+    setCheckpointAlert,
+    loading: movingOnMap,
+  } = useExploration(setEncounter, setInteractionVisible, setActiveRaid, setRaidModalVisible, activeMapId);
 
   const handleCloseInteraction = () => {
     setActiveInteraction(null);
@@ -546,6 +643,7 @@ export const WorldMapScreen = () => {
           visionGrid={visionGrid}
           mapSettings={mapSettings}
           user={user}
+          activePet={activePet}
           tileSize={TILE_SIZE}
           showWalkabilityOverlay={showWalkabilityOverlay}
           velocityX={velocityX}
@@ -568,25 +666,41 @@ export const WorldMapScreen = () => {
                 ]}
                 pointerEvents="box-none"
               >
-                <View style={styles.playerAvatar}>
-                  <Reanimated.View style={avatarFlipStyle}>
-                    <LayeredAvatar user={user} size={72} isMoving={movingOnMap} />
-                  </Reanimated.View>
-                </View>
-                {activePet?.pet_details && (
-                  <View style={styles.petAvatarOnMap} pointerEvents="none">
-                    <Reanimated.View style={avatarFlipStyle}>
-                      <WorldMapPetAvatar 
-                        petDetails={activePet.pet_details} 
-                        size={34} 
-                        square 
-                        hideBackground 
-                        isWalking={movingOnMap} 
-                      />
-                    </Reanimated.View>
-                  </View>
-                )}
+                {StableAvatar}
               </View>
+            )
+          }
+          petOverlay={
+            activePet?.pet_details?.metadata?.visuals?.walking_spritesheet && (
+              <Animated.View
+                style={{
+                  position: 'absolute',
+                  left: width / 2 - TILE_SIZE / 2,
+                  top: height / 2 - TILE_SIZE / 2 - 10,
+                  zIndex: 101,
+                  width: 100,
+                  height: 100,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transform: [
+                    { translateX: petOffsetX.value },
+                    { scaleX: petScaleX.value }
+                  ]
+                }}
+                pointerEvents="box-none"
+              >
+                <PetSprite
+                  imageUrl={activePet.pet_details.metadata.visuals.walking_spritesheet.url}
+                  action={petIsWalking.value ? 'walk' : 'idle'}
+                  idleIndex={activePet.pet_details.metadata.visuals.walking_spritesheet.idle_frame ?? 0}
+                  totalFrames={activePet.pet_details.metadata.visuals.walking_spritesheet.frame_count ?? 1}
+                  totalTimeMs={activePet.pet_details.metadata.visuals.walking_spritesheet.duration_ms ?? 1000}
+                  frameWidth={activePet.pet_details.metadata.visuals.walking_spritesheet.frame_width ?? 64}
+                  frameHeight={activePet.pet_details.metadata.visuals.walking_spritesheet.frame_height ?? 64}
+                  scale={0.15 * (TILE_SIZE / 48)}
+                  flipX={false} // Direction is now handled by scaleX
+                />
+              </Animated.View>
             )
           }
         >
@@ -613,14 +727,16 @@ export const WorldMapScreen = () => {
                   onPress={() => setSelectedNode(node)}
                   activeOpacity={0.7}
                 >
-                  <View style={styles.nodeContainer}>
-                    <Image 
-                      source={mapNodeIcon(node.icon_url, node.type)} 
-                      style={styles.nodeIcon} 
-                      contentFit="contain"
-                    />
-                    <Text style={styles.nodeLabel}>{node.name}</Text>
-                  </View>
+              <View style={styles.nodeContainer}>
+                <View style={styles.nodeIconWrapper}>
+                  <Image 
+                    source={mapNodeIcon(node.icon_url, node.type)} 
+                    style={styles.nodeIcon} 
+                    contentFit="contain"
+                  />
+                </View>
+                <Text style={styles.nodeLabel}>{node.name}</Text>
+              </View>
                 </TouchableOpacity>
               </View>
             );
@@ -709,6 +825,7 @@ export const WorldMapScreen = () => {
             velocityX={velocityX} 
             velocityY={velocityY} 
             isSprinting={isSprinting} 
+            onMoveStateChange={setIsJoystickActive}
           />
         </View>
 
@@ -924,13 +1041,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 6,
   },
-  nodeIcon: {
-    width: 42,
-    height: 42,
+  nodeIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#0f172a',
+    borderWidth: 2,
+    borderColor: '#3b82f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
     shadowColor: '#00e5ff',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5,
     shadowRadius: 10,
+  },
+  nodeIcon: {
+    width: 42,
+    height: 42,
   },
   nodeLabel: {
     color: '#fff',

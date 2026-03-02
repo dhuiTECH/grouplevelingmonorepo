@@ -9,7 +9,7 @@ import { getRank } from '@/utils/stats';
 import { useBattleLogic, PHASE, ACTOR_TYPE } from '@/hooks/useBattleLogic';
 import { useAudio } from '@/contexts/AudioContext';
 import LayeredAvatar from '@/components/LayeredAvatar';
-import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
+import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import { getPetSpriteConfig } from '@/utils/pet-sprites';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import SkillSpriteVfx from '@/components/SkillSpriteVfx';
@@ -187,6 +187,10 @@ export default function BattleScreen() {
 
   const [petSpriteActive, setPetSpriteActive] = useState(true);
   const [enemySpriteActive, setEnemySpriteActive] = useState(true);
+  
+  // Pet and enemy animation actions
+  const [petAction, setPetAction] = useState<'idle' | 'enter'>('enter'); // Start with enter animation
+  const [enemyAction, setEnemyAction] = useState<'idle' | 'enter'>('enter'); // Start with enter animation
 
   const petInParty = party.find((c: any) => c.type === 'pet');
   const petCycleDuration = useMemo(() => {
@@ -972,6 +976,8 @@ export default function BattleScreen() {
                 enemyFigureRef={enemyFigureRef}
                 setEnemyFigureCenter={setEnemyFigureCenter}
                 enemySpriteActive={enemySpriteActive}
+                action={enemyAction}
+                onEnterComplete={() => setEnemyAction('idle')}
               />
 
               {/* Chain Counter */}
@@ -1001,6 +1007,8 @@ export default function BattleScreen() {
                 petSpriteActive={petSpriteActive}
                 user={user}
                 allShopItems={allShopItems}
+                petAction={petAction}
+                onPetEnterComplete={() => setPetAction('idle')}
               />
           </View>
 

@@ -25,7 +25,7 @@ import { RANK_COLORS } from '@/constants/gameConstants';
 import { usePets } from '@/hooks/usePets';
 import { UserPet } from '@/types/pet';
 import * as Haptics from 'expo-haptics';
-import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
+import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 
 const { width } = Dimensions.get('window');
 
@@ -88,7 +88,7 @@ export function PetDetailScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <Animated.View style={[styles.imageSection, animatedImageStyle]}>
             <View style={[styles.glowBackground, { backgroundColor: rarityColor, opacity: 0.1 }]} />
-            <PetLayeredAvatar petDetails={pet.pet_details} size={200} square hideBackground={true} />
+            <OptimizedPetAvatar petDetails={pet.pet_details} size={200} square hideBackground={true} forceLegacy={true} />
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(300)} style={styles.infoSection}>

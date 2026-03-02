@@ -4,20 +4,20 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { PlayerCallingCard } from '@/components/PlayerCallingCard';
 import { LayeredAvatar } from '@/components/LayeredAvatar';
-import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
+import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import { User } from '@/types/user';
 import { UserPet } from '@/types/pet';
 import { supabase } from '@/lib/supabase';
 import { useGameData } from '@/hooks/useGameData';
 
-interface AvatarViewerModalProps {
+interface OptimizedAvatarModalProps {
   visible: boolean;
   onClose: () => void;
   user: User | null;
   currentUser?: User | null;
 }
 
-export const AvatarViewerModal: React.FC<AvatarViewerModalProps> = ({ 
+export const OptimizedAvatarModal: React.FC<OptimizedAvatarModalProps> = ({ 
   visible, 
   onClose, 
   user,
@@ -137,14 +137,13 @@ export const AvatarViewerModal: React.FC<AvatarViewerModalProps> = ({
               {/* PAGE 2+: Pets */}
               {pets.map((pet) => (
                 <View key={pet.id} style={[styles.page, { width: containerWidth }]}>
-                  {/* Using PetLayeredAvatar with large size */}
+                  {/* Using OptimizedPetAvatar with large size */}
                   <View style={{ width: avatarSize, height: avatarSize, justifyContent: 'center', alignItems: 'center' }}>
-                    <PetLayeredAvatar
+                    <OptimizedPetAvatar
                       petDetails={pet.pet_details}
                       size={avatarSize}
                       square={true}
-                      // Use metadata background if available
-                      // PetLayeredAvatar handles metadata.equipped_background internally
+                      // Using walking spritesheet with idle animation (breathing effect)
                     />
                   </View>
                   
@@ -292,4 +291,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default AvatarViewerModal;
+export default OptimizedAvatarModal;

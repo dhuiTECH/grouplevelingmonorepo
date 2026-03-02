@@ -105,3 +105,17 @@ export function getLiquidTextureCoords(mask: number, blockCol: number, blockRow:
     sourceHeight: TILE_SIZE
   }];
 }
+
+export const snapPosition = (smooth: number, snapMode: 'full' | 'half' | 'free', gridCoord: number, tileSize: number, worldSize: number): number => {
+  if (snapMode === 'free') return smooth + worldSize / 2;
+  const halfTile = tileSize / 2;
+  if (snapMode === 'half') return Math.round(smooth / halfTile) * halfTile + worldSize / 2;
+  return gridCoord * tileSize + worldSize / 2;
+};
+
+// Helper to normalize URLs for comparison (ignoring query params)
+export const normalizeUrl = (url: string | undefined | null) => {
+  if (!url) return '';
+  return url.split('?')[0];
+};
+

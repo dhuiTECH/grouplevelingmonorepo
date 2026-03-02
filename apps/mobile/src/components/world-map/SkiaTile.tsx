@@ -31,12 +31,14 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
   const offsetX = tile.offsetX || 0;
   const offsetY = tile.offsetY || 0;
 
+  // No +1 overlap hack needed: the parent Group transform is pixel-snapped
+  // via Math.round in SkiaWorldMap, which eliminates sub-pixel tile seams.
   const destRect = useMemo(() => rect(
     absPx - (displayWidth - tileSize) / 2 + offsetX,
     absPy - (displayHeight - tileSize) + offsetY,
-    displayWidth + (isProp ? 0 : 1),
-    displayHeight + (isProp ? 0 : 1)
-  ), [absPx, absPy, displayWidth, displayHeight, offsetX, offsetY, tileSize, isProp]);
+    displayWidth,
+    displayHeight
+  ), [absPx, absPy, displayWidth, displayHeight, offsetX, offsetY, tileSize]);
 
   // Handle Foam Layer (Now uses dictionary lookup for foam strip)
   let foamLayer = null;

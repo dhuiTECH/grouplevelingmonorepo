@@ -3,8 +3,15 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import * as Haptics from 'expo-haptics';
 
-const MOVE_COST = 100; // 100 Steps = 1 Tile
+const MOVE_COST = 100;
 const CHUNK_SIZE = 16;
+const REFRESH_DISTANCE = 3; // Re-fetch chunks when 3+ tiles from last refresh center
+
+// Pre-load radius extends beyond the visible grid to create a buffer zone.
+// Visible grid is ±12x / ±14y; we fetch ±20x / ±22y so chunks are cached
+// ~1 full chunk (16 tiles) ahead of the viewport edge — RPG-style streaming.
+const PREFETCH_RADIUS_X = 20;
+const PREFETCH_RADIUS_Y = 22;
 
 export const useExploration = (
   setEncounter: (encounter: any | null) => void, 
@@ -19,43 +26,62 @@ export const useExploration = (
   const moveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
   const [nodes, setNodes] = useState<any[]>([]);
-  const [chunksVersion, setChunksVersion] = useState(0); // Trigger for memo
+  const [chunksVersion, setChunksVersion] = useState(0);
   const [autoTravelReport, setAutoTravelReport] = useState<any | null>(null);
   const [checkpointAlert, setCheckpointAlert] = useState<any | null>(null);
 
-  // 0. CHUNK CACHE (Prevents redundant DB calls)
+  // Chunk cache
   const chunkCache = useRef<Map<string, any>>(new Map());
   const inFlightChunks = useRef<Set<string>>(new Set());
-  const lastX = useRef<number | null>(null);
-  const lastY = useRef<number | null>(null);
-  const currentX = useRef<number>(user?.world_x || 0);
-  const currentY = useRef<number>(user?.world_y || 0);
 
-  // Sync refs with user state safely
+  // Refs that let onTileEnter read fresh data without being in its dependency list
+  const userRef = useRef(user);
+  const nodesRef = useRef(nodes);
+  const lastRefreshCenter = useRef<{ x: number; y: number }>({ x: user?.world_x || 0, y: user?.world_y || 0 });
+  const tileEnterBusy = useRef(false);
+
+  useEffect(() => { userRef.current = user; }, [user]);
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+
+  // Separate camera position for visionGrid that only updates when we actually
+  // want the grid to recalculate (initial load, chunk fetch, teleport).
+  // During continuous joystick movement, we do NOT update this -- the camera
+  // moves smoothly on the UI thread while the grid stays stable.
+  const [gridCenter, setGridCenter] = useState<{ x: number; y: number }>({
+    x: user?.world_x || 0,
+    y: user?.world_y || 0,
+  });
+
+  // On teleport (large jump), update gridCenter
+  const prevTeleportX = useRef(user?.world_x || 0);
+  const prevTeleportY = useRef(user?.world_y || 0);
   useEffect(() => {
-    if (user) {
-      currentX.current = user.world_x || 0;
-      currentY.current = user.world_y || 0;
+    const ux = user?.world_x || 0;
+    const uy = user?.world_y || 0;
+    const dx = Math.abs(ux - prevTeleportX.current);
+    const dy = Math.abs(uy - prevTeleportY.current);
+    if (dx >= 2 || dy >= 2) {
+      setGridCenter({ x: ux, y: uy });
+      lastRefreshCenter.current = { x: ux, y: uy };
     }
-  }, [user?.id]); // Only on login/logout
+    prevTeleportX.current = ux;
+    prevTeleportY.current = uy;
+  }, [user?.world_x, user?.world_y]);
 
-  // 1. GRID GENERATION (The Memoized Vision)
+  // 1. GRID GENERATION -- uses gridCenter instead of user.world_x/y
   const { visionGrid, nodesInVision } = useMemo(() => {
     if (!user) return { visionGrid: [], nodesInVision: [] };
 
-    const cx = user.world_x || 0;
-    const cy = user.world_y || 0;
+    const cx = gridCenter.x;
+    const cy = gridCenter.y;
     
     const minX = cx - 12;
     const maxX = cx + 12;
     const minY = cy - 14;
     const maxY = cy + 14;
 
-    // Map tile data by coordinate for quick lookup (multi-layer support)
     const tileMap = new Map<string, any[]>();
-    
-    // Process all relevant chunks from cache
-    // We search chunks that could possibly contain these coordinates
+
     const minChunkX = Math.floor(minX / CHUNK_SIZE);
     const maxChunkX = Math.floor(maxX / CHUNK_SIZE);
     const minChunkY = Math.floor(minY / CHUNK_SIZE);
@@ -77,7 +103,6 @@ export const useExploration = (
       }
     }
 
-    // Sort all layer lists once
     tileMap.forEach(layers => {
       layers.sort((a, b) => (Number(a.layer) || 0) - (Number(b.layer) || 0));
     });
@@ -85,7 +110,6 @@ export const useExploration = (
     const grid = [];
     const visibleNodesList: any[] = [];
 
-    // Expanded Grid (e.g., 21x27) to cover 9:16 screen with buffer
     for (let dy = 13; dy >= -13; dy--) {
       for (let dx = -10; dx <= 10; dx++) {
         const tx = cx + dx;
@@ -108,26 +132,25 @@ export const useExploration = (
       }
     }
 
-    // Process visible nodes for independent rendering
     (nodes || []).forEach(n => {
       if (n.x >= minX - 2 && n.x <= maxX + 2 && n.y >= minY - 2 && n.y <= maxY + 2) {
-        const isUnlocked = unlocked.has(`${Math.floor(n.x)},${Math.floor(n.y)}`) || (n.x === 0 && n.y === 0);
-        visibleNodesList.push({ ...n, isVisible: isUnlocked });
+        const isNodeUnlocked = unlocked.has(`${Math.floor(n.x)},${Math.floor(n.y)}`) || (n.x === 0 && n.y === 0);
+        visibleNodesList.push({ ...n, isVisible: isNodeUnlocked });
       }
     });
 
     return { visionGrid: grid, nodesInVision: visibleNodesList };
-  }, [user?.world_x, user?.world_y, unlocked, nodes, chunksVersion]);
+  }, [gridCenter.x, gridCenter.y, unlocked, nodes, chunksVersion]);
 
   // 2. REFRESH DATA (Fetching Chunks/Nodes/Discoveries)
+  // Uses the larger PREFETCH radius so chunks are cached well ahead of the viewport.
   const refreshVision = useCallback(async (cx: number, cy: number, force: boolean = false) => {
-    if (!user?.id) return;
+    if (!userRef.current?.id) return;
 
-    // Calculate required chunks
-    const minChunkX = Math.floor((cx - 12) / CHUNK_SIZE);
-    const maxChunkX = Math.floor((cx + 12) / CHUNK_SIZE);
-    const minChunkY = Math.floor((cy - 14) / CHUNK_SIZE);
-    const maxChunkY = Math.floor((cy + 14) / CHUNK_SIZE);
+    const minChunkX = Math.floor((cx - PREFETCH_RADIUS_X) / CHUNK_SIZE);
+    const maxChunkX = Math.floor((cx + PREFETCH_RADIUS_X) / CHUNK_SIZE);
+    const minChunkY = Math.floor((cy - PREFETCH_RADIUS_Y) / CHUNK_SIZE);
+    const maxChunkY = Math.floor((cy + PREFETCH_RADIUS_Y) / CHUNK_SIZE);
 
     const missingChunks: string[] = [];
     for (let x = minChunkX; x <= maxChunkX; x++) {
@@ -140,9 +163,11 @@ export const useExploration = (
     }
 
     const promises: Promise<any>[] = [];
-    promises.push(supabase.from('player_discoveries').select('x, y').eq('user_id', user.id));
+    const userId = userRef.current.id;
+    promises.push(supabase.from('player_discoveries').select('x, y').eq('user_id', userId));
     
-    if (force || (nodes || []).length === 0) {
+    const cachedNodes = nodesRef.current;
+    if (force || (cachedNodes || []).length === 0) {
       promises.push(supabase.from('world_map_nodes').select('*'));
     }
 
@@ -156,28 +181,26 @@ export const useExploration = (
     }
 
     const results = await Promise.all(promises);
-    let discoveriesRes = results[0]; // Always first
+    let discoveriesRes = results[0];
     let nodesRes, newChunksRes;
 
     let resultIndex = 1;
-    if (force || (nodes || []).length === 0) {
+    if (force || (cachedNodes || []).length === 0) {
       nodesRes = results[resultIndex++];
     } else {
-      nodesRes = { data: nodes || [] }; // Use cached nodes
+      nodesRes = { data: cachedNodes || [] };
     }
 
     if (missingChunks.length > 0) {
       newChunksRes = results[resultIndex];
     } else {
-      newChunksRes = []; // No chunks to fetch
+      newChunksRes = [];
     }
 
-    // Update Discoveries
     if (discoveriesRes?.data) {
       setUnlocked(new Set(discoveriesRes.data.map((d: any) => `${d.x},${d.y}`)));
     }
 
-    // Update Nodes
     if (nodesRes?.data) {
       setNodes(nodesRes.data.map((n: any) => ({
         ...n,
@@ -186,41 +209,41 @@ export const useExploration = (
       })));
     }
 
-    // Update Chunks
     if (Array.isArray(newChunksRes)) {
       newChunksRes.forEach((res, index) => {
         const key = missingChunks[index];
         chunkCache.current.set(key, res.data ? { ...res.data, tile_data: res.data.tile_data || [] } : { tile_data: [] });
         inFlightChunks.current.delete(key);
       });
-      setChunksVersion(v => v + 1); // Trigger re-memo
     }
-  }, [user?.id, nodes.length]);
 
-  // ⚡️ 2. AUTO-HUNT (The "Skip" Option)
+    // Update gridCenter + trigger visionGrid recalculation after chunk data arrives
+    lastRefreshCenter.current = { x: cx, y: cy };
+    setGridCenter({ x: cx, y: cy });
+    setChunksVersion(v => v + 1);
+  }, []); // No deps -- reads from refs
+
+  // AUTO-HUNT
   const fastTravel = async (stepsAvailable: number) => {
     if (!user) return;
     const tilesToMove = Math.floor(stepsAvailable / MOVE_COST);
     
     if (tilesToMove < 1) {
-       // Not enough for a full move, just bank it
        await bankSteps(stepsAvailable);
        return;
     }
 
-    // Simulate moving South automatically (since Y+ is South now)
     let ny = (user.world_y || 0) + tilesToMove;
     const nx = user.world_x || 0;
 
     const report = {
       tilesTraveled: tilesToMove,
-      xpGained: tilesToMove * 50, // Simple XP formula
+      xpGained: tilesToMove * 50,
       itemsFound: Math.random() > 0.5 ? ['Mana Crystal'] : []
     };
 
     const now = new Date().toISOString();
 
-    // Update DB (Move Player + Clear Time)
     await supabase.from('profiles').update({ 
       world_y: ny, 
       last_sync_time: now 
@@ -230,7 +253,7 @@ export const useExploration = (
     setAutoTravelReport(report);
   };
 
-  // 🎮 3. MANUAL BANK (The "Store" Option)
+  // MANUAL BANK
   const bankSteps = async (steps: number) => {
     if (!user) return;
     const newTotal = (user.steps_banked || 0) + steps;
@@ -245,24 +268,27 @@ export const useExploration = (
     setUser({ ...user, steps_banked: newTotal, last_sync_time: now });
   };
 
-  // 4. MANUAL MOVE (Triggered by UI thread loop)
+  // MANUAL MOVE (Triggered by UI thread frame loop via runOnJS)
+  // Uses refs to avoid stale closures and dependency churn.
+  // Throttled: skips if the previous call is still running.
   const onTileEnter = useCallback(async (nx: number, ny: number) => {
-    if (!user) return;
-    if ((user.steps_banked || 0) < MOVE_COST) return;
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setMoving(true);
-    if (moveTimeout.current) clearTimeout(moveTimeout.current);
-    moveTimeout.current = setTimeout(() => {
-      setMoving(false);
-      moveTimeout.current = null;
-    }, 150);
-
-    currentX.current = nx;
-    currentY.current = ny;
+    if (tileEnterBusy.current) return;
+    tileEnterBusy.current = true;
 
     try {
-      const newBank = (user.steps_banked || 0) - MOVE_COST;
+      const u = userRef.current;
+      if (!u) return;
+      if ((u.steps_banked || 0) < MOVE_COST) return;
+
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setMoving(true);
+      if (moveTimeout.current) clearTimeout(moveTimeout.current);
+      moveTimeout.current = setTimeout(() => {
+        setMoving(false);
+        moveTimeout.current = null;
+      }, 150);
+
+      const newBank = (u.steps_banked || 0) - MOVE_COST;
       
       setUser((prev: any) => {
         if (!prev) return null;
@@ -274,14 +300,16 @@ export const useExploration = (
         };
       });
       
-      supabase.from('profiles').update({ world_x: nx, world_y: ny, steps_banked: newBank }).eq('id', user.id).then();
+      // Fire-and-forget DB write
+      supabase.from('profiles').update({ world_x: nx, world_y: ny, steps_banked: newBank }).eq('id', u.id).then();
 
-      const node = (nodes || []).find(n => n.x === nx && n.y === ny);
+      const currentNodes = nodesRef.current;
+      const node = (currentNodes || []).find(n => n.x === nx && n.y === ny);
       if (node) {
-        supabase.from('player_discoveries').upsert({ user_id: user.id, x: nx, y: ny }).then();
-        supabase.from('discovered_locations').select('node_id').match({ user_id: user.id, node_id: node.id }).maybeSingle().then(({ data: existing }) => {
+        supabase.from('player_discoveries').upsert({ user_id: u.id, x: nx, y: ny }).then();
+        supabase.from('discovered_locations').select('node_id').match({ user_id: u.id, node_id: node.id }).maybeSingle().then(({ data: existing }) => {
           if (!existing) {
-            supabase.from('discovered_locations').upsert([{ user_id: user.id, node_id: node.id }], { onConflict: 'user_id,node_id' }).then();
+            supabase.from('discovered_locations').upsert([{ user_id: u.id, node_id: node.id }], { onConflict: 'user_id,node_id' }).then();
             setCheckpointAlert(node); 
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           }
@@ -298,7 +326,7 @@ export const useExploration = (
         }
       } else {
         const roll = Math.random();
-        const mapIdToUse = currentMapId || (user as any).current_map_id;
+        const mapIdToUse = currentMapId || (u as any).current_map_id;
         if (roll < 0.05 && mapIdToUse && mapIdToUse !== 'undefined') {
           supabase.from('encounter_pool').select('*').eq('map_id', mapIdToUse).lte('spawn_chance', roll).then(({ data: encounters }) => {
             if (encounters && encounters.length > 0) {
@@ -314,10 +342,15 @@ export const useExploration = (
         }
       }
 
-      refreshVision(nx, ny);
+      // Only refreshVision when far enough from the last refresh center
+      const distFromRefresh = Math.abs(nx - lastRefreshCenter.current.x) + Math.abs(ny - lastRefreshCenter.current.y);
+      if (distFromRefresh >= REFRESH_DISTANCE) {
+        refreshVision(nx, ny);
+      }
 
     } catch (e) { console.error(e); }
-  }, [user?.id, nodes, user?.steps_banked]);
+    finally { tileEnterBusy.current = false; }
+  }, [currentMapId]); // Stable -- reads user/nodes from refs
 
   return { onTileEnter, move: () => {}, refreshVision, visionGrid, nodesInVision, loading: moving, fastTravel, bankSteps, autoTravelReport, setAutoTravelReport, checkpointAlert, setCheckpointAlert };
 };

@@ -16,7 +16,7 @@ import Svg, {
 import { MotiView, AnimatePresence } from 'moti';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BattleAssetWarmer } from '@/components/BattleAssetWarmer';
-import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
+import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import LayeredAvatar from '@/components/LayeredAvatar';
 
 // --- Types ---
@@ -143,7 +143,7 @@ export function VictoryScreen({
           </Text>
           <View style={styles.petCaptureAvatarWrapper}>
             {enemy?.metadata ? (
-              <PetLayeredAvatar petDetails={enemy} size={120} square hideBackground />
+              <OptimizedPetAvatar petDetails={enemy} size={120} square hideBackground forceLegacy={true} />
             ) : (
               <Text style={{ fontSize: 56 }}>🐾</Text>
             )}
@@ -291,7 +291,7 @@ export function VictoryScreen({
                     <View key={member.id || index} style={styles.partyCard}>
                       <View style={[styles.avatarBox, { borderColor }]}>
                         {member.type === 'pet' && member.petDetails ? (
-                          <PetLayeredAvatar petDetails={member.petDetails} size={50} square hideBackground />
+                          <OptimizedPetAvatar petDetails={member.petDetails} size={50} square hideBackground forceLegacy={true} />
                         ) : member.avatar ? (
                           <LayeredAvatar user={member.avatar} size={50} square hideBackground />
                         ) : (

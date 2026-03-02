@@ -4,7 +4,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'rea
 import { useNavigation } from '@react-navigation/native';
 import { UserPet } from '@/types/pet';
 import { RANK_COLORS } from '@/constants/gameConstants';
-import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
+import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 
 export function PetList({ onSelect, pets, loading }: { onSelect?: (pet: UserPet) => void, pets: UserPet[], loading?: boolean }) {
   const navigation = useNavigation<any>();
@@ -47,7 +47,7 @@ export function PetList({ onSelect, pets, loading }: { onSelect?: (pet: UserPet)
               }}
             >
               <View style={styles.imageContainer}>
-                <PetLayeredAvatar petDetails={item.pet_details} size={80} square hideBackground />
+                <OptimizedPetAvatar petDetails={item.pet_details} size={80} square hideBackground forceLegacy={true} />
               </View>
               <View style={styles.infoContainer}>
                 <Text style={styles.petName}>{item.nickname || item.pet_details?.name}</Text>

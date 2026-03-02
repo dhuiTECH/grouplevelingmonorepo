@@ -1,7 +1,7 @@
 import React, { type RefObject } from 'react';
 import { View, Text, Animated, StyleSheet, Dimensions } from 'react-native';
 import { Image } from 'expo-image';
-import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
+import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import { EnemyHPBar } from './EnemyHPBar';
 import { COLORS } from './battleTheme';
 
@@ -14,6 +14,8 @@ interface EnemyBlockProps {
   enemyFigureRef: RefObject<View | null>;
   setEnemyFigureCenter: (center: { x: number; y: number }) => void;
   enemySpriteActive: boolean;
+  action?: 'idle' | 'walk' | 'enter';
+  onEnterComplete?: () => void;
 }
 
 export function EnemyBlock({
@@ -25,6 +27,8 @@ export function EnemyBlock({
   enemyFigureRef,
   setEnemyFigureCenter,
   enemySpriteActive,
+  action = 'idle',
+  onEnterComplete,
 }: EnemyBlockProps) {
   return (
     <View style={styles.enemyBlockWrap}>
@@ -53,13 +57,13 @@ export function EnemyBlock({
         }}
       >
         {enemy?.metadata ? (
-          <PetLayeredAvatar
+          <OptimizedPetAvatar
             petDetails={enemy}
             size={140}
             hideBackground
-            animate={enemySpriteActive}
-            breathe
             borderRadius={0}
+            action={action}
+            onEnterComplete={onEnterComplete}
           />
         ) : enemy?.icon_url ? (
           <Image

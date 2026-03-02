@@ -4,6 +4,8 @@ import Svg, { Rect, Defs, Pattern } from 'react-native-svg';
 import { MotiView } from 'moti';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BattleAssetWarmer } from '@/components/BattleAssetWarmer';
+import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
+import { LayeredAvatar } from '@/components/LayeredAvatar';
 
 interface DefeatScreenProps {
   party: any[];
@@ -121,7 +123,7 @@ export function DefeatScreen({ party, enemy, spriteUrls, onReturnToMap }: Defeat
                     <View key={member.id || index} style={styles.partyCard}>
                       <View style={[styles.avatarBox, { borderColor }]}>
                         {member.type === 'pet' && member.petDetails ? (
-                          <PetLayeredAvatar petDetails={member.petDetails} size={50} square hideBackground />
+                          <OptimizedPetAvatar petDetails={member.petDetails} size={50} square hideBackground forceLegacy={true} />
                         ) : member.avatar ? (
                           <LayeredAvatar user={member.avatar} size={50} square hideBackground />
                         ) : (

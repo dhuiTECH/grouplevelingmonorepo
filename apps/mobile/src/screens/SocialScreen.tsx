@@ -17,7 +17,7 @@ import { useTutorial } from '@/context/TutorialContext';
 import { useSocialData } from '@/hooks/useSocialData';
 import SocialHub from '@/components/SocialHub';
 import { User } from '@/types/user';
-import { AvatarViewerModal } from '@/components/modals/AvatarViewerModal';
+import { OptimizedAvatarModal } from '@/components/modals/OptimizedAvatarModal';
 import { useAudio } from '@/contexts/AudioContext';
 import { useNotification } from '@/contexts/NotificationContext';
 
@@ -84,7 +84,7 @@ export const SocialScreen: React.FC = () => {
         </SafeAreaView>
 
         {/* Player Detail Modal */}
-        <AvatarViewerModal
+        <OptimizedAvatarModal
           visible={!!selectedAvatar}
           onClose={() => setSelectedAvatar(null)}
           user={selectedAvatar}

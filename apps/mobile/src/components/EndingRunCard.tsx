@@ -12,7 +12,7 @@ const { width: WINDOW_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = WINDOW_WIDTH * 0.96; // Restore width to show some screen background
 const CARD_HEIGHT = CARD_WIDTH; // Keep square aspect ratio
 
-// Use same avatar size as AvatarViewerModal so LayeredAvatar (and back/wing layers) render identically
+// Use same avatar size as OptimizedAvatarModal so LayeredAvatar (and back/wing layers) render identically
 const AVATAR_SIZE = WINDOW_WIDTH < 640 ? Math.min(WINDOW_WIDTH - 32, 450) : 512;
 
 const AnimatedPolyline = Animated.createAnimatedComponent(Polyline);

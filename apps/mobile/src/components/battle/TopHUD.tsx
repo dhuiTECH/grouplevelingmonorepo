@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { Settings, LogOut } from 'lucide-react-native';
 import LayeredAvatar from '@/components/LayeredAvatar';
-import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
+import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 
 interface TopHUDProps {
   turnQueue: string[];
@@ -51,14 +51,14 @@ export function TopHUD({
             >
               {isEnemy ? (
                 enemy?.metadata ? (
-                  <PetLayeredAvatar petDetails={enemy} size={i === 0 ? 44 : 28} square hideBackground animate={false} />
+                  <OptimizedPetAvatar petDetails={enemy} size={i === 0 ? 44 : 28} square hideBackground forceLegacy={true} />
                 ) : enemy?.icon_url ? (
                   <Image source={{ uri: enemy.icon_url }} style={styles.queueImage} cachePolicy="memory-disk" />
                 ) : (
                   <Text style={{ fontSize: 20 }}>👾</Text>
                 )
               ) : isPet && char?.petDetails ? (
-                <PetLayeredAvatar petDetails={char.petDetails} size={petQueueSize} square hideBackground animate={false} />
+                <OptimizedPetAvatar petDetails={char.petDetails} size={petQueueSize} square hideBackground forceLegacy={true} />
               ) : isPet ? (
                 <Text style={{ fontSize: 20 }}>🐾</Text>
               ) : char?.avatar ? (

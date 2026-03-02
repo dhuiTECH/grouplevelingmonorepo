@@ -2,7 +2,7 @@ import React, { type MutableRefObject } from 'react';
 import { View, Text, TouchableOpacity, Animated, StyleSheet } from 'react-native';
 import { ArrowUp } from 'lucide-react-native';
 import LayeredAvatar from '@/components/LayeredAvatar';
-import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
+import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import { StatusBarMetric } from './StatusBarMetric';
 import { COLORS } from './battleTheme';
 
@@ -17,6 +17,8 @@ interface PartyRowProps {
   petSpriteActive: boolean;
   user?: any;
   allShopItems?: any[];
+  petAction?: 'idle' | 'walk' | 'enter';
+  onPetEnterComplete?: () => void;
 }
 
 export function PartyRow({
@@ -30,6 +32,8 @@ export function PartyRow({
   petSpriteActive,
   user,
   allShopItems,
+  petAction = 'idle',
+  onPetEnterComplete,
 }: PartyRowProps) {
   return (
     <Animated.View style={[styles.partyContainer, { opacity: partyOpacity }]}>
@@ -54,13 +58,13 @@ export function PartyRow({
               ]}
             >
               {isPet && char.petDetails ? (
-                <PetLayeredAvatar
+                <OptimizedPetAvatar
                   petDetails={char.petDetails}
                   size={110}
                   square
                   hideBackground
-                  animate={petSpriteActive}
-                  breathe
+                  action={petAction}
+                  onEnterComplete={onPetEnterComplete}
                 />
               ) : char.avatar ? (
                 <LayeredAvatar
