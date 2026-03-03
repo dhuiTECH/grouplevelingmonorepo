@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@10.30.3",
   "exports": {
     "./base": "./base.js",
     "./next-js": "./next.js",

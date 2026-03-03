@@ -50,7 +50,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
     nodeSnapToGrid, setNodeSnapToGrid,
     isLoadingTiles, tiles, nodes, showDebugModal, setShowDebugModal, showDebugNumbers, setShowDebugNumbers, currentStamp, setCurrentStamp,
     dragGrabOffset, setDragGrabOffset, selection, setSelection,
-    showWalkabilityOverlay, setShowWalkabilityOverlay
+    showWalkabilityOverlay, setShowWalkabilityOverlay, setUndoStack
   } = useMapStore();
 
   // Local State
@@ -97,7 +97,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
     handleEditNodeProperties, handleSaveNodeDetails, handleUploadAsset,
     handleUploadIcon, handleDeleteIcon, onAddStockItem, onRemoveStockItem,
     handleUploadNodeMusic, handleUploadDialogueExpression, handleUploadDialogueVoiceLine,
-    loadTilesFromSupabase: loadTiles // Aliased to avoid conflict if needed
+    setUploadingSceneBg, setUploadingNpcSprite
   } = useMapData();
 
   const {
@@ -216,13 +216,13 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
           if (state.selectedNodeId) {
             const node = state.nodes.find(n => n.id === state.selectedNodeId);
             if (node) {
-              setUndoStack(prev => [...prev, { action: 'erase_node', nodeData: node }]);
+              setUndoStack((prev: any[]) => [...prev, { action: 'erase_node', nodeData: node }]);
               removeNode(node.id);
             }
           } else if (state.selectedTileId) {
             const tile = state.tiles.find(t => t.id === state.selectedTileId);
             if (tile) {
-              setUndoStack(prev => [...prev, {
+              setUndoStack((prev: any[]) => [...prev, {
                 action: 'erase_tile',
                 x: tile.x,
                 y: tile.y,
@@ -321,7 +321,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [zoomToFit, favorites, selectTile, cursorCoords.x, cursorCoords.y, setTool, handleUndo, handleCopySelection, handlePasteStamp, selectedTool, setSelection, setCurrentStamp, setShowDebugModal]);
+  }, [zoomToFit, favorites, selectTile, cursorCoords.x, cursorCoords.y, setTool, handleUndo, handleCopySelection, handlePasteStamp, selectedTool, setSelection, setCurrentStamp, setShowDebugModal, setUndoStack, removeNode, removeTileById]);
 
   const hasInitialZoomed = useRef(false);
 
@@ -484,7 +484,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
                 <Paintbrush size={18} />
               </button>
               
-              {(selectedTool === 'paint' || selectedTool === 'erase') && (
+              {(selectedTool === 'paint' || selectedTool === 'erase' || selectedTool === 'collision') && (
                 <div className="flex items-center gap-1.5 px-1.5 border-l border-slate-700/50">
                     <button
                       onClick={() => setBrushMode(!brushMode)}
@@ -783,7 +783,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
               >
                 
                 {/* Layer 2: Grid Highlight */}
-                {!isSpacePressed && (selectedTool === 'paint' || selectedTool === 'erase') && (
+                {!isSpacePressed && (selectedTool === 'paint' || selectedTool === 'erase' || selectedTool === 'collision') && (
                   (() => {
                     const selTile = customTiles.find(t => t.id === selectedTileId);
                     const h = selTile?.frameHeight || TILE_SIZE;

@@ -35,6 +35,7 @@ export const useMapInteraction = (
   const brushRafRef = useRef<number | null>(null);
   const pendingBrushRef = useRef<{clientX: number, clientY: number, isShift: boolean, isAlt: boolean, buttons: number} | null>(null);
   const lastInteractionRef = useRef<{gx: number, gy: number, tool: string} | null>(null);
+  const drawingModeRef = useRef<'adding' | 'removing' | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
 
   const getTopMostTileId = (gx: number, gy: number, worldX?: number, worldY?: number) => {
@@ -107,7 +108,7 @@ export const useMapInteraction = (
     const gx = Math.floor((worldX - WORLD_SIZE / 2) / TILE_SIZE);
     const gy = Math.floor((worldY - WORLD_SIZE / 2) / TILE_SIZE);
 
-    const tool = forceErase ? 'erase' : (isAlt ? 'eyedropper' : selectedTool);
+    const tool = (selectedTool === 'collision') ? 'collision' : (forceErase ? 'erase' : (isAlt ? 'eyedropper' : selectedTool));
 
     // Node dragging logic
     if (state.isDraggingNode && state.draggingNodeId) {
@@ -148,7 +149,7 @@ export const useMapInteraction = (
 
     if (isMove && !state.isDraggingTile) {
       const { brushMode: currentBrushMode, brushSize: currentBrushSize, snapMode: currentSnapMode } = state;
-      const isBrushMode = (tool === 'paint' || tool === 'erase') && currentBrushMode && (currentBrushSize > 1 || tool === 'erase');
+      const isBrushMode = (tool === 'paint' || tool === 'erase' || tool === 'collision') && currentBrushMode && (currentBrushSize > 1 || tool === 'erase' || tool === 'collision');
       const isSubGridSnap = currentSnapMode !== 'full';
 
       if (!isBrushMode && !isSubGridSnap && lastInteractionRef.current?.gx === gx && lastInteractionRef.current?.gy === gy && lastInteractionRef.current?.tool === tool) {
@@ -227,7 +228,7 @@ export const useMapInteraction = (
             if (state.smartBrushLock && prevTile?.isAutoTile) return;
 
             if (!isMove || (dx === 0 && dy === 0)) {
-              setUndoStack(prev => [...prev, {
+              setUndoStack((prev: any[]) => [...prev, {
                 action: 'paint',
                 x: tx,
                 y: ty,
@@ -273,7 +274,7 @@ export const useMapInteraction = (
           const removedTile = await removeTileAt(tx, ty, smartBrushLock);
           if (removedTile) {
             if (!isMove || (dx === 0 && dy === 0)) {
-              setUndoStack(prev => [...prev, {
+              setUndoStack((prev: any[]) => [...prev, {
                 action: 'erase_tile',
                 x: tx,
                 y: ty,
@@ -287,7 +288,7 @@ export const useMapInteraction = (
           }
           const n = nodes.find(node => node.x === tx && node.y === ty);
           if (n && !isMove) {
-            setUndoStack(prev => [...prev, { action: 'erase_node', nodeData: n }]);
+            setUndoStack((prev: any[]) => [...prev, { action: 'erase_node', nodeData: n }]);
             removeNode(n.id);
           }
         })());
@@ -325,68 +326,116 @@ export const useMapInteraction = (
         }
       }
     } else if (tool === 'collision') {
-      if (collisionMode === 'full') {
-        const collisionTile = useMapStore.getState().tiles.find(
-          t => t.x === gx && t.y === gy && (t.layer || 0) === COLLISION_LAYER
-        );
-        if (forceErase || (collisionTile && !isMove)) {
-          if (collisionTile) removeTileById(collisionTile.id);
-        } else if (!collisionTile) {
-          await addTileSimple(
-            gx, gy, 'collision', '',
-            false, 0, TILE_SIZE, TILE_SIZE, 0,
-            COLLISION_LAYER, 0, 0,
-            false, true, false, false, 0, 0, false, 0,
-            undefined, 0, 0, 0
-          );
-        }
-      } else {
-        const edgeTile = useMapStore.getState().tiles.find(
-          t => t.x === gx && t.y === gy && (t.layer || 0) === EDGE_BLOCK_LAYER
-        );
-        const currentBits = edgeTile?.edgeBlocks ?? 0;
-
-        if (forceErase) {
-          const newBits = currentBits & ~edgeDirection;
-          if (edgeTile) {
-            if (newBits === 0) {
-              removeTileById(edgeTile.id);
-            } else {
-              await addTileSimple(
-                gx, gy, 'edge_block', '',
-                false, 0, TILE_SIZE, TILE_SIZE, 0,
-                EDGE_BLOCK_LAYER, 0, 0,
-                true, true, false, false, 0, 0, false, 0,
-                undefined, 0, 0, 0, newBits
-              );
-            }
-          }
-        } else if (!isMove) {
-          const newBits = currentBits ^ edgeDirection;
-          if (newBits === 0 && edgeTile) {
-            removeTileById(edgeTile.id);
-          } else {
-            await addTileSimple(
-              gx, gy, 'edge_block', '',
-              false, 0, TILE_SIZE, TILE_SIZE, 0,
-              EDGE_BLOCK_LAYER, 0, 0,
-              true, true, false, false, 0, 0, false, 0,
-              undefined, 0, 0, 0, newBits
-            );
-          }
-        } else {
-          const newBits = currentBits | edgeDirection;
-          if (newBits !== currentBits) {
-            await addTileSimple(
-              gx, gy, 'edge_block', '',
-              false, 0, TILE_SIZE, TILE_SIZE, 0,
-              EDGE_BLOCK_LAYER, 0, 0,
-              true, true, false, false, 0, 0, false, 0,
-              undefined, 0, 0, 0, newBits
-            );
+      const { brushMode: currentBrushMode, brushSize: currentBrushSize } = useMapStore.getState();
+      let brushArea = [{dx: 0, dy: 0}];
+      if (currentBrushMode && currentBrushSize > 1) {
+        const half = Math.floor(currentBrushSize / 2);
+        const isEven = currentBrushSize % 2 === 0;
+        brushArea = [];
+        for (let dy = -half; dy < (isEven ? half : half + 1); dy++) {
+          for (let dx = -half; dx < (isEven ? half : half + 1); dx++) {
+            brushArea.push({dx, dy});
           }
         }
       }
+
+      // Initialize drawing mode on first interaction
+      if (!isMove) {
+        if (forceErase) {
+          drawingModeRef.current = 'removing';
+        } else {
+          // Check if the central spot is currently unwalkable (has red tint)
+          const tilesAtPos = useMapStore.getState().tiles.filter(t => t.x === gx && t.y === gy);
+          const isCurrentlyUnwalkable = tilesAtPos.some(t => t.isWalkable === false);
+          drawingModeRef.current = isCurrentlyUnwalkable ? 'removing' : 'adding';
+        }
+      }
+
+      const tasks = [];
+      if (collisionMode === 'full') {
+        for (const {dx, dy} of brushArea) {
+          const tx = gx + dx;
+          const ty = gy + dy;
+          tasks.push((async () => {
+            const state = useMapStore.getState();
+            const tilesAtPos = state.tiles.filter(t => t.x === tx && t.y === ty);
+            
+            if (drawingModeRef.current === 'removing') {
+              // Remove ANY "unwalkability" at this spot
+              for (const tile of tilesAtPos) {
+                if (tile.layer === COLLISION_LAYER) {
+                  removeTileById(tile.id);
+                } else if (tile.isWalkable === false) {
+                  // Make the visual tile walkable
+                  await addTileSimple(
+                    tile.x, tile.y, tile.type, tile.imageUrl, tile.isSpritesheet, tile.frameCount,
+                    tile.frameWidth || 48, tile.frameHeight || 48, tile.animationSpeed || 0.1, tile.layer,
+                    tile.offsetX || 0, tile.offsetY || 0, true, // WALKABLE
+                    tile.snapToGrid ?? true, tile.isAutoFill ?? false, tile.isAutoTile ?? false,
+                    tile.bitmask || 0, tile.elevation || 0, tile.hasFoam ?? false, tile.foamBitmask || 0,
+                    tile.smartType, tile.rotation || 0, tile.blockCol || 0, tile.blockRow || 0, tile.edgeBlocks
+                  );
+                }
+              }
+            } else if (drawingModeRef.current === 'adding') {
+              // Make this spot unwalkable
+              const collisionTile = tilesAtPos.find(t => t.layer === COLLISION_LAYER);
+              const anyUnwalkable = tilesAtPos.some(t => t.isWalkable === false);
+              
+              if (!anyUnwalkable && !collisionTile) {
+                await addTileSimple(
+                  tx, ty, 'collision', '',
+                  false, 0, TILE_SIZE, TILE_SIZE, 0,
+                  COLLISION_LAYER, 0, 0,
+                  false, true, false, false, 0, 0, false, 0,
+                  undefined, 0, 0, 0
+                );
+              }
+            }
+          })());
+        }
+      } else {
+        // Edge mode logic remains mostly same but uses drawingModeRef
+        for (const {dx, dy} of brushArea) {
+          const tx = gx + dx;
+          const ty = gy + dy;
+          tasks.push((async () => {
+            const edgeTile = useMapStore.getState().tiles.find(
+              t => t.x === tx && t.y === ty && (t.layer || 0) === EDGE_BLOCK_LAYER
+            );
+            const currentBits = edgeTile?.edgeBlocks ?? 0;
+
+            if (drawingModeRef.current === 'removing') {
+              const newBits = currentBits & ~edgeDirection;
+              if (edgeTile && (currentBits & edgeDirection)) {
+                if (newBits === 0) {
+                  removeTileById(edgeTile.id);
+                } else {
+                  await addTileSimple(
+                    tx, ty, 'edge_block', '',
+                    false, 0, TILE_SIZE, TILE_SIZE, 0,
+                    EDGE_BLOCK_LAYER, 0, 0,
+                    true, true, false, false, 0, 0, false, 0,
+                    undefined, 0, 0, 0, newBits
+                  );
+                }
+              }
+            } else if (drawingModeRef.current === 'adding') {
+              const newBits = currentBits | edgeDirection;
+              if (newBits !== currentBits) {
+                await addTileSimple(
+                  tx, ty, 'edge_block', '',
+                  false, 0, TILE_SIZE, TILE_SIZE, 0,
+                  EDGE_BLOCK_LAYER, 0, 0,
+                  true, true, false, false, 0, 0, false, 0,
+                  undefined, 0, 0, 0, newBits
+                );
+              }
+            }
+          })());
+        }
+      }
+      await Promise.all(tasks);
     }
   };
 
@@ -442,7 +491,7 @@ export const useMapInteraction = (
       e.stopPropagation();
       const tile = tiles.find(t => t.id === tileId);
       if (tile) {
-        setUndoStack(prev => [...prev, {
+        setUndoStack((prev: any[]) => [...prev, {
           action: 'erase_tile',
           x: tile.x,
           y: tile.y,
@@ -526,7 +575,7 @@ export const useMapInteraction = (
     const isRightClick = e.button === 2;
     
     const forceErase = isRightClick; 
-    const tool = forceErase ? 'erase' : selectedTool;
+    const tool = (selectedTool === 'collision') ? 'collision' : (forceErase ? 'erase' : selectedTool);
 
     if (isRightClick) {
       e.preventDefault();
@@ -586,9 +635,9 @@ export const useMapInteraction = (
     if (isSpacePressed) return;
     
     const { brushMode: currentBrushMode } = useMapStore.getState();
-    const isPaintOrErase = selectedTool === 'paint' || selectedTool === 'erase';
+    const isPaintEraseOrCollision = selectedTool === 'paint' || selectedTool === 'erase' || selectedTool === 'collision';
 
-    if (isDrawing && (e.buttons > 0 || e.button === 2) && (!isPaintOrErase || currentBrushMode)) {
+    if (isDrawing && (e.buttons > 0 || e.button === 2) && (!isPaintEraseOrCollision || currentBrushMode)) {
       e.stopPropagation();
       pendingBrushRef.current = { 
         clientX: e.clientX, 
@@ -623,6 +672,7 @@ export const useMapInteraction = (
   const handleMouseUp = async () => {
     const state = useMapStore.getState();
     setIsDrawing(false);
+    drawingModeRef.current = null;
 
     if (selectedTool === 'stamp' && isSelecting) {
       setIsSelecting(false);
@@ -681,7 +731,7 @@ export const useMapInteraction = (
     );
 
     if (!exists) {
-      setUndoStack(prev => [...prev, { action: 'node_add', x: nodeX, y: nodeY }]);
+      setUndoStack((prev: any[]) => [...prev, { action: 'node_add', x: nodeX, y: nodeY }]);
       addNode({ x: nodeX, y: nodeY, type: nodeType, name: `New ${nodeType}`, iconUrl: '' });
     }
   };

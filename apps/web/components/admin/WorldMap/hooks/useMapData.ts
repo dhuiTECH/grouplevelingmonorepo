@@ -258,6 +258,7 @@ export const useMapData = () => {
     handleEditNodeProperties, handleSaveNodeDetails, handleUploadAsset,
     handleUploadIcon, handleDeleteIcon, onAddStockItem, onRemoveStockItem,
     handleUploadNodeMusic, handleUploadDialogueExpression, handleUploadDialogueVoiceLine,
-    loadTilesFromSupabase
+    loadTilesFromSupabase,
+    setUploadingSceneBg, setUploadingNpcSprite
   };
 };

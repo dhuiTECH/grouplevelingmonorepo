@@ -2,7 +2,7 @@
   "name": "@repo/typescript-config",
   "version": "0.0.0",
   "private": true,
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@10.30.3",
   "license": "MIT",
   "publishConfig": {
     "access": "public"

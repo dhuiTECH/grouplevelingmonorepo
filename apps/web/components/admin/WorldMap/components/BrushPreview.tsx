@@ -28,12 +28,12 @@ const snapPosition = (smooth: number, snapMode: 'full' | 'half' | 'free', gridCo
 export const BrushPreview = React.memo(({
   isSpacePressed, selectedTool, selectedTileId, customTiles, cursorCoords, smoothCursorCoords, TILE_SIZE, WORLD_SIZE, brushSize, brushMode, selectedSmartType, snapMode
 }: BrushPreviewProps) => {
-  if (isSpacePressed || (selectedTool !== 'paint' && selectedTool !== 'erase')) return null;
+  if (isSpacePressed || (selectedTool !== 'paint' && selectedTool !== 'erase' && selectedTool !== 'collision')) return null;
   
   // If painting, we need either a tile OR a smart type active
   if (selectedTool === 'paint' && !selectedTileId && selectedSmartType === 'off') return null;
   
-  const tile = selectedTool === 'paint' ? customTiles.find((t: any) => t.id === selectedTileId) : null;
+  const tile = (selectedTool === 'paint' || selectedTool === 'collision') ? customTiles.find((t: any) => t.id === selectedTileId) : null;
   const isNotFullSnap = snapMode !== 'full';
 
   const half = brushMode ? Math.floor(brushSize / 2) : 0;
@@ -58,11 +58,12 @@ export const BrushPreview = React.memo(({
       }}
     >
       {previewTiles.map(({ dx, dy }, i) => {
-        if (selectedTool === 'erase') {
+        if (selectedTool === 'erase' || selectedTool === 'collision') {
+          const isCollision = selectedTool === 'collision';
           return (
             <div 
               key={i}
-              className="absolute bg-red-500/30 border border-red-500/50"
+              className={`absolute ${isCollision ? 'bg-orange-500/30 border-orange-500/50' : 'bg-red-500/30 border-red-500/50'}`}
               style={{
                 left: dx * TILE_SIZE,
                 top: dy * TILE_SIZE,

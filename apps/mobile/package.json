@@ -1,7 +1,7 @@
 {
   "name": "mobile",
   "version": "1.0.0",
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@10.30.3",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
