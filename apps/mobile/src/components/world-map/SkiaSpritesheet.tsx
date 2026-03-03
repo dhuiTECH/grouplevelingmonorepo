@@ -1,5 +1,5 @@
 import React from 'react';
-import { Group, Image, rect, SkImage, Paint } from '@shopify/react-native-skia';
+import { Group, Image, rect, SkImage, Paint, FilterMode } from '@shopify/react-native-skia';
 import { SharedValue, useDerivedValue } from 'react-native-reanimated';
 
 interface SkiaSpritesheetProps {
@@ -41,7 +41,7 @@ export const SkiaSpritesheet: React.FC<SkiaSpritesheetProps> = ({
       <Paint antiAlias={false} />
       <Group transform={transform}>
         {/* We use fit="fill" so the full strip perfectly stretches across the N * destRect.width area */}
-        <Image image={image} rect={fullRect} fit="fill" sampling="nearest" />
+        <Image image={image} rect={fullRect} fit="fill" sampling={{ filter: FilterMode.Nearest }} antiAlias={false} />
       </Group>
     </Group>
   );

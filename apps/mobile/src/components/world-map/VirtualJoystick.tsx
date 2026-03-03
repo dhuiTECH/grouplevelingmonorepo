@@ -31,9 +31,10 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({ velocityX, vel
       wasMoving.current = false;
       onMoveStateChange?.(false);
     }
-    Animated.spring(knobX, { toValue: 0, useNativeDriver: false, friction: 8, tension: 120 }).start();
-    Animated.spring(knobY, { toValue: 0, useNativeDriver: false, friction: 8, tension: 120 }).start();
-    Animated.timing(sprintAnim, { toValue: 0, duration: 150, useNativeDriver: false }).start();
+    // Snap knob back fast — high tension, moderate friction for crisp reset
+    Animated.spring(knobX, { toValue: 0, useNativeDriver: false, friction: 6, tension: 300 }).start();
+    Animated.spring(knobY, { toValue: 0, useNativeDriver: false, friction: 6, tension: 300 }).start();
+    Animated.timing(sprintAnim, { toValue: 0, duration: 80, useNativeDriver: false }).start();
   };
 
   const panResponder = useRef(PanResponder.create({
@@ -62,21 +63,17 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({ velocityX, vel
         return;
       }
 
-      // We are moving
       if (!wasMoving.current) {
         wasMoving.current = true;
         onMoveStateChange?.(true);
       }
 
-      // Smooth analog direction -- no snapping, eliminates direction-flicker jitter
-      const nx = dx / dist;
-      const ny = dy / dist;
+      // Direct 1:1 mapping — no smoothing, immediate response
+      velocityX.value = dx / dist;
+      velocityY.value = dy / dist;
 
       const sprint = mag >= SPRINT_THRESHOLD;
       isSprinting.value = sprint;
-
-      velocityX.value = nx;
-      velocityY.value = ny;
 
       Animated.timing(sprintAnim, {
         toValue: sprint ? 1 : 0,

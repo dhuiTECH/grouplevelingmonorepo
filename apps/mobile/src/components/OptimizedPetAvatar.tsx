@@ -170,9 +170,9 @@ export const OptimizedPetAvatar = ({
         style={{ 
           position: 'absolute',
           // Centering logic: place the large frame such that its center matches the safeSize center.
-          // Added a small 5% visual nudge to the right to correct for pet visual bias.
-          left: (safeSize - frameWidth) / 2 + (safeSize * 0.05),
-          top: (safeSize - frameHeight) / 2,
+          // Now using the rounded scaled dimensions for perfect sharpness and alignment.
+          left: (safeSize - Math.round(frameWidth * scale)) / 2 + (safeSize * 0.05),
+          top: (safeSize - Math.round(frameHeight * scale)) / 2,
         }}
       />
     </View>

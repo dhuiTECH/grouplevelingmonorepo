@@ -269,6 +269,8 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     zIndex: 1,
+    borderRadius: 6,
+    overflow: 'hidden',
   },
   label: {
     fontSize: 9,

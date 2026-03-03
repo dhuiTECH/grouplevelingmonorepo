@@ -50,15 +50,15 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
       const coords = getPixiTextureCoords(tile.foamBitmask || 0, 0, 0)[0];
       
       // Foam is rendered at the base tile position (48x48), ignoring the prop size
-      // We apply 1px overlap to seaming
-      const foamDestRect = rect(absPx, absPy, tileSize + 1, tileSize + 1);
+      // Remove the + 1 hack. Strict 48x48 clipping to prevent spritesheet bleed.
+      const foamDestRect = rect(absPx, absPy, Math.ceil(tileSize), Math.ceil(tileSize));
       
       foamLayer = (
         <Group opacity={foamOpacity} clip={foamDestRect}>
-          <Paint antiAlias={false} />
           <Image 
             image={foamImg} 
-            sampling="nearest"
+            sampling={{ filter: FilterMode.Nearest }}
+            antiAlias={false}
             rect={{
               x: absPx - coords.sourceX,
               y: absPy - coords.sourceY,
@@ -97,8 +97,8 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
     const img = activeUrl ? images.get(activeUrl.split('?')[0]) : null;
     
     // Even if it's on a higher layer, smart tiles typically use the base 48x48 grid
-    // We apply 1px overlap for seaming
-    let baseDestRect = rect(absPx, absPy, tileSize + 1, tileSize + 1);
+    // Remove the + 1 hack. Strict 48x48 clipping to prevent spritesheet bleed.
+    let baseDestRect = rect(absPx, absPy, Math.ceil(tileSize), Math.ceil(tileSize));
 
     if (img) {
       // Re-calculate the bitmask for the mobile app using the shared function
@@ -118,7 +118,8 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
           <Paint antiAlias={false} />
           <Image 
             image={img} 
-            sampling="nearest"
+            sampling={{ filter: FilterMode.Nearest }}
+            antiAlias={false}
             rect={{
               x: absPx - coords.sourceX,
               y: absPy - coords.sourceY,
@@ -174,7 +175,7 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
         <Group origin={{ x: destRect.x + destRect.width / 2, y: destRect.y + destRect.height / 2 }} transform={tile.rotation ? [{ rotate: (tile.rotation * Math.PI) / 180 }] : []}>
           {foamLayer}
           <Paint antiAlias={false} />
-          <Image image={img} rect={destRect} fit="fill" sampling="nearest" />
+          <Image image={img} rect={destRect} fit="fill" sampling={{ filter: FilterMode.Nearest }} antiAlias={false} />
         </Group>
       );
     }

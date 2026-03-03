@@ -4,8 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { setAudioMuteGetter } from '@/utils/audio';
 import { fetchGameMusic } from '@/api/music';
 
-// Fallback local asset
-const DEFAULT_BGM_SOURCE = require('../../assets/sounds/gamemusic/GroupLevelingOSTBeginning.mp3');
+// All background music now comes from Supabase; no local fallback track.
 
 const MUTE_STORAGE_KEY = '@app/music_muted';
 const BGM_DISABLED_KEY = '@app/bgm_disabled_after_tutorial';
@@ -152,7 +151,14 @@ export function AudioProvider({ children }: AudioProviderProps): JSX.Element {
       remoteUrl = trackName;
     }
 
-    const source: { uri: string } | number = remoteUrl ? { uri: remoteUrl } : DEFAULT_BGM_SOURCE;
+    // If there's still no URL for this track, bail out (no legacy local fallback)
+    if (!remoteUrl) {
+      console.warn(`[AudioContext] No URL registered for track '${trackName}', skipping playback.`);
+      loadingTrackNameRef.current = null;
+      return;
+    }
+
+    const source: { uri: string } = { uri: remoteUrl };
     
     try {
       const { sound } = await Audio.Sound.createAsync(source as any, {
@@ -177,27 +183,6 @@ export function AudioProvider({ children }: AudioProviderProps): JSX.Element {
     } catch (e) {
       console.warn(`[AudioContext] Failed to play track ${trackName}:`, e);
       loadingTrackNameRef.current = null;
-      
-      if (remoteUrl) {
-        console.log('[AudioContext] Attempting fallback to local default...');
-        try {
-          const { sound } = await Audio.Sound.createAsync(DEFAULT_BGM_SOURCE, {
-            shouldPlay: !isMutedRef.current && !bgmDisabledRef.current,
-            isLooping: true,
-            volume: 1.0,
-          });
-          
-          if (currentTrackNameRef.current !== trackName || registryVersionRef.current > versionWhenStarted) {
-            sound.unloadAsync().catch(() => {});
-            return;
-          }
-          
-          bgmRef.current = sound;
-          loadedRef.current = true;
-        } catch (e2) {
-          console.warn('[AudioContext] Fallback failed too:', e2);
-        }
-      }
     }
   }, []);
 

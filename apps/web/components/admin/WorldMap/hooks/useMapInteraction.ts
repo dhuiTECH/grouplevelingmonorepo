@@ -37,10 +37,64 @@ export const useMapInteraction = (
   const lastInteractionRef = useRef<{gx: number, gy: number, tool: string} | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
 
-  const getTopMostTileId = (gx: number, gy: number) => {
+  const getTopMostTileId = (gx: number, gy: number, worldX?: number, worldY?: number) => {
+    // If we have world coordinates, perform a more accurate visual check
+    if (worldX !== undefined && worldY !== undefined) {
+      const wx = worldX - WORLD_SIZE / 2;
+      const wy = worldY - WORLD_SIZE / 2;
+
+      // Filter tiles that visually contain the point (wx, wy)
+      const containingTiles = tiles.filter(tile => {
+        // Find the dimensions of the tile
+        const normalizedTileUrl = normalizeUrl(tile.imageUrl);
+        const customTile = customTiles.find(ct => normalizeUrl(ct.url) === normalizedTileUrl);
+        
+        const isFrozenSmart = !tile.isAutoTile && !!tile.smartType && tile.bitmask !== undefined;
+        const isSmartSize = (tile.isAutoTile || isFrozenSmart) && (tile.layer || 0) === 0;
+        const displayWidth = isSmartSize ? TILE_SIZE : (customTile?.frameWidth || tile.frameWidth || TILE_SIZE);
+        const displayHeight = isSmartSize ? TILE_SIZE : (customTile?.frameHeight || tile.frameHeight || TILE_SIZE);
+
+        const tileWorldX = tile.x * TILE_SIZE + (tile.offsetX || 0) - (displayWidth - TILE_SIZE) / 2;
+        const tileWorldY = tile.y * TILE_SIZE + (tile.offsetY || 0) - (displayHeight - TILE_SIZE);
+
+        return (
+          wx >= tileWorldX &&
+          wx <= tileWorldX + displayWidth &&
+          wy >= tileWorldY &&
+          wy <= tileWorldY + displayHeight
+        );
+      });
+
+      if (containingTiles.length > 0) {
+        // Sort by layer (desc) and then depth (y)
+        return containingTiles.sort((a, b) => {
+          if ((b.layer || 0) !== (a.layer || 0)) return (b.layer || 0) - (a.layer || 0);
+          return (b.y + (b.offsetY || 0) / TILE_SIZE) - (a.y + (a.offsetY || 0) / TILE_SIZE);
+        })[0].id;
+      }
+    }
+
+    // Fallback to exact grid cell check
     const tilesAtPos = tiles.filter(t => t.x === gx && t.y === gy);
     if (tilesAtPos.length === 0) return null;
     return tilesAtPos.sort((a, b) => (b.layer || 0) - (a.layer || 0))[0].id;
+  };
+
+  const getNodeAtWorldPos = (worldX: number, worldY: number) => {
+    const wx = worldX - WORLD_SIZE / 2;
+    const wy = worldY - WORLD_SIZE / 2;
+    
+    // Nodes are TILE_SIZE x TILE_SIZE with top-left anchor
+    return nodes.find(node => {
+      const nodeX = node.x * TILE_SIZE;
+      const nodeY = node.y * TILE_SIZE;
+      return (
+        wx >= nodeX &&
+        wx <= nodeX + TILE_SIZE &&
+        wy >= nodeY &&
+        wy <= nodeY + TILE_SIZE
+      );
+    });
   };
 
   const handleMapInteraction = async (clientX: number, clientY: number, isMove = false, isShift = false, forceErase = false, isAlt = false, buttons = 0) => {
@@ -503,7 +557,20 @@ export const useMapInteraction = (
       const gx = Math.floor((worldX - WORLD_SIZE / 2) / TILE_SIZE);
       const gy = Math.floor((worldY - WORLD_SIZE / 2) / TILE_SIZE);
 
-      const topTileId = getTopMostTileId(gx, gy);
+      // 1. Try to find a node first (they are usually smaller/more specific)
+      const node = getNodeAtWorldPos(worldX, worldY);
+      if (node) {
+        if (tool === 'erase') {
+          setUndoStack(prev => [...prev, { action: 'erase_node', nodeData: node }]);
+          removeNode(node.id);
+          return;
+        }
+        handleNodeMouseDown(node.id, e);
+        return;
+      }
+
+      // 2. Try to find a tile
+      const topTileId = getTopMostTileId(gx, gy, worldX, worldY);
       if (topTileId) {
         handlePropMouseDown(topTileId, e);
         if (tool === 'erase') return;

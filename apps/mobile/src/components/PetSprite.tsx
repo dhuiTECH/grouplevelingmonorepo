@@ -4,11 +4,13 @@ import Animated, {
   useSharedValue, 
   useFrameCallback, 
   useAnimatedStyle,
+  useAnimatedReaction,
   withRepeat, 
   withSequence, 
   withTiming, 
   Easing,
-  runOnJS
+  runOnJS,
+  cancelAnimation
 } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 
@@ -26,6 +28,7 @@ export const PetSprite = ({
   scale = 1,
   flipX = false,
   onEnterComplete,
+  isMoving, // Optional SharedValue for frame-perfect sync
   style
 }: any) => {
   const currentFrame = useSharedValue(idleIndex);
@@ -33,7 +36,39 @@ export const PetSprite = ({
   const breathScale = useSharedValue(1);
   const hasEntered = useSharedValue(false);
 
+  // Sync animation state with SharedValue if provided (bypasses JS thread delay)
+  useAnimatedReaction(
+    () => (isMoving ? isMoving.value : null),
+    (moving: boolean | null, prev: boolean | null) => {
+      if (moving === null || moving === prev) return;
+
+      if (!moving) {
+        // Force back to idle
+        currentFrame.value = idleIndex;
+        frameTimer.value = 0;
+        breathScale.value = withRepeat(
+          withSequence(
+            withTiming(1.03, { duration: 1200, easing: Easing.inOut(Easing.sin) }),
+            withTiming(1, { duration: 1200, easing: Easing.inOut(Easing.sin) })
+          ),
+          -1,
+          true
+        );
+      } else {
+        // Start walking
+        cancelAnimation(breathScale);
+        breathScale.value = 1;
+        // Instantly reset to the start of the walk cycle
+        currentFrame.value = 0;
+        frameTimer.value = 0;
+      }
+    }
+  );
+
   useEffect(() => {
+    // If using SharedValue for movement, we skip the JS-based useEffect sync for walk/idle
+    if (isMoving) return;
+
     if (action === 'idle') {
       currentFrame.value = idleIndex;
       frameTimer.value = 0;
@@ -59,12 +94,19 @@ export const PetSprite = ({
 
   useFrameCallback((frameInfo) => {
     if (totalFrames <= 1) return;
-    if (action === 'idle') return;
+
+    // Determine action: SharedValue takes priority for zero-lag sync
+    let effectiveAction = action;
+    if (isMoving && typeof isMoving === 'object') {
+      effectiveAction = isMoving.value ? 'walk' : 'idle';
+    }
+
+    if (effectiveAction === 'idle') return;
 
     const timePerFrame = totalTimeMs / totalFrames;
     const dt = frameInfo.timeSincePreviousFrame || 0;
 
-    if (action === 'enter') {
+    if (effectiveAction === 'enter') {
       if (hasEntered.value) return;
       frameTimer.value += dt;
       if (frameTimer.value >= timePerFrame) {
@@ -83,7 +125,7 @@ export const PetSprite = ({
       return;
     }
 
-    if (action === 'walk') {
+    if (effectiveAction === 'walk') {
       frameTimer.value += dt;
       if (frameTimer.value >= timePerFrame) {
         currentFrame.value = (Math.floor(currentFrame.value) + 1) % totalFrames;
@@ -92,37 +134,53 @@ export const PetSprite = ({
     }
   });
 
+  const sWidth = Math.round(frameWidth * scale);
+  const sHeight = Math.round(frameHeight * scale);
+
   // 1. Hardware-accelerated sliding image
   const imageAnimatedStyle = useAnimatedStyle(() => {
     return {
-      width: frameWidth * totalFrames,
-      height: frameHeight,
       transform: [
-        { translateX: -(Math.floor(currentFrame.value) * frameWidth) }
+        { translateX: -(Math.floor(currentFrame.value) * sWidth) }
       ]
     };
   });
 
-  // 2. Hardware-accelerated container transforms
+  // 2. Container transform (flip + breath scale)
   const containerAnimatedStyle = useAnimatedStyle(() => {
     return {
-      width: frameWidth,
-      height: frameHeight,
-      overflow: 'hidden',
       transform: [
         { scaleX: flipX ? -1 : 1 },
-        { scale: breathScale.value * scale }
+        { scale: breathScale.value }
       ]
     };
   });
 
   return (
-    <Animated.View style={[containerAnimatedStyle, style]}>
+    <Animated.View 
+      style={[
+        {
+          width: sWidth,
+          height: sHeight,
+          overflow: 'hidden',
+        },
+        containerAnimatedStyle, 
+        style
+      ]}
+    >
       <AnimatedExpoImage
         source={{ uri: imageUrl }}
-        style={imageAnimatedStyle}
-        contentFit="fill"
+        style={[
+          {
+            width: totalFrames > 1 ? sWidth * totalFrames : sWidth,
+            height: sHeight,
+          },
+          imageAnimatedStyle
+        ]}
+        contentFit={totalFrames > 1 ? "fill" : "contain"}
         cachePolicy="memory-disk"
+        priority="high"
+        transition={0}
       />
     </Animated.View>
   );

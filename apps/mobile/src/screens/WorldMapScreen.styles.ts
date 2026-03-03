@@ -1,0 +1,148 @@
+import { Dimensions, StyleSheet } from 'react-native';
+
+const { width, height } = Dimensions.get('window');
+
+export const worldMapStyles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#1a1c14' },
+
+  mapLayer: { position: 'absolute', width, height, zIndex: 0 },
+  gridLayer: { ...StyleSheet.absoluteFillObject, zIndex: 1 },
+  tile: { position: 'absolute' as const },
+
+  playerContainer: {
+    zIndex: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'visible',
+  },
+  playerAvatar: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#0f172a',
+    borderWidth: 2,
+    borderColor: '#3b82f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+
+  partyMemberContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  partyMemberAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#0f172a',
+    borderWidth: 2,
+    borderColor: '#22c55e',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    shadowColor: '#22c55e',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+  },
+  partyMemberLabel: {
+    position: 'absolute' as const,
+    bottom: -20,
+    flexDirection: 'row' as const,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    gap: 4,
+  },
+  partyMemberName: {
+    color: '#22c55e',
+    fontSize: 9,
+    fontWeight: 'bold' as const,
+  },
+  partyMemberIndicator: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#22c55e',
+  },
+
+  nodeContainer: { alignItems: 'center', zIndex: 6 },
+  nodeIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#0f172a',
+    borderWidth: 2,
+    borderColor: '#3b82f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    shadowColor: '#00e5ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+  },
+  nodeIcon: { width: 42, height: 42 },
+  nodeLabel: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold' as const,
+    textTransform: 'uppercase' as const,
+    marginTop: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 4,
+    borderRadius: 2,
+  },
+
+  dpadLayer: {
+    position: 'absolute' as const,
+    bottom: 220,
+    right: 12,
+    zIndex: 30,
+  },
+
+  compassContainer: {
+    position: 'absolute' as const,
+    bottom: 20,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    padding: 10,
+    borderRadius: 10,
+    flexDirection: 'row' as const,
+    alignItems: 'center',
+  },
+  compassText: { color: '#facc15', marginLeft: 10 },
+
+  mapLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(2, 6, 23, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  mapLoadingText: {
+    color: '#22d3ee',
+    marginTop: 10,
+    fontWeight: '900' as const,
+    letterSpacing: 2,
+  },
+  retryBtn: {
+    marginTop: 20,
+    backgroundColor: '#334155',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#94a3b8',
+  },
+  retryBtnText: {
+    color: '#fff',
+    fontWeight: 'bold' as const,
+    fontSize: 12,
+    letterSpacing: 1,
+  },
+});

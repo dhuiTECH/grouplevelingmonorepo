@@ -209,6 +209,33 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Deletion (Delete or Backspace)
+      if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          const state = useMapStore.getState();
+          if (state.selectedNodeId) {
+            const node = state.nodes.find(n => n.id === state.selectedNodeId);
+            if (node) {
+              setUndoStack(prev => [...prev, { action: 'erase_node', nodeData: node }]);
+              removeNode(node.id);
+            }
+          } else if (state.selectedTileId) {
+            const tile = state.tiles.find(t => t.id === state.selectedTileId);
+            if (tile) {
+              setUndoStack(prev => [...prev, {
+                action: 'erase_tile',
+                x: tile.x,
+                y: tile.y,
+                layer: tile.layer || 0,
+                previousTile: tile
+              }]);
+              removeTileById(state.selectedTileId);
+            }
+          }
+          return;
+        }
+      }
+
       // Escape to clear selection and stamp
       if (e.key === 'Escape') {
         setSelection(null);

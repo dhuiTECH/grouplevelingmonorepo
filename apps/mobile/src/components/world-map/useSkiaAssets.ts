@@ -8,26 +8,30 @@ export const useSkiaAssets = (urls: string[]) => {
   const [images, setImages] = useState<Map<string, SkImage>>(new Map(globalImageCache));
   const fetchingUrls = useRef(new Set<string>());
 
+  // Stringify to prevent referential equality checks from firing the effect
+  const urlsString = [...urls].sort().join(',');
+
   useEffect(() => {
     let active = true;
-    
+    const urlList = urlsString ? urlsString.split(',').filter(Boolean) : [];
+
     const loadImages = async () => {
       let changed = false;
       const newImages = new Map(images);
 
-      const promises = urls.map(async (url) => {
+      const promises = urlList.map(async (url) => {
         if (!url) return;
         const cleanUrl = url.split('?')[0];
-        
+
         if (newImages.has(cleanUrl) || fetchingUrls.current.has(cleanUrl)) return;
-        
+
         fetchingUrls.current.add(cleanUrl);
         try {
           const response = await fetch(url);
           const arrayBuffer = await response.arrayBuffer();
           const data = Skia.Data.fromBytes(new Uint8Array(arrayBuffer));
           const img = Skia.Image.MakeImageFromEncoded(data);
-          
+
           if (img) {
             newImages.set(cleanUrl, img);
             globalImageCache.set(cleanUrl, img);
@@ -47,14 +51,14 @@ export const useSkiaAssets = (urls: string[]) => {
       }
     };
 
-    if (urls.length > 0) {
+    if (urlList.length > 0) {
       loadImages();
     }
 
     return () => {
       active = false;
     };
-  }, [urls]);
+  }, [urlsString]);
 
   return images;
 };
