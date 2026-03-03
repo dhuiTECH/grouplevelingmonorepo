@@ -7,6 +7,7 @@ const config = getDefaultConfig(__dirname);
 config.resolver.extraNodeModules = {
   ...config.resolver.extraNodeModules,
   'lodash': path.resolve(__dirname, 'node_modules/lodash'),
+  'react-native-share': path.resolve(__dirname, 'node_modules/react-native-share'),
 };
 
 // Configure server for Replit environment

@@ -27,7 +27,7 @@ interface EndingRunCardProps {
   missionName?: string;
   dungeonImage?: ImageSource;
   animate?: boolean;
-  variant?: 'full' | 'minimal';
+  variant?: 'full' | 'minimal' | 'sticker';
   /** Pass so LayeredAvatar can render hand grip for equipped weapon */
   allShopItems?: any[];
 }
@@ -120,113 +120,72 @@ export const EndingRunCard = forwardRef(({ runData, user, missionName, dungeonIm
     }).join(' ');
   }, [runData.routeCoordinates]);
 
-  return (
-    <ViewShot ref={shotRef} options={{ format: "png", quality: 0.9 }}>
-      <View style={styles.card}>
-        {/* Full-Card Avatar Background: render at AVATAR_SIZE for correct layers, scale up to fill card */}
-        <View style={styles.avatarBackgroundContainer}>
-          <View
-            style={{
-              width: AVATAR_SIZE,
-              height: AVATAR_SIZE,
-              position: 'absolute',
-              left: (CARD_HEIGHT - AVATAR_SIZE) / 2,
-              top: (CARD_HEIGHT - AVATAR_SIZE) / 2,
-              transform: [{ scale: CARD_HEIGHT / AVATAR_SIZE }],
-            }}
-          >
-            <LayeredAvatar
-              user={user}
-              size={AVATAR_SIZE}
-              square={true}
-              allShopItems={allShopItems}
-            />
-          </View>
-          {/* Subtle gradient to make bottom text really pop */}
-          <LinearGradient
-            colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.80)']}
-            style={StyleSheet.absoluteFill}
-          />
+  // 1. STANDARD LAYOUT (Full & Minimal)
+  const renderStandard = () => (
+    <View style={styles.card}>
+      <View style={styles.avatarBackgroundContainer}>
+        <View style={{ width: AVATAR_SIZE, height: AVATAR_SIZE, position: 'absolute', left: (CARD_HEIGHT - AVATAR_SIZE) / 2, top: (CARD_HEIGHT - AVATAR_SIZE) / 2, transform: [{ scale: CARD_HEIGHT / AVATAR_SIZE }] }}>
+          <LayeredAvatar user={user} size={AVATAR_SIZE} square={true} allShopItems={allShopItems} hideBackground={false} />
         </View>
-
-        {/* Character Info (Top Right) */}
-        {variant === 'full' && (
-          <View style={styles.characterInfo}>
-            <Text style={styles.characterName}>{user.hunter_name || user.name}</Text>
-            {user.hunter_rank && <Text style={styles.characterRank}>RANK {user.hunter_rank}</Text>}
+        <LinearGradient colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.80)']} style={StyleSheet.absoluteFill} />
+      </View>
+      {(variant === 'full' || variant === 'sticker') && (
+        <View style={styles.characterInfo}>
+          <Text style={styles.characterName}>{user.hunter_name || user.name}</Text>
+          {user.hunter_rank && <Text style={styles.characterRank}>RANK {user.hunter_rank}</Text>}
+        </View>
+      )}
+      {(variant === 'full' || variant === 'sticker') && (
+        <View style={styles.titleContainer}>
+          <Text style={styles.title}>MISSION COMPLETE</Text>
+          {missionName && <GlitchText text={missionName} style={styles.missionName} color="#22d3ee" />}
+        </View>
+      )}
+      <Image source={require('../../assets/icons/groupleveling-logo.png')} style={styles.logo} contentFit="contain" />
+      <View style={[styles.bottomSection, variant === 'minimal' && styles.bottomSectionMinimal]}>
+        <View style={styles.footerContainer}>
+          <View style={styles.statsContainer}>
+            <View style={styles.dataItem}><Text style={styles.dataLabel}>DISTANCE</Text><Text style={styles.dataValue}>{distanceKm}</Text></View>
+            <View style={styles.dataItem}><Text style={styles.dataLabel}>PACE</Text><Text style={styles.dataValue}>{paceStr}</Text></View>
+            <View style={styles.dataItem}><Text style={styles.dataLabel}>TIME</Text><Text style={styles.dataValue}>{timeStr}</Text></View>
           </View>
-        )}
-
-        {/* Card Title */}
-        {variant === 'full' && (
-          <View style={styles.titleContainer}>
-            <Text style={styles.title}>MISSION COMPLETE</Text>
-            {missionName && (
-              <GlitchText 
-                text={missionName}
-                style={styles.missionName}
-                color="#22d3ee"
-              />
-            )}
-          </View>
-        )}
-
-        {/* Logo - Stays centered */}
-        <Image 
-          source={require('../../assets/icons/groupleveling-logo.png')} 
-          style={styles.logo}
-          contentFit="contain"
-        />
-
-        {/* Footer with Stats and Map */}
-        <View style={[styles.bottomSection, variant === 'minimal' && styles.bottomSectionMinimal]}>
-          <View style={styles.footerContainer}>
-            {/* Stats on the left */}
-            <View style={styles.statsContainer}>
-              <View style={styles.dataItem}>
-                <Text style={styles.dataLabel}>DISTANCE</Text>
-                <Text style={styles.dataValue}>{distanceKm}</Text>
-              </View>
-              <View style={styles.dataItem}>
-                <Text style={styles.dataLabel}>PACE</Text>
-                <Text style={styles.dataValue}>{paceStr}</Text>
-              </View>
-              <View style={styles.dataItem}>
-                <Text style={styles.dataLabel}>TIME</Text>
-                <Text style={styles.dataValue}>{timeStr}</Text>
-              </View>
-            </View>
-
-            {/* Mini-map on the right */}
-            <View style={styles.miniMapContainer}>
-              <Image 
-                source={require('../../assets/missionmap.webp')} 
-                style={styles.miniMapBackground} 
-              />
-              <Svg height="100%" width="100%" viewBox="0 0 350 250">
-                <AnimatedPolyline
-                  points={svgRoute}
-                  fill="none"
-                  stroke="rgba(34, 211, 238, 0.4)"
-                  strokeWidth="12"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  opacity={pulseAnim as any}
-                />
-                <Polyline
-                  points={svgRoute}
-                  fill="none"
-                  stroke="#22d3ee"
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </Svg>
-            </View>
+          <View style={styles.miniMapContainer}>
+            <Image source={require('../../assets/missionmap.webp')} style={styles.miniMapBackground} />
+            <Svg height="100%" width="100%" viewBox="0 0 350 250">
+              <AnimatedPolyline points={svgRoute} fill="none" stroke="rgba(34, 211, 238, 0.4)" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" opacity={pulseAnim as any} />
+              <Polyline points={svgRoute} fill="none" stroke="#22d3ee" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
           </View>
         </View>
+      </View>
     </View>
-  </ViewShot>
+  );
+
+  // 2. TRANSPARENT STICKER LAYOUT
+  const renderSticker = () => (
+    <View style={styles.transparentCard} collapsable={false}>
+      {/* Wrapper to control overlap without breaking the ViewShot bounding box */}
+      <View style={styles.stickerAvatarWrapper}>
+        <LayeredAvatar user={user} size={CARD_WIDTH * 0.70} square={true} allShopItems={allShopItems} hideBackground={true} />
+      </View>
+      
+      <View style={styles.stickerStatsBox}>
+        <Text style={styles.stickerTitle}>MISSION CLEARED</Text>
+        <Image source={require('../../assets/icons/groupleveling-logo.png')} style={styles.logoSticker} contentFit="contain" />
+        <View style={styles.stickerDataRow}>
+          <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>DISTANCE</Text><Text style={styles.stickerDataValue}>{distanceKm}</Text></View>
+          <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>PACE</Text><Text style={styles.stickerDataValue}>{paceStr}</Text></View>
+          <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>TIME</Text><Text style={styles.stickerDataValue}>{timeStr}</Text></View>
+        </View>
+      </View>
+    </View>
+  );
+
+  return (
+    <ViewShot ref={shotRef} options={{ format: "png", quality: 1, result: "tmpfile" }}>
+      {variant === 'sticker' && renderSticker()}
+      {(variant === 'full' || variant === 'minimal') && renderStandard()}
+    </ViewShot>
   );
 });
 
@@ -242,6 +201,11 @@ const styles = StyleSheet.create({
     position: 'relative',
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.1)',
+  },
+  cardSticker: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    justifyContent: 'center',
   },
   avatarBackgroundContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -318,6 +282,17 @@ const styles = StyleSheet.create({
     bottom: 78, // Position it from the bottom
     alignSelf: 'center', // Center it horizontally
   },
+  logoSticker: {
+    width: 100,
+    height: 30,
+    opacity: 0.8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    marginBottom: 10,
+    alignSelf: 'center',
+  },
   bottomSection: {
     width: '100%',
     zIndex: 1,
@@ -377,4 +352,28 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  transparentCard: { 
+    width: CARD_WIDTH, 
+    minHeight: CARD_HEIGHT + 80, // 🔥 FORCES the ViewShot to capture the bottom stats
+    backgroundColor: 'transparent', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    paddingBottom: 40, // Breathing room for the shadow
+  },
+  stickerAvatarWrapper: {
+    zIndex: 2,
+    marginBottom: -30, // We pull the avatar down over the box, instead of pulling the box up!
+  },
+  stickerStatsBox: { 
+    padding: 20, 
+    paddingTop: 35, // Extra padding at the top since the avatar covers it
+    width: CARD_WIDTH * 0.9, 
+    alignItems: 'center', 
+    zIndex: 1, 
+  },
+  stickerTitle: { color: '#22d3ee', fontSize: 16, fontWeight: '900', fontStyle: 'italic', letterSpacing: 2, marginBottom: 15, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
+  stickerDataRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', paddingHorizontal: 10 },
+  stickerDataItem: { alignItems: 'center' },
+  stickerDataLabel: { color: '#94a3b8', fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 4 },
+  stickerDataValue: { color: '#FFF', fontSize: 18, fontWeight: '900', fontVariant: ['tabular-nums'], textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
 });

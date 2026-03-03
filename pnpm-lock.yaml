@@ -200,6 +200,9 @@ importers:
       react-native-screens:
         specifier: ~4.16.0
         version: 4.16.0(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      react-native-share:
+        specifier: ^12.2.5
+        version: 12.2.5
       react-native-status-bar-height:
         specifier: ^2.6.0
         version: 2.6.0
@@ -5414,6 +5417,10 @@ packages:
     peerDependencies:
       react: '*'
       react-native: '*'
+
+  react-native-share@12.2.5:
+    resolution: {integrity: sha512-2uwd/PdlUyvpsSBfL7OMiL4sD0Ja51wu5m62JSIXjrtlF+uSTUOGsMrE49ncIRYziqAfYUeI195WwhpvqXB0ww==}
+    engines: {node: '>=16'}
 
   react-native-status-bar-height@2.6.0:
     resolution: {integrity: sha512-z3SGLF0mHT+OlJDq7B7h/jXPjWcdBT3V14Le5L2PjntjjWM3+EJzq2BcXDwV+v67KFNJic5pgA26cCmseYek6w==}
@@ -12187,6 +12194,8 @@ snapshots:
       react-native: 0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
       react-native-is-edge-to-edge: 1.2.1(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       warn-once: 0.1.1
+
+  react-native-share@12.2.5: {}
 
   react-native-status-bar-height@2.6.0: {}
 

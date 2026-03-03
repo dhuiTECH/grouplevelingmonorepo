@@ -523,16 +523,16 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
       activeOpacity={0.9}
     >
       {/* STATIC BACKGROUND (Outside breathing) */}
-      {!hideBackground && equippedCosmetics.filter((c: any) => getSlot(c.shop_items) === 'background').map((cosmetic: any) => (
-        <View key={cosmetic.id} style={StyleSheet.absoluteFill}>
+      {!hideBackground && equippedBackground && (
+        <View key={equippedBackground.id} style={StyleSheet.absoluteFill}>
           <ShopItemMedia 
-            item={cosmetic.shop_items} 
+            item={equippedBackground.shop_items} 
             style={styles.fullSize} 
             animate={true} 
             resizeMode="cover"
           />
         </View>
-      ))}
+      )}
 
       {/* BREATHING CONTAINER (Everything else inside here) */}
       <Animated.View 

@@ -82,13 +82,13 @@ export const WorldMapScreen = () => {
     }
   );
 
-  // Hold for 3 seconds to enter run mode (no JS D-Pad callbacks; we observe activeDirection)
+  // Hold for 2 seconds to enter run mode (no JS D-Pad callbacks; we observe activeDirection)
   const startHoldRunTimer = useCallback(() => {
     if (holdRunTimerRef.current) clearTimeout(holdRunTimerRef.current);
     holdRunTimerRef.current = setTimeout(() => {
       holdRunTimerRef.current = null;
       isRunning.value = true;
-    }, 3000);
+    }, 2000);
   }, [isRunning]);
 
   const clearHoldRunTimer = useCallback(() => {
