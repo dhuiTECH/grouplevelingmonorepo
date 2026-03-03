@@ -1,13 +1,11 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '@/contexts/AuthContext';
 import { HolographicGlass } from './HolographicGlass';
 import { FootprintsIcon } from './MapIcons';
-import type { User } from '@/types/user';
 
 interface MapHUDProps {
-  user: User | null;
-  canAttemptAdvancement: boolean;
   onPressTemple: () => void;
   onPressWorld: () => void;
   onPressBattle: () => void;
@@ -25,14 +23,19 @@ const GlowingStepCounter = ({ steps }: { steps: number }) => {
 };
 
 export const MapHUD: React.FC<MapHUDProps> = ({
-  user,
-  canAttemptAdvancement,
   onPressTemple,
   onPressWorld,
   onPressBattle,
   floatAnim,
 }) => {
+  const { user } = useAuth();
   const steps = user?.steps_banked || 0;
+  const currentTier = user?.rank_tier ?? 0;
+  const nextMilestone = (currentTier + 1) * 30;
+  const isAdvancementLocked = Boolean(
+    user?.next_advancement_attempt && new Date(user.next_advancement_attempt).getTime() > Date.now()
+  );
+  const canAttemptAdvancement = (user?.level || 0) >= nextMilestone && !isAdvancementLocked;
 
   return (
     <>

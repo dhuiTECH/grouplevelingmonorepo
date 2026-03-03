@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text } from 'react-native';
 import { MotiView } from 'moti';
 import LayeredAvatar from '@/components/LayeredAvatar';
@@ -18,7 +18,7 @@ interface PartyMembersLayerProps {
   tileSize: number;
 }
 
-export function PartyMembersLayer({ members, allShopItems, tileSize }: PartyMembersLayerProps) {
+function PartyMembersLayerInner({ members, allShopItems, tileSize }: PartyMembersLayerProps) {
   if (members.length === 0) return null;
 
   return (
@@ -54,3 +54,15 @@ export function PartyMembersLayer({ members, allShopItems, tileSize }: PartyMemb
     </>
   );
 }
+
+export const PartyMembersLayer = memo(PartyMembersLayerInner, (prev, next) => {
+  if (prev.tileSize !== next.tileSize) return false;
+  if (prev.members.length !== next.members.length) return false;
+  if (prev.allShopItems !== next.allShopItems) return false;
+  for (let i = 0; i < prev.members.length; i++) {
+    const a = prev.members[i];
+    const b = next.members[i];
+    if (!b || a.id !== b.id || a.world_x !== b.world_x || a.world_y !== b.world_y) return false;
+  }
+  return true;
+});

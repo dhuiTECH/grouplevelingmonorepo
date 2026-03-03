@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
 import { mapNodeIcon } from '@/utils/assetMapper';
@@ -19,7 +19,7 @@ interface WorldNodesLayerProps {
   onSelectNode: (node: MapNode) => void;
 }
 
-export function WorldNodesLayer({ nodes, tileSize, onSelectNode }: WorldNodesLayerProps) {
+function WorldNodesLayerInner({ nodes, tileSize, onSelectNode }: WorldNodesLayerProps) {
   return (
     <>
       {(nodes || []).map((node) => {
@@ -58,3 +58,5 @@ export function WorldNodesLayer({ nodes, tileSize, onSelectNode }: WorldNodesLay
     </>
   );
 }
+
+export const WorldNodesLayer = memo(WorldNodesLayerInner);

@@ -25,7 +25,16 @@ export function useMapData(userId: string | undefined) {
         supabase.from('world_map_settings').select('*').eq('id', 1).single(),
       ]);
       if (mapRes.data) setActiveMapId(mapRes.data.id);
-      if (settingsRes.data) setMapSettings(settingsRes.data);
+      if (settingsRes.data) {
+        const s = settingsRes.data;
+        setMapSettings({
+          ...s,
+          cleanAutotileSheetUrl: s.autotile_sheet_url ? s.autotile_sheet_url.split('?')[0] : undefined,
+          cleanDirtSheetUrl: s.dirt_sheet_url ? s.dirt_sheet_url.split('?')[0] : undefined,
+          cleanWaterSheetUrl: s.water_sheet_url ? s.water_sheet_url.split('?')[0] : undefined,
+          cleanFoamSheetUrl: s.foam_sheet_url ? s.foam_sheet_url.split('?')[0] : undefined,
+        });
+      }
     } catch (err) {
       console.error('Error loading world data:', err);
       setMapError('Failed to load world data. Check connection.');

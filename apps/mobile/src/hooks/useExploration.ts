@@ -7,14 +7,13 @@ const MOVE_COST = 100;
 // Keep chunk size the same
 const CHUNK_SIZE = 16;
 
-// UPDATE: Lower refresh distance so the grid recalculates BEFORE the player hits the edge
-const REFRESH_DISTANCE = 4;
+// Only recenter visionGrid when player moves 5+ tiles from grid center (keeps SkiaWorldMap memo stable).
+const GRID_REFRESH_DISTANCE = 5;
 
-// UPDATE: Perfectly tuned to Screen Size + Refresh Distance + Buffer
-// X: ~5 tiles for half screen + 4 steps + 2 buffer = 11
-// Y: ~10 tiles for half screen + 4 steps + 2 buffer = 16
-const VISIBLE_RADIUS_X = 11;
-const VISIBLE_RADIUS_Y = 16;
+// Buffer zone: grid is larger than "visible" so we don't need a new array every few steps.
+// 25x25 grid (radius 12) = 5-tile buffer each side; only refresh when player leaves that buffer.
+const VISIBLE_RADIUS_X = 12;
+const VISIBLE_RADIUS_Y = 12;
 
 // Keep prefetch large so DB background fetching remains seamless
 const PREFETCH_RADIUS_X = 32;
@@ -46,6 +45,10 @@ export const useExploration = (
   const nodesRef = useRef(nodes);
   const lastRefreshCenter = useRef<{ x: number; y: number }>({ x: user?.world_x || 0, y: user?.world_y || 0 });
   const tileEnterBusy = useRef(false);
+  const lastProcessedTile = useRef<{ x: number; y: number }>({
+    x: user?.world_x || 0,
+    y: user?.world_y || 0,
+  });
 
   // Debounced DB write timer — batches rapid tile crossings into fewer Supabase calls
   const dbWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -85,51 +88,37 @@ export const useExploration = (
     prevTeleportY.current = uy;
   }, [user?.world_x, user?.world_y]);
 
-  // 1. GRID GENERATION -- uses gridCenter instead of user.world_x/y
-  const { visionGrid, nodesInVision } = useMemo(() => {
-    if (!user) return { visionGrid: [], nodesInVision: [] };
-
-    const cx = gridCenter.x;
-    const cy = gridCenter.y;
-    
-    const minX = cx - VISIBLE_RADIUS_X;
-    const maxX = cx + VISIBLE_RADIUS_X;
-    const minY = cy - VISIBLE_RADIUS_Y;
-    const maxY = cy + VISIBLE_RADIUS_Y;
-
+  // 1. HEAVY LIFTING: Only runs when new chunks are downloaded
+  const globalTileMap = useMemo(() => {
     const tileMap = new Map<string, any[]>();
 
-    const minChunkX = Math.floor(minX / CHUNK_SIZE);
-    const maxChunkX = Math.floor(maxX / CHUNK_SIZE);
-    const minChunkY = Math.floor(minY / CHUNK_SIZE);
-    const maxChunkY = Math.floor(maxY / CHUNK_SIZE);
-
-    for (let x = minChunkX; x <= maxChunkX; x++) {
-      for (let y = minChunkY; y <= maxChunkY; y++) {
-        const chunk = chunkCache.current.get(`${x},${y}`);
-        if (chunk && chunk.tile_data && Array.isArray(chunk.tile_data)) {
-          chunk.tile_data.forEach((t: any) => {
-            if (t && t.x >= minX && t.x <= maxX && t.y >= minY && t.y <= maxY) {
-              const tKey = `${t.x},${t.y}`;
-              const layers = tileMap.get(tKey) || [];
-              layers.push(t);
-              tileMap.set(tKey, layers);
-            }
-          });
-        }
+    chunkCache.current.forEach((chunk) => {
+      if (chunk && chunk.tile_data && Array.isArray(chunk.tile_data)) {
+        chunk.tile_data.forEach((t: any) => {
+          const tKey = `${t.x},${t.y}`;
+          const layers = tileMap.get(tKey) || [];
+          layers.push(t);
+          tileMap.set(tKey, layers);
+        });
       }
-    }
+    });
 
     tileMap.forEach(layers => {
       layers.sort((a, b) => (Number(a.layer) || 0) - (Number(b.layer) || 0));
     });
 
-    // --- NEW OPTIMIZATION: Build Hash Maps BEFORE the loop ---
+    return tileMap;
+  }, [chunksVersion]);
+
+  // 2. LIGHTWEIGHT RENDER: Runs every 5 steps, but takes < 1ms
+  const { visionGrid, nodesInVision } = useMemo(() => {
+    if (!user) return { visionGrid: [], nodesInVision: [] };
+
+    const cx = gridCenter.x;
+    const cy = gridCenter.y;
+
     const nodeMap = new Map();
     (nodes || []).forEach(n => nodeMap.set(`${n.x},${n.y}`, n));
-
-    const unlockedSet = unlocked; // Already a Set, which is fast!
-    // ---------------------------------------------------------
 
     const grid = [];
     const visibleNodesList: any[] = [];
@@ -139,23 +128,24 @@ export const useExploration = (
         const tx = cx + dx;
         const ty = cy + dy;
         const key = `${tx},${ty}`;
-        
-        const isUnlocked = unlockedSet.has(key) || (tx === 0 && ty === 0);
-        const isCurrent = (dx === 0 && dy === 0);
-        
-        // INSTANT LOOKUP - No more .find() inside the loop!
-        const nodeAtSpot = nodeMap.get(key); 
-        const spotTiles = tileMap.get(key) || [];
 
-        grid.push({ 
-          x: tx, 
-          y: ty, 
-          isVisible: isCurrent || isUnlocked, 
-          node: nodeAtSpot,
-          tiles: spotTiles
+        const isUnlocked = unlocked.has(key) || (tx === 0 && ty === 0);
+        const isCurrent = (dx === 0 && dy === 0);
+
+        grid.push({
+          x: tx,
+          y: ty,
+          isVisible: isCurrent || isUnlocked,
+          node: nodeMap.get(key),
+          tiles: globalTileMap.get(key) || [],
         });
       }
     }
+
+    const minX = cx - VISIBLE_RADIUS_X;
+    const maxX = cx + VISIBLE_RADIUS_X;
+    const minY = cy - VISIBLE_RADIUS_Y;
+    const maxY = cy + VISIBLE_RADIUS_Y;
 
     (nodes || []).forEach(n => {
       if (n.x >= minX - 2 && n.x <= maxX + 2 && n.y >= minY - 2 && n.y <= maxY + 2) {
@@ -165,7 +155,7 @@ export const useExploration = (
     });
 
     return { visionGrid: grid, nodesInVision: visibleNodesList };
-  }, [gridCenter.x, gridCenter.y, unlocked, nodes, chunksVersion]);
+  }, [gridCenter.x, gridCenter.y, unlocked, nodes, globalTileMap]);
 
   // 2. REFRESH DATA (Fetching Chunks/Nodes/Discoveries)
   const refreshVision = useCallback(async (cx: number, cy: number, force: boolean = false) => {
@@ -248,10 +238,12 @@ export const useExploration = (
 
         missingChunks.forEach(key => {
           const chunkData = fetchedMap.get(key);
-          chunkCache.current.set(
-            key,
-            chunkData ? { ...chunkData, tile_data: chunkData.tile_data || [] } : { tile_data: [] }
-          );
+          const rawTiles = chunkData?.tile_data || [];
+          const tile_data = rawTiles.map((t: any) => ({
+            ...t,
+            cleanUrl: t.imageUrl ? t.imageUrl.split('?')[0] : undefined,
+          }));
+          chunkCache.current.set(key, chunkData ? { ...chunkData, tile_data } : { tile_data: [] });
           inFlightChunks.current.delete(key);
         });
       }
@@ -325,27 +317,26 @@ export const useExploration = (
   // Uses refs to avoid stale closures and dependency churn.
   // Throttled: skips if the previous call is still running.
   const onTileEnter = useCallback(async (nx: number, ny: number) => {
+    if (lastProcessedTile.current.x === nx && lastProcessedTile.current.y === ny) return;
     if (tileEnterBusy.current) return;
     tileEnterBusy.current = true;
 
     try {
+      lastProcessedTile.current = { x: nx, y: ny };
+
       const u = userRef.current;
       if (!u) return;
-
-      // 1. Check against our high-speed local ref instead of the React context
       if (localBankRef.current < MOVE_COST) return;
 
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      // Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      // 2. Instantly update the local ref
       localBankRef.current -= MOVE_COST;
-
-      // 3. Track latest position for the debounce
       latestPos.current = { x: nx, y: ny, banked: localBankRef.current };
 
-      // DO NOT CALL setUser HERE — sync to context only when player pauses (250ms debounce).
+      // DECOUPLED: No setState on every step. DB + React state sync only when player pauses (500ms debounce).
+      // Visual position is driven by Reanimated SharedValues on the UI thread.
 
-      // 4. Update DB and Context only when the player stops moving for 250ms
+      // 4. Update DB and Context only when the player stops moving for 500ms (batches step updates).
       if (dbWriteTimer.current) clearTimeout(dbWriteTimer.current);
       dbWriteTimer.current = setTimeout(() => {
         const pos = latestPos.current;
@@ -358,10 +349,16 @@ export const useExploration = (
           .then();
 
         setUser({ ...userForSync, world_x: pos.x, world_y: pos.y, steps_banked: pos.banked });
-      }, 250);
+      }, 500);
 
-      const currentNodes = nodesRef.current;
-      const node = (currentNodes || []).find(n => n.x === nx && n.y === ny);
+      let node: any = null;
+      const currentNodes = nodesRef.current || [];
+      for (let i = 0; i < currentNodes.length; i++) {
+        if (currentNodes[i].x === nx && currentNodes[i].y === ny) {
+          node = currentNodes[i];
+          break;
+        }
+      }
       if (node) {
         supabase.from('player_discoveries').upsert({ user_id: u.id, x: nx, y: ny }).then();
         supabase.from('discovered_locations').select('node_id').match({ user_id: u.id, node_id: node.id }).maybeSingle().then(({ data: existing }) => {
@@ -399,9 +396,9 @@ export const useExploration = (
         }
       }
 
-      // Only refreshVision when far enough from the last refresh center
-      const distFromRefresh = Math.abs(nx - lastRefreshCenter.current.x) + Math.abs(ny - lastRefreshCenter.current.y);
-      if (distFromRefresh >= REFRESH_DISTANCE) {
+      // Only recenter visionGrid when 5+ tiles from current grid center (preserves SkiaWorldMap memo).
+      const distFromGridCenter = Math.abs(nx - lastRefreshCenter.current.x) + Math.abs(ny - lastRefreshCenter.current.y);
+      if (distFromGridCenter >= GRID_REFRESH_DISTANCE) {
         refreshVision(nx, ny);
       }
 

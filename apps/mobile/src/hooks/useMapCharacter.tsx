@@ -1,19 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, Dimensions } from 'react-native';
-import Reanimated, {
+import { Dimensions } from 'react-native';
+import {
   useSharedValue,
   useDerivedValue,
-  useAnimatedStyle,
-  useAnimatedReaction,
   useFrameCallback,
-  runOnJS,
   SharedValue,
 } from 'react-native-reanimated';
-import LayeredAvatar from '@/components/LayeredAvatar';
-import { PetSprite } from '@/components/PetSprite';
 
 const { width, height } = Dimensions.get('window');
-const TILE_SIZE = 48;
 
 interface UserAvatarData {
   id: string;
@@ -47,7 +41,16 @@ export function useMapCharacter(
   activePet: { pet_details?: PetDetails } | null,
   mapLeft: SharedValue<number>,
   mapTop: SharedValue<number>
-): { overlayChildren: React.ReactNode; petOverlay: React.ReactNode } {
+): {
+  playerBaseX: SharedValue<number>;
+  playerBaseY: SharedValue<number>;
+  facingScaleX: SharedValue<number>;
+  petOffsetX: SharedValue<number>;
+  petOffsetY: SharedValue<number>;
+  petScaleX: SharedValue<number>;
+  petZIndex: SharedValue<number>;
+  avatarData: any;
+} {
   const lastFacingDirection = useSharedValue(1);
   const facingScaleX = useDerivedValue(() => {
     const dir = pendingDir.value;
@@ -61,24 +64,12 @@ export function useMapCharacter(
     }
     return lastFacingDirection.value;
   });
-  const avatarFlipStyle = useAnimatedStyle(() => ({
-    transform: [{ scaleX: facingScaleX.value }],
-  }));
 
   // --- 2D PET TRAILING PHYSICS ---
   const petOffsetX = useSharedValue(36);
   const petOffsetY = useSharedValue(16);
   const petScaleX = useSharedValue(1);
   const petZIndex = useSharedValue(101);
-
-  // Sync isMoving to JS for LayeredAvatar (standard React component)
-  const [isMovingJS, setIsMovingJS] = useState(false);
-  useAnimatedReaction(
-    () => isMoving.value,
-    (moving, prev) => {
-      if (moving !== prev) runOnJS(setIsMovingJS)(moving);
-    }
-  );
 
   useFrameCallback((frameInfo) => {
     'worklet';
@@ -94,29 +85,27 @@ export function useMapCharacter(
     if (moving) {
       if (dir === 1) {
         targetX = 0;
-        targetY = 48;
+        targetY = 58; // Lowered from 48
       } else if (dir === 2) {
         targetX = 0;
-        targetY = -48;
+        targetY = -38; // Lowered from -48 (brings it closer to player center but lower relative to floor)
       } else if (dir === 3) {
-        targetX = 48;
-        targetY = 0;
+        targetX = 108;  // Farther right when facing left
+        targetY = 26;   // Same plane as idle (was 10, pet was walking "in the middle")
         petScaleX.value = 1;
       } else if (dir === 4) {
-        targetX = -48;
-        targetY = 0;
+        targetX = -32; // A little to the right when facing right (pet was too far left)
+        targetY = 26;   // Same plane as idle (was 10, pet was walking "in the middle")
         petScaleX.value = -1;
       }
     } else {
+      // Use same X as moving so pet doesn't hop toward middle when you release D-pad
       const isFacingRight = lastFacingDirection.value === -1;
-      targetX = isFacingRight ? -32 : 32;
-      targetY = 16;
+      targetX = isFacingRight ? -32 : 108;  // Match moving-right (-32) and moving-left (108)
+      targetY = 26;
     }
 
-    // Frame-rate independent Lerp: 
-    // Instead of fixed 0.1, we calculate decay based on dt.
-    // at 60fps (16.6ms), (1 - 0.1) = 0.9. 
-    // target_alpha = 1 - pow(0.9, dt / 16.6)
+    // Frame-rate independent Lerp
     const alpha = 1 - Math.pow(0.9, dt / 16.6);
     petOffsetX.value += (targetX - petOffsetX.value) * alpha;
     petOffsetY.value += (targetY - petOffsetY.value) * alpha;
@@ -127,47 +116,12 @@ export function useMapCharacter(
   // NEW: Calculate the "True Center" based on where the map actually is
   // This ensures the player is ALWAYS perfectly aligned with the tile grid
   const playerBaseX = useDerivedValue(() => {
-    // Correct formula: Start at screen center and apply the map's rounding error.
-    // mapLeft is the camera position (-(playerPos)). 
-    // Screen position S = (Math.round(mapLeft) + centerX) + playerPos
-    // Since playerPos = -mapLeft.value, S = Math.round(mapLeft) + centerX - mapLeft
     return Math.round(mapLeft.value) + Math.floor(width / 2) - mapLeft.value;
   });
 
   const playerBaseY = useDerivedValue(() => {
     return Math.round(mapTop.value) + Math.floor(height / 2) - mapTop.value;
   });
-
-  const avatarAnimatedStyle = useAnimatedStyle(() => ({
-    position: 'absolute',
-    // We use the derived values so the avatar "sticks" to the map
-    // even if the frame rate dips.
-    left: playerBaseX.value - TILE_SIZE / 2,
-    top: playerBaseY.value - TILE_SIZE / 2,
-    width: TILE_SIZE,
-    height: TILE_SIZE,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'visible',
-    zIndex: 100,
-  }));
-
-  const petAnimatedStyle = useAnimatedStyle(() => ({
-    position: 'absolute' as const,
-    // The pet is now relative to the Player's REAL-TIME position
-    left: playerBaseX.value - TILE_SIZE / 2,
-    top: playerBaseY.value - TILE_SIZE / 2 - 10,
-    width: 100, // Match the View container in petOverlay
-    height: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [
-      { translateX: Math.round(petOffsetX.value) },
-      { translateY: Math.round(petOffsetY.value) },
-      { scaleX: petScaleX.value },
-    ],
-    zIndex: petZIndex.value,
-  }));
 
   const [avatarKey, setAvatarKey] = useState(0);
   const prevEquippedRef = useRef<string>('');
@@ -194,57 +148,14 @@ export function useMapCharacter(
     };
   }, [avatarKey, user]);
 
-  const overlayChildren = useMemo(() => {
-    if (!user || !avatarData) return null;
-    return (
-      <Reanimated.View
-        style={avatarAnimatedStyle}
-        pointerEvents="box-none"
-      >
-        <View
-          style={{
-            width: 72,
-            height: 72,
-            borderRadius: 36,
-            backgroundColor: '#0f172a',
-            borderWidth: 2,
-            borderColor: '#3b82f6',
-            justifyContent: 'center',
-            alignItems: 'center',
-            overflow: 'hidden',
-          }}
-        >
-          <Reanimated.View style={avatarFlipStyle}>
-            <LayeredAvatar key={avatarKey} user={avatarData as any} size={72} isMoving={isMovingJS} />
-          </Reanimated.View>
-        </View>
-      </Reanimated.View>
-    );
-  }, [user, avatarData, avatarFlipStyle, avatarKey, avatarAnimatedStyle]);
-
-  const spritesheet = activePet?.pet_details?.metadata?.visuals?.walking_spritesheet;
-  const petOverlay = useMemo(() => {
-    if (!spritesheet) return null;
-    const ws = spritesheet;
-    return (
-      <Reanimated.View
-        style={petAnimatedStyle}
-        pointerEvents="box-none"
-      >
-        <PetSprite
-          imageUrl={ws.url}
-          isMoving={isMoving}
-          idleIndex={ws.idle_frame ?? 0}
-          totalFrames={ws.frame_count ?? 1}
-          totalTimeMs={ws.duration_ms ?? 1000}
-          frameWidth={ws.frame_width ?? 64}
-          frameHeight={ws.frame_height ?? 64}
-          scale={0.15 * (TILE_SIZE / 48)}
-          flipX={false}
-        />
-      </Reanimated.View>
-    );
-  }, [activePet, spritesheet, petAnimatedStyle]);
-
-  return { overlayChildren, petOverlay };
+  return {
+    playerBaseX,
+    playerBaseY,
+    facingScaleX,
+    petOffsetX,
+    petOffsetY,
+    petScaleX,
+    petZIndex,
+    avatarData,
+  };
 }

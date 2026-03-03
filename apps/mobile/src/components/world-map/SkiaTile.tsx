@@ -42,8 +42,8 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
 
   // Handle Foam Layer (Now uses dictionary lookup for foam strip)
   let foamLayer = null;
-  if (!isProp && tile.foamBitmask > 0 && mapSettings?.foam_sheet_url) {
-    const foamImg = images.get(mapSettings.foam_sheet_url);
+  if (!isProp && tile.foamBitmask > 0 && mapSettings?.cleanFoamSheetUrl) {
+    const foamImg = images.get(mapSettings.cleanFoamSheetUrl);
     if (foamImg) {
       // Use mapUtils mapping for foam strip
       // Default to 0,0 since foam only has one row, and column doesn't matter for Pixi mapping
@@ -93,8 +93,10 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
     // DEBUG LOG TO SEE WHAT URL IS BEING USED
     // console.log(`Tile ${tile.x},${tile.y} [${smartType}] activeUrl:`, activeUrl, 'isProp:', isProp, 'isAutoTile:', tile.isAutoTile);
 
-    // Try finding the preloaded image for this URL 
-    const img = activeUrl ? images.get(activeUrl.split('?')[0]) : null;
+    const cleanSheetUrl = activeUrl && mapSettings
+      ? (smartType === 'dirt' ? mapSettings.cleanDirtSheetUrl : smartType === 'water' ? mapSettings.cleanWaterSheetUrl : mapSettings.cleanAutotileSheetUrl)
+      : undefined;
+    const img = cleanSheetUrl ? images.get(cleanSheetUrl) : null;
     
     // Even if it's on a higher layer, smart tiles typically use the base 48x48 grid
     // Remove the + 1 hack. Strict 48x48 clipping to prevent spritesheet bleed.
@@ -139,8 +141,8 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
     );
   }
 
-  // Standard or Spritesheet Tile (NOT Auto-Tiled)
-  const cleanUrl = tile.cleanUrl || tile.imageUrl?.split('?')[0];
+  // Standard or Spritesheet Tile (NOT Auto-Tiled). cleanUrl set when chunk loads (useExploration).
+  const cleanUrl = tile.cleanUrl;
   const img = cleanUrl ? images.get(cleanUrl) : null;
   if (img) {
     // 1. O(1) Dictionary Lookup for absolute truth
@@ -185,36 +187,21 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
 };
 
 export const SkiaTile = React.memo(SkiaTileInternal, (prev, next) => {
-  // Custom comparison to prevent re-renders when tile objects are recreated but data is identical
   if (prev.absPx !== next.absPx) return false;
   if (prev.absPy !== next.absPy) return false;
   if (prev.tileSize !== next.tileSize) return false;
   if (prev.isProp !== next.isProp) return false;
   if (prev.mapSettings !== next.mapSettings) return false;
   if (prev.dictionaryData !== next.dictionaryData) return false;
-  
-  // CRITICAL: Don't compare the whole images Map reference.
-  // Only re-render if the specific image this tile needs has changed/loaded.
-  let prevCleanUrl = prev.tile.cleanUrl || prev.tile.imageUrl?.split('?')[0];
-  let nextCleanUrl = next.tile.cleanUrl || next.tile.imageUrl?.split('?')[0];
 
-  // For smart tiles (live or frozen), care about the sprite sheet url, not the icon url
   const prevIsSmart = prev.tile.isAutoTile || (!prev.tile.isAutoTile && !!prev.tile.smartType);
   const nextIsSmart = next.tile.isAutoTile || (!next.tile.isAutoTile && !!next.tile.smartType);
-
-  if (prevIsSmart) {
-    let smartType = prev.tile.smartType || 'grass';
-    if (smartType === 'dirt' && prev.mapSettings?.dirt_sheet_url) prevCleanUrl = prev.mapSettings.dirt_sheet_url.split('?')[0];
-    else if (smartType === 'water' && prev.mapSettings?.water_sheet_url) prevCleanUrl = prev.mapSettings.water_sheet_url.split('?')[0];
-    else prevCleanUrl = prev.mapSettings?.autotile_sheet_url?.split('?')[0];
-  }
-  
-  if (nextIsSmart) {
-    let smartType = next.tile.smartType || 'grass';
-    if (smartType === 'dirt' && next.mapSettings?.dirt_sheet_url) nextCleanUrl = next.mapSettings.dirt_sheet_url.split('?')[0];
-    else if (smartType === 'water' && next.mapSettings?.water_sheet_url) nextCleanUrl = next.mapSettings.water_sheet_url.split('?')[0];
-    else nextCleanUrl = next.mapSettings?.autotile_sheet_url?.split('?')[0];
-  }
+  const prevCleanUrl = prevIsSmart
+    ? (prev.tile.smartType === 'dirt' ? prev.mapSettings?.cleanDirtSheetUrl : prev.tile.smartType === 'water' ? prev.mapSettings?.cleanWaterSheetUrl : prev.mapSettings?.cleanAutotileSheetUrl)
+    : prev.tile.cleanUrl;
+  const nextCleanUrl = nextIsSmart
+    ? (next.tile.smartType === 'dirt' ? next.mapSettings?.cleanDirtSheetUrl : next.tile.smartType === 'water' ? next.mapSettings?.cleanWaterSheetUrl : next.mapSettings?.cleanAutotileSheetUrl)
+    : next.tile.cleanUrl;
 
   if (prevCleanUrl !== nextCleanUrl) return false;
   if (prev.images.get(prevCleanUrl || '') !== next.images.get(nextCleanUrl || '')) return false;

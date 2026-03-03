@@ -160,7 +160,16 @@ export const WorldMapScreen = () => {
   const viewRef = useAnimatedRef<View>();
   const { startTransition } = useTransition();
   const { floatAnim, pulseAnim, spin } = useMapUIAnimations();
-  const { overlayChildren, petOverlay } = useMapCharacter(pendingDir, isMoving, user, activePet as any, mapLeft, mapTop);
+  const { 
+    playerBaseX, 
+    playerBaseY, 
+    facingScaleX, 
+    petOffsetX, 
+    petOffsetY, 
+    petScaleX, 
+    petZIndex, 
+    avatarData 
+  } = useMapCharacter(pendingDir, isMoving, user, activePet as any, mapLeft, mapTop);
 
   useWalkingSound(isMoving);
 
@@ -273,14 +282,6 @@ export const WorldMapScreen = () => {
     }
   }, [user?.level]);
 
-  const currentTile = visionGrid.find((t) => t.x === user?.world_x && t.y === user?.world_y);
-  const currentTier = user?.rank_tier ?? 0;
-  const nextMilestone = (currentTier + 1) * 30;
-  const isAdvancementLocked = Boolean(
-    user?.next_advancement_attempt && new Date(user.next_advancement_attempt).getTime() > Date.now()
-  );
-  const canAttemptAdvancement = (user?.level || 0) >= nextMilestone && !isAdvancementLocked;
-
   const partyMembers = user?.current_party_id ? Array.from(partyMembersOnline.values()) : [];
 
   return (
@@ -293,7 +294,8 @@ export const WorldMapScreen = () => {
         <SkiaWorldMap
           visionGrid={visionGrid}
           mapSettings={mapSettings}
-          user={user}
+          spawnX={user?.world_x ?? 0}
+          spawnY={user?.world_y ?? 0}
           activePet={activePet}
           tileSize={TILE_SIZE}
           showWalkabilityOverlay={showWalkabilityOverlay}
@@ -304,8 +306,14 @@ export const WorldMapScreen = () => {
           mapLeft={mapLeft}
           mapTop={mapTop}
           onTileEnter={onTileEnter}
-          overlayChildren={overlayChildren}
-          petOverlay={petOverlay}
+          playerBaseX={playerBaseX}
+          playerBaseY={playerBaseY}
+          facingScaleX={facingScaleX}
+          petOffsetX={petOffsetX}
+          petOffsetY={petOffsetY}
+          petScaleX={petScaleX}
+          petZIndex={petZIndex}
+          avatarData={avatarData}
         >
           <WorldNodesLayer
             nodes={nodesInVision ?? []}
@@ -320,8 +328,6 @@ export const WorldMapScreen = () => {
         </SkiaWorldMap>
 
         <MapHUD
-          user={user}
-          canAttemptAdvancement={canAttemptAdvancement}
           onPressTemple={() => navigation.navigate('Temple')}
           onPressWorld={() => setTravelMenuVisible(true)}
           onPressBattle={startTestBattle}

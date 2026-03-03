@@ -16,17 +16,18 @@ import Reanimated, {
 import { useSkiaAssets } from './useSkiaAssets';
 import { SkiaTile } from './SkiaTile';
 import { useTileLibrary } from '../../contexts/TileContext';
+import { SkiaLayeredAvatar } from './SkiaLayeredAvatar';
+import { SkiaPetSprite } from './SkiaPetSprite';
 
 interface SkiaWorldMapProps {
   visionGrid: any[];
   mapSettings: any;
-  user: any;
+  spawnX: number;
+  spawnY: number;
   activePet?: any;
   tileSize: number;
   showWalkabilityOverlay?: boolean;
   children?: React.ReactNode;
-  overlayChildren?: React.ReactNode;
-  petOverlay?: React.ReactNode;
   pendingDir: SharedValue<number>;
   activeDirection: SharedValue<'UP' | 'DOWN' | 'LEFT' | 'RIGHT' | null>;
   isRunning: SharedValue<boolean>;
@@ -34,6 +35,14 @@ interface SkiaWorldMapProps {
   mapLeft: SharedValue<number>;
   mapTop: SharedValue<number>;
   onTileEnter?: (x: number, y: number) => void;
+  playerBaseX: SharedValue<number>;
+  playerBaseY: SharedValue<number>;
+  facingScaleX: SharedValue<number>;
+  petOffsetX: SharedValue<number>;
+  petOffsetY: SharedValue<number>;
+  petScaleX: SharedValue<number>;
+  petZIndex: SharedValue<number>;
+  avatarData: any;
 }
 
 const { width, height } = Dimensions.get('window');
@@ -44,34 +53,40 @@ const WALK_DURATION = 267;
 // At 60fps, 48px / 6px per frame = 8 frames. 8 * 16.67ms = 133.3ms
 const RUN_DURATION = 134;
 
-export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(
-  ({
-    visionGrid,
-    mapSettings,
-    user,
-    activePet,
-    tileSize,
-    showWalkabilityOverlay,
-    children,
-    overlayChildren,
-    petOverlay,
-    pendingDir,
-    activeDirection,
-    isRunning,
-    isMoving,
-    mapLeft,
-    mapTop,
-    onTileEnter,
-  }) => {
+const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
+  visionGrid,
+  mapSettings,
+  spawnX,
+  spawnY,
+  activePet,
+  tileSize,
+  showWalkabilityOverlay,
+  children,
+  pendingDir,
+  activeDirection,
+  isRunning,
+  isMoving,
+  mapLeft,
+  mapTop,
+  onTileEnter,
+  playerBaseX,
+  playerBaseY,
+  facingScaleX,
+  petOffsetX,
+  petOffsetY,
+  petScaleX,
+  petZIndex,
+  avatarData,
+}) => {
   const { tileLibrary } = useTileLibrary();
 
   // Extract URLs to load - optimized to avoid unnecessary Set operations
   const urlsToLoad = useMemo(() => {
     const urls = new Set<string>();
-    if (mapSettings?.autotile_sheet_url) urls.add(mapSettings.autotile_sheet_url.split('?')[0]);
-    if (mapSettings?.dirt_sheet_url) urls.add(mapSettings.dirt_sheet_url.split('?')[0]);
-    if (mapSettings?.water_sheet_url) urls.add(mapSettings.water_sheet_url.split('?')[0]);
-    if (mapSettings?.foam_sheet_url) urls.add(mapSettings.foam_sheet_url.split('?')[0]);
+    if (mapSettings?.cleanAutotileSheetUrl) urls.add(mapSettings.cleanAutotileSheetUrl);
+    if (mapSettings?.cleanDirtSheetUrl) urls.add(mapSettings.cleanDirtSheetUrl);
+    if (mapSettings?.cleanWaterSheetUrl) urls.add(mapSettings.cleanWaterSheetUrl);
+    if (mapSettings?.cleanFoamSheetUrl) urls.add(mapSettings.cleanFoamSheetUrl);
 
     const walkSheet = activePet?.pet_details?.metadata?.visuals?.walking_spritesheet;
     if (walkSheet?.url) urls.add(walkSheet.url.split('?')[0]);
@@ -82,7 +97,7 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(
         if (cell?.tiles) {
           for (let j = 0; j < cell.tiles.length; j++) {
             const t = cell.tiles[j];
-            if (t.imageUrl) urls.add(t.imageUrl.split('?')[0]);
+            if (t.cleanUrl) urls.add(t.cleanUrl);
           }
         }
       }
@@ -106,24 +121,20 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(
   }, []);
 
   // --- GRID-LOCKED MOVEMENT ENGINE ---
-  
-  // Current logical tile position
-  const currentTileX = useSharedValue(user?.world_x || 0);
-  const currentTileY = useSharedValue(user?.world_y || 0);
+  const currentTileX = useSharedValue(spawnX);
+  const currentTileY = useSharedValue(spawnY);
+  const targetX = useSharedValue(spawnX);
+  const targetY = useSharedValue(spawnY);
 
-  // Target tile for delta-time movement (synced on teleport)
-  const targetX = useSharedValue(user?.world_x || 0);
-  const targetY = useSharedValue(user?.world_y || 0);
+  const prevReactX = useRef(spawnX);
+  const prevReactY = useRef(spawnY);
 
-  // 1. Restore the React-state history refs
-  const prevReactX = useRef(user?.world_x || 0);
-  const prevReactY = useRef(user?.world_y || 0);
+  const lastEnteredTileX = useSharedValue(-999);
+  const lastEnteredTileY = useSharedValue(-999);
 
-  // 2. Safely check for massive jumps in the database/context
   useEffect(() => {
-    const ux = user?.world_x || 0;
-    const uy = user?.world_y || 0;
-
+    const ux = spawnX;
+    const uy = spawnY;
     const dx = Math.abs(ux - prevReactX.current);
     const dy = Math.abs(uy - prevReactY.current);
 
@@ -135,11 +146,13 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(
       currentTileY.value = uy;
       targetX.value = ux;
       targetY.value = uy;
+      lastEnteredTileX.value = ux;
+      lastEnteredTileY.value = uy;
     }
 
     prevReactX.current = ux;
     prevReactY.current = uy;
-  }, [user?.world_x, user?.world_y, tileSize]);
+  }, [spawnX, spawnY, tileSize]);
 
   // Collision data
   const collisionDataRef = useSharedValue<{[key: string]: {isWalkable: boolean; edgeBlocks: number}}>({});
@@ -222,7 +235,13 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(
         currentTileX.value = targetX.value;
         currentTileY.value = targetY.value;
 
-        if (onTileEnter) runOnJS(onTileEnter)(targetX.value, targetY.value);
+        const tx = targetX.value;
+        const ty = targetY.value;
+        if (onTileEnter && (tx !== lastEnteredTileX.value || ty !== lastEnteredTileY.value)) {
+          lastEnteredTileX.value = tx;
+          lastEnteredTileY.value = ty;
+          runOnJS(onTileEnter)(tx, ty);
+        }
 
         const dirStr = activeDirection.value;
         if (dirStr) {
@@ -305,7 +324,7 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(
           const rawLayer = (t.layer !== undefined && t.layer !== null) ? Number(t.layer) : 0;
           if (rawLayer <= -2) continue;
 
-          const cleanUrl = t.imageUrl?.split('?')[0];
+          const cleanUrl = t.cleanUrl;
           const dictData = cleanUrl ? tileLibrary.get(cleanUrl) : null;
 
           // Determine logical layer. Priority: Chunk Data -> Dictionary Data -> Default 0
@@ -337,6 +356,8 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(
   }, [visionGrid, tileSize, tileLibrary]);
 
   const { layerMinus1Tiles, layer0Tiles, allProps } = sortedLayers;
+
+  const spritesheet = activePet?.pet_details?.metadata?.visuals?.walking_spritesheet;
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -418,6 +439,37 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(
             );
           })}
         </Group>
+
+        {/* NATIVE SKIA PLAYER & PET RENDERING */}
+        {avatarData && (
+          <SkiaLayeredAvatar
+            user={avatarData}
+            size={72}
+            isMoving={isMoving}
+            activeDirection={activeDirection}
+            x={playerBaseX}
+            y={playerBaseY}
+          />
+        )}
+        
+        {spritesheet && (
+          <SkiaPetSprite
+            imageUrl={spritesheet.url}
+            isMoving={isMoving}
+            activeDirection={activeDirection}
+            flipX={false}
+            scale={0.15 * (tileSize / 48)}
+            totalFrames={spritesheet.frame_count ?? 1}
+            totalTimeMs={spritesheet.duration_ms ?? 1000}
+            frameWidth={spritesheet.frame_width ?? 64}
+            frameHeight={spritesheet.frame_height ?? 64}
+            idleIndex={spritesheet.idle_frame ?? 0}
+            x={width / 2} // RAW CENTER POINT
+            y={(height / 2) + 26} // Increased from +20 to lower base position
+            trailX={petOffsetX}
+            trailY={petOffsetY}
+          />
+        )}
       </Canvas>
 
       <Reanimated.View 
@@ -430,32 +482,14 @@ export const SkiaWorldMap: React.FC<SkiaWorldMapProps> = React.memo(
       >
         {children}
       </Reanimated.View>
-      <View 
-        style={[StyleSheet.absoluteFill, { zIndex: 10000 }]} 
-        pointerEvents="box-none"
-      >
-        {overlayChildren}
-        {petOverlay}
-      </View>
-
     </View>
   );
-}, (prev, next) => {
+};
+
+export const SkiaWorldMap = React.memo(SkiaWorldMapInternal, (prev, next) => {
   if (prev.visionGrid !== next.visionGrid) return false;
-  if (prev.showWalkabilityOverlay !== next.showWalkabilityOverlay) return false;
-  if (prev.mapSettings !== next.mapSettings) return false;
-  if (prev.activePet?.id !== next.activePet?.id) return false;
-
-  // CRITICAL: Only re-render the map if the user TELEPORTS (dx >= 5).
-  // Ignore small 1-tile movements and steps_banked updates to prevent mid-step stutter.
-  const prevX = prev.user?.world_x ?? 0;
-  const prevY = prev.user?.world_y ?? 0;
-  const nextX = next.user?.world_x ?? 0;
-  const nextY = next.user?.world_y ?? 0;
-  const dx = Math.abs(nextX - prevX);
-  const dy = Math.abs(nextY - prevY);
-
-  if (dx >= 5 || dy >= 5) return false; // Trigger re-render for teleport snapping
-
-  return true; // Ignore all other updates
+  const dx = Math.abs(next.spawnX - prev.spawnX);
+  const dy = Math.abs(next.spawnY - prev.spawnY);
+  if (dx >= 5 || dy >= 5) return false;
+  return true;
 });
