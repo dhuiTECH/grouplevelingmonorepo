@@ -1,11 +1,10 @@
-import React from 'react';
-import { Tile } from '@/lib/store/mapStore';
+import React, { useEffect, useRef } from 'react';
 
 interface BrushPreviewProps {
   isSpacePressed: boolean;
   selectedTool: string;
   selectedTileId: string | null;
-  customTiles: any[]; // Or Tile[] if possible, used 'any' in original but better be specific
+  customTiles: any[];
   cursorCoords: { x: number; y: number };
   smoothCursorCoords: { x: number; y: number };
   TILE_SIZE: number;
@@ -15,8 +14,6 @@ interface BrushPreviewProps {
   selectedSmartType: string;
   snapMode: 'full' | 'half' | 'free';
 }
-
-const HALF_TILE_SIZE = 24; // Default TILE_SIZE / 2, but should be passed or constant
 
 const snapPosition = (smooth: number, snapMode: 'full' | 'half' | 'free', gridCoord: number, tileSize: number, worldSize: number): number => {
   if (snapMode === 'free') return smooth + worldSize / 2;
@@ -28,110 +25,89 @@ const snapPosition = (smooth: number, snapMode: 'full' | 'half' | 'free', gridCo
 export const BrushPreview = React.memo(({
   isSpacePressed, selectedTool, selectedTileId, customTiles, cursorCoords, smoothCursorCoords, TILE_SIZE, WORLD_SIZE, brushSize, brushMode, selectedSmartType, snapMode
 }: BrushPreviewProps) => {
-  if (isSpacePressed || (selectedTool !== 'paint' && selectedTool !== 'erase' && selectedTool !== 'collision')) return null;
-  
-  // If painting, we need either a tile OR a smart type active
-  if (selectedTool === 'paint' && !selectedTileId && selectedSmartType === 'off') return null;
-  
-  const tile = (selectedTool === 'paint' || selectedTool === 'collision') ? customTiles.find((t: any) => t.id === selectedTileId) : null;
-  const isNotFullSnap = snapMode !== 'full';
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const half = brushMode ? Math.floor(brushSize / 2) : 0;
-  const isEven = brushMode && brushSize % 2 === 0;
-  const previewTiles = [];
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-  for (let dy = -half; dy < (isEven ? half : half + 1); dy++) {
-    for (let dx = -half; dx < (isEven ? half : half + 1); dx++) {
-      previewTiles.push({ dx, dy });
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (isSpacePressed || (selectedTool !== 'paint' && selectedTool !== 'erase' && selectedTool !== 'collision')) return;
+    if (selectedTool === 'paint' && !selectedTileId && selectedSmartType === 'off') return;
+
+    const brushLimit = brushMode ? brushSize : 1;
+    const half = Math.floor(brushLimit / 2);
+    const isEven = brushLimit % 2 === 0;
+    const tile = (selectedTool === 'paint' || selectedTool === 'collision') ? customTiles.find((t: any) => t.id === selectedTileId) : null;
+    
+    const displayHeight = tile?.frameHeight || TILE_SIZE;
+    const displayWidth = tile?.frameWidth || displayHeight;
+
+    // Center point of the canvas
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    
+    // Correct offset for even brush sizes to match selection logic
+    const gridOffset = isEven ? TILE_SIZE / 2 : 0;
+
+    for (let dy = -half; dy < (isEven ? half : half + 1); dy++) {
+      for (let dx = -half; dx < (isEven ? half : half + 1); dx++) {
+        const x = centerX + dx * TILE_SIZE - (isEven ? 0 : TILE_SIZE / 2);
+        const y = centerY + dy * TILE_SIZE - (isEven ? 0 : TILE_SIZE / 2);
+
+        if (selectedTool === 'erase') {
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.3)';
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+          ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+          ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+        } else if (selectedTool === 'collision') {
+          ctx.fillStyle = 'rgba(249, 115, 22, 0.3)';
+          ctx.strokeStyle = 'rgba(249, 115, 22, 0.5)';
+          ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+          ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+        } else if (selectedTool === 'paint') {
+          ctx.fillStyle = 'rgba(34, 197, 94, 0.3)';
+          ctx.strokeStyle = 'rgba(34, 197, 94, 0.5)';
+          
+          if (!tile && selectedSmartType !== 'off') {
+            ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+            ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+          } else if (tile) {
+            const drawX = x - (displayWidth - TILE_SIZE) / 2;
+            const drawY = y - (displayHeight - TILE_SIZE);
+            ctx.fillRect(drawX, drawY, displayWidth, displayHeight);
+            ctx.strokeRect(drawX, drawY, displayWidth, displayHeight);
+          }
+        }
+      }
     }
-  }
+  }, [isSpacePressed, selectedTool, selectedTileId, customTiles, brushSize, brushMode, selectedSmartType, TILE_SIZE]);
+
+  if (isSpacePressed || (selectedTool !== 'paint' && selectedTool !== 'erase' && selectedTool !== 'collision')) return null;
 
   const leftPos = snapPosition(smoothCursorCoords.x, snapMode, cursorCoords.x, TILE_SIZE, WORLD_SIZE);
   const topPos = snapPosition(smoothCursorCoords.y, snapMode, cursorCoords.y, TILE_SIZE, WORLD_SIZE);
+  
+  const brushLimit = brushMode ? brushSize : 1;
+  const totalSize = brushLimit * TILE_SIZE;
+  const canvasPadding = TILE_SIZE * 4; // Extra space for large props
 
   return (
-    <div 
+    <canvas
+      ref={canvasRef}
+      width={totalSize + canvasPadding}
+      height={totalSize + canvasPadding}
       className="absolute pointer-events-none z-[60]"
       style={{
-        left: leftPos,
-        top: topPos,
+        left: leftPos - (totalSize + canvasPadding) / 2 + (snapMode === 'full' ? TILE_SIZE / 2 : 0),
+        top: topPos - (totalSize + canvasPadding) / 2 + (snapMode === 'full' ? TILE_SIZE / 2 : 0),
+        imageRendering: 'pixelated'
       }}
-    >
-      {previewTiles.map(({ dx, dy }, i) => {
-        if (selectedTool === 'erase' || selectedTool === 'collision') {
-          const isCollision = selectedTool === 'collision';
-          return (
-            <div 
-              key={i}
-              className={`absolute ${isCollision ? 'bg-orange-500/30 border-orange-500/50' : 'bg-red-500/30 border-red-500/50'}`}
-              style={{
-                left: dx * TILE_SIZE,
-                top: dy * TILE_SIZE,
-                width: TILE_SIZE,
-                height: TILE_SIZE,
-              }}
-            />
-          );
-        }
-
-        // If we're painting but have no specific tile template (e.g. pure smart brush)
-        if (!tile && selectedSmartType !== 'off') {
-           return (
-            <div 
-              key={i}
-              className="absolute bg-green-500/30 border border-green-500/50"
-              style={{
-                left: dx * TILE_SIZE,
-                top: dy * TILE_SIZE,
-                width: TILE_SIZE,
-                height: TILE_SIZE,
-              }}
-            />
-          );
-        }
-
-        if (!tile) return null;
-        const displayHeight = tile.frameHeight || TILE_SIZE;
-        const displayWidth = tile.frameWidth || displayHeight;
-
-        // If not full-snap, leftPos/topPos is the mouse. Center/bottom-align on it.
-        // If full-snap, leftPos/topPos is grid top-left. Center/bottom-align on the grid cell.
-        const left = isNotFullSnap
-          ? dx * TILE_SIZE - (displayWidth / 2)
-          : dx * TILE_SIZE - (displayWidth - TILE_SIZE) / 2;
-        
-        const top = isNotFullSnap
-          ? dy * TILE_SIZE - displayHeight
-          : dy * TILE_SIZE - (displayHeight - TILE_SIZE);
-
-        return (
-          <div 
-            key={i}
-            className="absolute"
-            style={{
-              left,
-              top,
-              width: displayWidth,
-              height: displayHeight,
-            }}
-          >
-            <div className="absolute inset-0 bg-green-500/20 border border-green-500/40 z-10" />
-            <div 
-              className="absolute inset-0 opacity-50"
-              style={{
-                backgroundImage: `url(${tile.url})`,
-                backgroundSize: 'auto 100%',
-                backgroundPosition: '0 0',
-                backgroundRepeat: 'no-repeat',
-                imageRendering: 'pixelated',
-                transform: `rotate(${tile.rotation || 0}deg)`,
-                transformOrigin: 'center center'
-              }}
-            />
-          </div>
-        );
-      })}
-    </div>
+    />
   );
 });
 

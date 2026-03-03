@@ -388,15 +388,23 @@ const PixiScene: React.FC<PixiSceneProps> = ({
     if (!showWalkabilityOverlay) return;
     const { minX, minY, maxX, maxY } = cullBox;
     const BAR = 5;
+    
+    // 🔥 UNIFICATION: Use a Set to track cells we've already tinted red
+    const tintedCells = new Set<string>();
+
     tiles.forEach(tile => {
       if (typeof tile.x !== 'number' || typeof tile.y !== 'number') return;
       const wx = tile.x * TILE_SIZE + worldSize / 2;
       const wy = tile.y * TILE_SIZE + worldSize / 2;
+      
       if (wx + TILE_SIZE < minX || wx > maxX || wy + TILE_SIZE < minY || wy > maxY) return;
 
-      if (tile.isWalkable === false) {
-        // Full block — red fill
+      const cellKey = `${tile.x},${tile.y}`;
+
+      if (tile.isWalkable === false && !tintedCells.has(cellKey)) {
+        // Full block — red fill (only draw once per cell)
         g.rect(wx, wy, TILE_SIZE, TILE_SIZE).fill({ color: 0xDC2626, alpha: 0.35 });
+        tintedCells.add(cellKey);
       } else if (tile.layer === -3 && tile.edgeBlocks) {
         // Edge block — orange bars on blocked edges
         const bits = tile.edgeBlocks;

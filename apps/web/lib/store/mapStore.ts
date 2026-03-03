@@ -178,19 +178,21 @@ interface MapState {
 
   // Auto-tiling editor state
   isSmartMode: boolean;
-  smartBrushLock: boolean; // Prevent deleting smart tiles when erase tool is used
-  selectedSmartType: string; // 'off' | 'grass' | 'dirt' | 'water'
+  smartBrushLock: boolean;
+  selectedSmartType: string;
   selectedBlockCol: number;
   selectedBlockRow: number;
-  smartBrushLayer: number; // Target layer for smart brushes (default 0)
+  smartBrushLayer: number;
   terrainOffsets: Record<string, { flat: [number, number], raised: [number, number] }>;
   isRaiseMode: boolean;
   isFoamEnabled: boolean;
   autoTileSheetUrl: string | null;
   dirtSheetUrl: string | null;
   waterSheetUrl: string | null;
-  selectedWaterBaseId: string | null; // NEW
-  selectedFoamStripId: string | null; // NEW
+  selectedWaterBaseId: string | null;
+  selectedFoamStripId: string | null;
+  collisionMode: 'full' | 'edge';
+  edgeDirection: number;
   setSmartMode: (enabled: boolean) => void;
   setSmartBrushLock: (enabled: boolean) => void;
   setSelectedSmartType: (type: string) => void;
@@ -198,6 +200,8 @@ interface MapState {
   setSmartBrushLayer: (layer: number) => void;
   setRaiseMode: (enabled: boolean) => void;
   setFoamEnabled: (enabled: boolean) => void;
+  setCollisionMode: (mode: 'full' | 'edge') => void;
+  setEdgeDirection: (direction: number) => void;
   setAutoTileSheetUrl: (url: string | null) => Promise<void>;
   setDirtSheetUrl: (url: string | null) => Promise<void>;
   setWaterSheetUrl: (url: string | null) => Promise<void>;
@@ -247,6 +251,7 @@ interface MapState {
   moveTile: (tileId: string, newX: number, newY: number, newOffsetX: number, newOffsetY: number) => Promise<void>;
   rotateTile: (tileId: string, rotationDelta: number) => Promise<void>;
   updateTileAndNeighbors: (x: number, y: number, layer: number, isRemoving?: boolean, smartType?: string, blockCol?: number, blockRow?: number) => Promise<void>; // NEW
+  batchUpdateTileAndNeighbors: (updates: { x: number, y: number, layer: number, isRemoving?: boolean, smartType?: string, blockCol?: number, blockRow?: number }[]) => Promise<void>;
   forceSyncAllChunks: () => Promise<void>;
   exportMap: () => string;
 }
@@ -334,8 +339,10 @@ export const useMapStore = create<MapState>((set, get) => ({
   autoTileSheetUrl: null,
   dirtSheetUrl: null,
   waterSheetUrl: null,
-  selectedWaterBaseId: null, // NEW
-  selectedFoamStripId: null, // NEW
+  selectedWaterBaseId: null,
+  selectedFoamStripId: null,
+  collisionMode: 'full',
+  edgeDirection: 4,
   showWalkabilityOverlay: false,
   showDebugModal: false,
   showDebugNumbers: false,
@@ -347,6 +354,8 @@ export const useMapStore = create<MapState>((set, get) => ({
   setSmartBrushLayer: (smartBrushLayer) => set({ smartBrushLayer }),
   setRaiseMode: (enabled: boolean) => set({ isRaiseMode: enabled }),
   setFoamEnabled: (isFoamEnabled) => set({ isFoamEnabled }),
+  setCollisionMode: (collisionMode) => set({ collisionMode }),
+  setEdgeDirection: (edgeDirection) => set({ edgeDirection }),
   setShowWalkabilityOverlay: (showWalkabilityOverlay) => set({ showWalkabilityOverlay }),
   setShowDebugModal: (showDebugModal) => set({ showDebugModal }),
   setShowDebugNumbers: (showDebugNumbers) => set({ showDebugNumbers }),
@@ -990,6 +999,73 @@ export const useMapStore = create<MapState>((set, get) => ({
     });
 
     // 2. Trigger debounced sync for touched chunks
+    touchedChunks.forEach(key => {
+      const [cx, cy] = key.split(',').map(Number);
+      triggerChunkSync(cx, cy, get);
+    });
+  },
+
+  batchUpdateTileAndNeighbors: async (updates) => {
+    const touchedChunks = new Set<string>();
+
+    set((state) => {
+      const newTiles = [...state.tiles];
+      const tileIndexMap = new Map<string, number>();
+      newTiles.forEach((t, i) => tileIndexMap.set(`${t.x},${t.y},${t.layer || 0}`, i));
+
+      const localTiles = new Map<string, Tile>();
+      
+      const getTileSig = (tx: number, ty: number, layer: number) => {
+        const key = `${tx},${ty},${layer}`;
+        const t = localTiles.get(key) || (tileIndexMap.has(key) ? newTiles[tileIndexMap.get(key)!] : null);
+        return t && t.smartType ? `${t.smartType}-${t.blockCol || 0}-${t.blockRow || 0}` : null;
+      };
+
+      const updateSingleTile = (tx: number, ty: number, layer: number, smartType?: string, blockCol?: number, blockRow?: number) => {
+        const key = `${tx},${ty},${layer}`;
+        const tileIndex = tileIndexMap.get(key) ?? -1;
+        if (tileIndex === -1) return;
+        const tile = newTiles[tileIndex];
+        
+        if (!tile.isAutoTile) return;
+        if (smartType !== undefined && tile.smartType !== smartType) return;
+        if (blockCol !== undefined && tile.blockCol !== blockCol) return;
+        if (blockRow !== undefined && tile.blockRow !== blockRow) return;
+
+        const mySig = `${tile.smartType}-${tile.blockCol}-${tile.blockRow}`;
+        const grid: Record<string, string> = {};
+
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const neighborSig = getTileSig(tx + dx, ty + dy, layer);
+            if (neighborSig) grid[`${tx+dx},${ty+dy}`] = neighborSig;
+          }
+        }
+
+        const newMask = calculateBitmask(tx, ty, grid, mySig);
+        if (tile.bitmask !== newMask) {
+          newTiles[tileIndex] = { ...tile, bitmask: newMask };
+          localTiles.set(key, newTiles[tileIndex]);
+          touchedChunks.add(`${Math.floor(tx / CHUNK_SIZE)},${Math.floor(ty / CHUNK_SIZE)}`);
+        }
+      };
+
+      for (const update of updates) {
+        const { x, y, layer, isRemoving, smartType, blockCol, blockRow } = update;
+        const area = [
+          {tx: x, ty: y},
+          {tx: x, ty: y-1}, {tx: x+1, ty: y-1}, {tx: x+1, ty: y}, {tx: x+1, ty: y+1},
+          {tx: x, ty: y+1}, {tx: x-1, ty: y+1}, {tx: x-1, ty: y}, {tx: x-1, ty: y-1}
+        ];
+        for (const pos of area) {
+          if (isRemoving && pos.tx === x && pos.ty === y) continue;
+          updateSingleTile(pos.tx, pos.ty, layer, smartType, blockCol, blockRow);
+        }
+      }
+
+      return { tiles: newTiles };
+    });
+
     touchedChunks.forEach(key => {
       const [cx, cy] = key.split(',').map(Number);
       triggerChunkSync(cx, cy, get);

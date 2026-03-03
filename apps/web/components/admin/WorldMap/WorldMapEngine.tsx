@@ -50,14 +50,13 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
     nodeSnapToGrid, setNodeSnapToGrid,
     isLoadingTiles, tiles, nodes, showDebugModal, setShowDebugModal, showDebugNumbers, setShowDebugNumbers, currentStamp, setCurrentStamp,
     dragGrabOffset, setDragGrabOffset, selection, setSelection,
-    showWalkabilityOverlay, setShowWalkabilityOverlay, setUndoStack
+    showWalkabilityOverlay, setShowWalkabilityOverlay, setUndoStack,
+    collisionMode, setCollisionMode, edgeDirection, setEdgeDirection
   } = useMapStore();
 
   // Local State
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
-  const [collisionMode, setCollisionMode] = useState<'full' | 'edge'>('full');
-  const [edgeDirection, setEdgeDirection] = useState<number>(4); // default S=4
   
   // Viewport & Transform State
   const pixiTransformRef = useRef({ x: 0, y: 0, scale: 0.5 });
