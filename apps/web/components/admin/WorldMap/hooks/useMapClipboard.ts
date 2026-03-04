@@ -12,6 +12,10 @@ export const useMapClipboard = () => {
 
     const { action, x, y, layer, previousTile, nodeData, previousFullTiles } = lastAction;
 
+    // Ensure x and y are numbers for actions that require them
+    const safeX = x ?? 0;
+    const safeY = y ?? 0;
+
     if (action === 'autofill' && previousFullTiles) {
       useMapStore.setState({ tiles: previousFullTiles });
       
@@ -47,7 +51,7 @@ export const useMapClipboard = () => {
     if (action === 'paint') {
       if (previousTile) {
         await addTileSimple(
-          x, y, previousTile.type, previousTile.imageUrl, 
+          safeX, safeY, previousTile.type, previousTile.imageUrl, 
           previousTile.isSpritesheet, previousTile.frameCount, 
           previousTile.frameWidth, previousTile.frameHeight, 
           previousTile.animationSpeed, previousTile.layer,
@@ -64,22 +68,22 @@ export const useMapClipboard = () => {
           previousTile.rotation || 0
         );
       } else {
-        const chunkX = Math.floor(x / 16); 
-        const chunkY = Math.floor(y / 16);
+        const chunkX = Math.floor(safeX / 16); 
+        const chunkY = Math.floor(safeY / 16);
         useMapStore.setState((state) => ({
-          tiles: state.tiles.filter(t => !(t.x === x && t.y === y && (t.layer || 0) === layer))
+          tiles: state.tiles.filter(t => !(t.x === safeX && t.y === safeY && (t.layer || 0) === layer))
         }));
         
         const { data: existingChunk } = await supabase.from('map_chunks').select('tile_data').eq('chunk_x', chunkX).eq('chunk_y', chunkY).maybeSingle();
         if (existingChunk?.tile_data) {
-          const newTileData = existingChunk.tile_data.filter((t: any) => !(t.x === x && t.y === y && (t.layer || 0) === layer));
+          const newTileData = existingChunk.tile_data.filter((t: any) => !(t.x === safeX && t.y === safeY && (t.layer || 0) === layer));
           await supabase.from('map_chunks').upsert({ chunk_x: chunkX, chunk_y: chunkY, tile_data: newTileData, updated_at: new Date().toISOString() }, { onConflict: 'chunk_x,chunk_y' });
         }
       }
     } else if (action === 'erase_tile') {
       if (previousTile) {
         await addTileSimple(
-          x, y, previousTile.type, previousTile.imageUrl, 
+          safeX, safeY, previousTile.type, previousTile.imageUrl, 
           previousTile.isSpritesheet, previousTile.frameCount, 
           previousTile.frameWidth, previousTile.frameHeight, 
           previousTile.animationSpeed, previousTile.layer,
@@ -97,7 +101,7 @@ export const useMapClipboard = () => {
         );
       }
     } else if (action === 'node_add') {
-      const n = useMapStore.getState().nodes.find(node => node.x === x && node.y === y);
+      const n = useMapStore.getState().nodes.find(node => node.x === safeX && node.y === safeY);
       if (n) await removeNode(n.id);
     } else if (action === 'erase_node') {
       if (nodeData) {

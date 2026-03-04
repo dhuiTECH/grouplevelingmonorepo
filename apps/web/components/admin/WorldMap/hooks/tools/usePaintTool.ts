@@ -14,10 +14,10 @@ export const usePaintTool = () => {
     
     if (!tile && state.selectedSmartType === 'off') return;
 
-    const activeTileLayer = tile ? tile.layer : state.layer;
+    const activeTileLayer = tile ? tile.layer : state.smartBrushLayer;
     let currentTiles = [...state.tiles];
-    const newTilesToAppend = [];
-    const undoEntries = [];
+    const newTilesToAppend: Tile[] = [];
+    const undoEntries: any[] = [];
     const autoTileQueue = [];
 
     for (const {dx, dy} of brushArea) {
@@ -112,8 +112,8 @@ export const usePaintTool = () => {
     let currentTiles = [...state.tiles];
     let currentNodes = [...state.nodes];
     let stateChanged = false;
-    const undoEntries = [];
-    const autoTileQueue = [];
+    const undoEntries: any[] = [];
+    const autoTileQueue: any[] = [];
 
     for (const {dx, dy} of brushArea) {
       const tx = gx + dx;
