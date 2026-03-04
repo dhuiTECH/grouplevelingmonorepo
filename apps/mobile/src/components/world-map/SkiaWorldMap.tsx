@@ -184,14 +184,19 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       const targetCol = collisionData[`${nx},${ny}`];
       if (targetCol && !targetCol.isWalkable) return;
 
+      // Edge-block collision (bitmask N=1, E=2, S=4, W=8): two-sided check,
+      // mirroring the web world's movement logic.
       const curCol = collisionData[`${currentTileX.value},${currentTileY.value}`];
-      if (curCol && curCol.edgeBlocks) {
-        const dirNum = dirStr === 'UP' ? 1 : dirStr === 'DOWN' ? 2 : dirStr === 'LEFT' ? 3 : 4;
-        if (dirNum === 1 && (curCol.edgeBlocks & 1)) return;
-        if (dirNum === 4 && (curCol.edgeBlocks & 2)) return;
-        if (dirNum === 2 && (curCol.edgeBlocks & 4)) return;
-        if (dirNum === 3 && (curCol.edgeBlocks & 8)) return;
-      }
+      const currentEdgeBlocks = curCol?.edgeBlocks ?? 0;
+      const destEdgeBlocks = targetCol?.edgeBlocks ?? 0;
+
+      const blockedByEdge =
+        (dirStr === 'UP'    && ((currentEdgeBlocks & 1) || (destEdgeBlocks & 4))) ||
+        (dirStr === 'DOWN'  && ((currentEdgeBlocks & 4) || (destEdgeBlocks & 1))) ||
+        (dirStr === 'RIGHT' && ((currentEdgeBlocks & 2) || (destEdgeBlocks & 8))) ||
+        (dirStr === 'LEFT'  && ((currentEdgeBlocks & 8) || (destEdgeBlocks & 2)));
+
+      if (blockedByEdge) return;
 
       targetX.value = nx;
       targetY.value = ny;

@@ -3,6 +3,7 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import { Application, extend, useTick } from '@pixi/react';
 import * as PIXI from 'pixi.js';
 import { useMapStore, useTickStore, Tile, CustomTile } from '@/lib/store/mapStore';
+import { useCursorStore } from '@/lib/store/cursorStore';
 import { getPixiTextureCoords, getLiquidTextureCoords, getTileIdFromMask } from './mapUtils';
 
 // Register PixiJS components for use in JSX
@@ -32,7 +33,6 @@ interface PixiMapCanvasProps {
   
   // Data passed down for rendering
   nodes: any[];
-  cursorCoords: { x: number; y: number };
   selectedTool: string;
   isSpacePressed: boolean;
   brushMode: boolean;
@@ -55,13 +55,17 @@ const normalizeUrl = (url: string | undefined | null) => {
 
 // --- Hook for Async Texture Loading ---
 const useTexture = (url: string | undefined | null) => {
-  const [texture, setTexture] = useState<PIXI.Texture | null>(null);
+  // ⚡️ Check Pixi's memory cache synchronously first!
+  const cachedTexture = useMemo(() => {
+    if (!url) return null;
+    return PIXI.Assets.get(url) || null;
+  }, [url]);
+
+  const [texture, setTexture] = useState<PIXI.Texture | null>(cachedTexture);
 
   useEffect(() => {
-    if (!url) {
-      setTexture(null);
-      return;
-    }
+    // If it's already in memory, skip the async load entirely!
+    if (!url || cachedTexture) return; 
     
     let isMounted = true;
 
@@ -86,22 +90,16 @@ const useTexture = (url: string | undefined | null) => {
     return () => {
       isMounted = false;
     };
-  }, [url]);
+  }, [url, cachedTexture]);
 
   return texture;
 };
 
 // --- Sub-component for individual Tile Rendering ---
-const PixiTile = React.memo(({ 
-  texture, x, y, width, height, rotation, onMouseDown, isInteractive, foamTexture, quarterTextures, foamQuarterTextures, debugInfo
-}: { 
-  texture: PIXI.Texture | null; x: number; y: number; width: number; height: number; 
-  rotation: number; onMouseDown?: (e: any) => void; isInteractive: boolean; 
-  foamTexture?: PIXI.Texture | null; 
-  quarterTextures?: (PIXI.Texture | null)[];
-  foamQuarterTextures?: (PIXI.Texture | null)[];
-  debugInfo?: { id: number; mask: number } | null;
-}) => {
+const PixiTile = React.memo(React.forwardRef<PIXI.Sprite, any>(({ 
+  texture, x, y, width, height, rotation, onMouseDown, isInteractive, 
+  foamTexture, quarterTextures, foamQuarterTextures, debugInfo, zIndex 
+}, ref) => {
   const drawPinkSquare = React.useCallback((g: PIXI.Graphics) => {
     g.clear();
     g.rect(0, 0, width || 48, height || 48).fill({ color: 0xFF00FF, alpha: 0.8 });
@@ -111,16 +109,12 @@ const PixiTile = React.memo(({
   const centerY = y + height / 2;
 
   const debugStyle = useMemo(() => new PIXI.TextStyle({
-    fontSize: 10,
-    fill: '#ffffff',
-    fontWeight: 'bold',
-    stroke: { color: '#000000', width: 2 },
-    align: 'center'
+    fontSize: 10, fill: '#ffffff', fontWeight: 'bold', stroke: { color: '#000000', width: 2 }, align: 'center'
   }), []);
 
   return (
-    <PixiContainer x={centerX} y={centerY} rotation={rotation * (Math.PI / 180)} pivot={{ x: width / 2, y: height / 2 }}>
-      {/* Foam Layer */}
+    // Let Pixi sort children by zIndex on the GPU
+    <PixiContainer zIndex={zIndex} x={centerX} y={centerY} rotation={rotation * (Math.PI / 180)} pivot={{ x: width / 2, y: height / 2 }}>
       {foamQuarterTextures ? (
         <PixiContainer alpha={0.8}>
           {foamQuarterTextures[0] && <PixiSprite texture={foamQuarterTextures[0]} x={0} y={0} width={width} height={height} />}
@@ -129,25 +123,25 @@ const PixiTile = React.memo(({
         <PixiSprite texture={foamTexture} x={0} y={0} width={48} height={48} alpha={0.8} />
       )}
       
-      {/* Main Texture Layer */}
       {quarterTextures ? (
-        <PixiContainer 
-          eventMode={isInteractive ? 'static' : 'none'} 
-          onpointerdown={onMouseDown} 
-          cursor={isInteractive ? 'move' : 'default'}
-        >
+        <PixiContainer eventMode={isInteractive ? 'static' : 'none'} onpointerdown={onMouseDown} cursor={isInteractive ? 'move' : 'default'}>
           {quarterTextures[0] && <PixiSprite texture={quarterTextures[0]} x={0} y={0} width={width} height={height} />}
         </PixiContainer>
       ) : texture ? (
+        // Attach the ref so SmartPixiTile can mutate the texture directly
         <PixiSprite 
-          texture={texture} width={width} height={height}
-          eventMode={isInteractive ? 'static' : 'none'} onpointerdown={onMouseDown} cursor={isInteractive ? 'move' : 'default'}
+          ref={ref}
+          texture={texture}
+          width={width}
+          height={height}
+          eventMode={isInteractive ? 'static' : 'none'}
+          onpointerdown={onMouseDown}
+          cursor={isInteractive ? 'move' : 'default'}
         />
       ) : (
         <PixiGraphics draw={drawPinkSquare} />
       )}
 
-      {/* Debug Info Overlay */}
       {debugInfo && (
         <PixiContainer x={width / 2} y={height / 2} alpha={0.9} pointerEvents="none">
           <PixiText 
@@ -159,7 +153,7 @@ const PixiTile = React.memo(({
       )}
     </PixiContainer>
   );
-});
+}));
 
 PixiTile.displayName = 'PixiTile';
 
@@ -178,7 +172,6 @@ const SmartPixiTile = React.memo(({
   let mainUrl = tile.imageUrl;
   let effectiveSmartType = tile.smartType || 'grass';
 
-  // Apply sheet URL for both live auto-tiles AND frozen pasted smart tiles (isAutoTile=false but smartType set)
   const isFrozenSmartTile = !tile.isAutoTile && !!tile.smartType && tile.bitmask !== undefined;
   if (tile.isAutoTile || isFrozenSmartTile) {
     if (effectiveSmartType === 'water' && waterSheetUrl) mainUrl = waterSheetUrl;
@@ -190,33 +183,27 @@ const SmartPixiTile = React.memo(({
   const foamUrl = (isFoamEnabled && foamStripTile?.url && (tile.foamBitmask || 0) > 0) ? foamStripTile.url : null;
   const foamTextureBase = useTexture(foamUrl);
 
-  // Frozen smart tiles use TILE_SIZE just like live auto-tiles (they come from the same bitmask grid)
   const isSmartRendered = tile.isAutoTile || isFrozenSmartTile;
   const displayHeight = isSmartRendered ? TILE_SIZE : (liveCustomTile?.frameHeight || tile.frameHeight || TILE_SIZE);
   const displayWidth = isSmartRendered ? TILE_SIZE : (liveCustomTile?.frameWidth || tile.frameWidth || displayHeight);
 
-  // ANIMATION LOGIC
   const frameCount = liveCustomTile?.frameCount || tile.frameCount || 1;
   const isAnimated = (liveCustomTile?.isSpritesheet || tile.isSpritesheet) && frameCount > 1;
   const speed = Number(liveCustomTile?.animationSpeed || tile.animationSpeed || 1);
   
-  // Use a selector to compute the current frame based on globalTick.
-  // This prevents non-animated tiles from re-rendering 10 times a second!
-  const currentFrame = useTickStore(
-    useCallback(state => 
-      isAnimated ? Math.floor(state.globalTick * speed) % frameCount : 0,
-    [isAnimated, speed, frameCount])
-  );
+  // Compute Z-Index so WebGL can do depth sorting natively
+  const zIndex = (tileLayer * 100000) + (tile.y + (tile.offsetY || 0) / TILE_SIZE);
+
+  const spriteRef = useRef<PIXI.Sprite | null>(null);
+  const prevFrameRef = useRef(-1);
 
   const quarterTextures = useMemo(() => {
     if (!mainTextureBase || !mainTextureBase.source || !isSmartRendered) return null;
 
-    // Create a unique cache key based on the image URL and bitmask
     const cacheKeyBase = `${mainUrl}-${tile.bitmask}-${tile.blockCol}-${tile.blockRow}`;
 
     try {
       const source = mainTextureBase.source;
-      // Use liquid coords for water (no horizontal gaps), standard coords for grass/dirt
       const coords = effectiveSmartType === 'water'
         ? getLiquidTextureCoords(tile.bitmask || 0, tile.blockCol || 0, tile.blockRow || 0)
         : getPixiTextureCoords(tile.bitmask || 0, tile.blockCol || 0, tile.blockRow || 0);
@@ -231,7 +218,7 @@ const SmartPixiTile = React.memo(({
         }
         return textureCache[cacheKey];
       });
-    } catch(e) { return null; }
+    } catch (e) { return null; }
   }, [mainTextureBase, isSmartRendered, tile.bitmask, tile.blockCol, tile.blockRow, mainUrl, effectiveSmartType]);
 
   const foamQuarterTextures = useMemo(() => {
@@ -246,61 +233,94 @@ const SmartPixiTile = React.memo(({
       return coords.map((q, i) => {
         const cacheKey = `${cacheKeyBase}-q${i}`;
         if (!textureCache[cacheKey]) {
-           textureCache[cacheKey] = new PIXI.Texture({
-             source,
-             frame: new PIXI.Rectangle(q.sourceX, q.sourceY, q.sourceWidth, q.sourceHeight)
-           });
+          textureCache[cacheKey] = new PIXI.Texture({
+            source,
+            frame: new PIXI.Rectangle(q.sourceX, q.sourceY, q.sourceWidth, q.sourceHeight)
+          });
         }
         return textureCache[cacheKey];
       });
-    } catch(e) { return null; }
+    } catch (e) { return null; }
   }, [foamTextureBase, tile.foamBitmask, foamUrl]);
 
+  // Base texture selection with caching for both static and animated tiles
   const texture = useMemo(() => {
-    if (quarterTextures) return null;
-    if (!mainTextureBase || !mainTextureBase.source) return null;
+    if (quarterTextures || !mainTextureBase || !mainTextureBase.source) return null;
 
-    if (isAnimated) {
-       try {
-          const source = mainTextureBase.source;
-          const frameX = currentFrame * displayWidth;
-          return new PIXI.Texture({
-            source,
-            frame: new PIXI.Rectangle(source.width >= frameX + displayWidth ? frameX : 0, 0, displayWidth, displayHeight)
+    // Animated or spritesheet-based tiles default to frame 0; ticker will mutate
+    if (isAnimated || ((liveCustomTile?.isSpritesheet || tile.isSpritesheet) && frameCount > 1)) {
+      const cacheKey = `${mainUrl}-frame-0-${displayWidth}x${displayHeight}`;
+      if (!textureCache[cacheKey]) {
+        try {
+          textureCache[cacheKey] = new PIXI.Texture({
+            source: mainTextureBase.source,
+            frame: new PIXI.Rectangle(0, 0, displayWidth, displayHeight)
           });
-       } catch(e) { return null; }
-    } else if ((liveCustomTile?.isSpritesheet || tile.isSpritesheet) && frameCount && frameCount > 1) {
-       try {
-          const source = mainTextureBase.source;
-          if (source.width >= displayWidth && source.height >= displayHeight) {
-            return new PIXI.Texture({
-              source,
-              frame: new PIXI.Rectangle(0, 0, displayWidth, displayHeight)
-            });
-          }
-       } catch(e) { return null; }
+        } catch (e) { return null; }
+      }
+      return textureCache[cacheKey];
     }
-    
-    return mainTextureBase;
-  }, [mainTextureBase, quarterTextures, isAnimated, currentFrame, displayWidth, displayHeight, liveCustomTile, tile.isSpritesheet, frameCount]);
+
+    // Static tiles: cache by url and size to avoid leaks
+    const cacheKey = `${mainUrl}-static-${displayWidth}x${displayHeight}`;
+    if (!textureCache[cacheKey]) {
+      try {
+        textureCache[cacheKey] = new PIXI.Texture({
+          source: mainTextureBase.source,
+          frame: new PIXI.Rectangle(0, 0, displayWidth, displayHeight)
+        });
+      } catch (e) { return null; }
+    }
+    return textureCache[cacheKey];
+  }, [mainTextureBase, quarterTextures, isAnimated, displayWidth, displayHeight, liveCustomTile, tile.isSpritesheet, frameCount, mainUrl]);
 
   const foamTexture = useMemo(() => {
     if (foamQuarterTextures || !foamTextureBase || !foamTextureBase.source) return null;
     const col = (tile.foamBitmask || 0) % 4;
     const row = Math.floor((tile.foamBitmask || 0) / 4);
-    try {
-      const source = foamTextureBase.source;
-      if (source.width >= (col + 1) * TILE_SIZE && source.height >= (row + 1) * TILE_SIZE) {
-        return new PIXI.Texture({
-          source,
+    const cacheKey = `foam-${foamUrl}-${col}-${row}`;
+    if (!textureCache[cacheKey]) {
+      try {
+        textureCache[cacheKey] = new PIXI.Texture({
+          source: foamTextureBase.source,
           frame: new PIXI.Rectangle(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE)
         });
-      }
-    } catch(e) { return null; }
-    return null;
-  }, [foamTextureBase, foamQuarterTextures, tile.foamBitmask]);
+      } catch (e) { return null; }
+    }
+    return textureCache[cacheKey];
+  }, [foamTextureBase, foamQuarterTextures, tile.foamBitmask, foamUrl]);
 
-  const x = tile.x * TILE_SIZE + worldSize / 2 + (tile.offsetX || 0) - (displayWidth - TILE_SIZE)/2;
+  // Silent ticker that mutates the GPU texture directly without React re-renders
+  useTick(() => {
+    if (!isAnimated || !spriteRef.current || !mainTextureBase?.source) return;
+
+    const globalTick = useTickStore.getState().globalTick;
+    const currentFrame = Math.floor(globalTick * speed) % frameCount;
+
+    if (currentFrame !== prevFrameRef.current) {
+      prevFrameRef.current = currentFrame;
+      const cacheKey = `${mainUrl}-frame-${currentFrame}-${displayWidth}x${displayHeight}`;
+
+      if (!textureCache[cacheKey]) {
+        const frameX = currentFrame * displayWidth;
+        try {
+          textureCache[cacheKey] = new PIXI.Texture({
+            source: mainTextureBase.source,
+            frame: new PIXI.Rectangle(
+              mainTextureBase.source.width >= frameX + displayWidth ? frameX : 0,
+              0,
+              displayWidth,
+              displayHeight
+            )
+          });
+        } catch (e) { return; }
+      }
+
+      spriteRef.current.texture = textureCache[cacheKey];
+    }
+  });
+
+  const x = tile.x * TILE_SIZE + worldSize / 2 + (tile.offsetX || 0) - (displayWidth - TILE_SIZE) / 2;
   const y = tile.y * TILE_SIZE + worldSize / 2 + (tile.offsetY || 0) - (displayHeight - TILE_SIZE);
 
   const debugInfo = (showDebugNumbers && tile.isAutoTile) ? {
@@ -310,9 +330,16 @@ const SmartPixiTile = React.memo(({
 
   return (
     <PixiTile
-      texture={texture} x={x} y={y} width={displayWidth} height={displayHeight}
-      rotation={tile.rotation || 0} isInteractive={tileLayer !== 0 || selectedTool === 'rotate' || selectedTool === 'select'}
-      onMouseDown={(e) => onPropMouseDown?.(tile.id, e)}
+      ref={spriteRef}
+      zIndex={zIndex}
+      texture={texture}
+      x={x}
+      y={y}
+      width={displayWidth}
+      height={displayHeight}
+      rotation={tile.rotation || 0}
+      isInteractive={tileLayer !== 0 || selectedTool === 'rotate' || selectedTool === 'select'}
+      onMouseDown={(e: any) => onPropMouseDown?.(tile.id, e)}
       foamTexture={foamTexture}
       quarterTextures={quarterTextures || undefined}
       foamQuarterTextures={foamQuarterTextures || undefined}
@@ -360,7 +387,7 @@ const PixiScene: React.FC<PixiSceneProps> = ({
       const viewportTop = -t.y / t.scale;
       const viewportRight = viewportLeft + width / t.scale;
       const viewportBottom = viewportTop + height / t.scale;
-      const safeBuffer = TILE_SIZE * 20;
+      const safeBuffer = TILE_SIZE * 4;
 
       if (
         viewportLeft < cullBox.minX + safeBuffer ||
@@ -442,8 +469,9 @@ const PixiScene: React.FC<PixiSceneProps> = ({
   return (
     <PixiContainer ref={containerRef}>
       {tileElements}
-      <PixiGraphics ref={walkabilityOverlayRef} />
-      <PixiGraphics ref={selectionRef} />
+      {/* Ensure overlays always render above tiles */}
+      <PixiGraphics ref={walkabilityOverlayRef} zIndex={999998} />
+      <PixiGraphics ref={selectionRef} zIndex={999999} />
     </PixiContainer>
   );
 };
@@ -451,7 +479,7 @@ const PixiScene: React.FC<PixiSceneProps> = ({
 export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({ 
   width, height, worldSize, transformRef, onPropMouseDown, waterBaseTile, foamStripTile, showDebugNumbers,
   showWalkabilityOverlay,
-  nodes, cursorCoords, selectedTool, isSpacePressed, brushMode, brushSize, selectedTileId
+  nodes, selectedTool, isSpacePressed, brushMode, brushSize, selectedTileId
 }) => {
   const customTiles = useMapStore(state => state.customTiles);
   const tiles = useMapStore(state => state.tiles);
@@ -460,6 +488,7 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
   const dirtSheetUrl = useMapStore(state => state.dirtSheetUrl);
   const waterSheetUrl = useMapStore(state => state.waterSheetUrl);
   const selection = useMapStore(state => state.selection);
+  const cursorCoords = useCursorStore(state => state.cursorCoords);
 
   // Pre-calculate custom tile lookup map for O(1) access during culling and rendering
   const customTileLookup = useMemo(() => {
@@ -485,13 +514,11 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
   // Culling box — updated lazily by PixiScene's useTick, not on every transform change
   const [cullBox, setCullBox] = useState({ minX: -999999, minY: -999999, maxX: 999999, maxY: 999999 });
 
-  const sortedTiles = useMemo(() => {
-    // 1. Frustum Culling using the debounced cullBox
+  // Camera frustum culling + JS depth sort
+  const visibleTiles = useMemo(() => {
     const { minX, minY, maxX, maxY } = cullBox;
 
-    // Filter to only visible tiles before sorting
-    const visibleTiles = tiles.filter(tile => {
-      // Find the dimensions of the tile using the lookup map
+    const visible = tiles.filter(tile => {
       const normalizedTileUrl = normalizeUrl(tile.imageUrl);
       const customTile = customTileLookup.get(normalizedTileUrl);
       
@@ -500,7 +527,6 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
       const displayWidth = isSmartSize ? TILE_SIZE : (customTile?.frameWidth || tile.frameWidth || TILE_SIZE);
       const displayHeight = isSmartSize ? TILE_SIZE : (customTile?.frameHeight || tile.frameHeight || TILE_SIZE);
 
-      // CRITICAL: Ensure x and y are actually numbers before doing math, otherwise they become NaN
       if (typeof tile.x !== 'number' || typeof tile.y !== 'number' || isNaN(tile.x) || isNaN(tile.y)) {
         return false;
       }
@@ -516,22 +542,20 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
       );
     });
 
-    return visibleTiles.sort((a, b) => {
-      // Primary sort by layer
+    // Deterministic draw order without Pixi sortableChildren:
+    // - lower layers first
+    // - for props/structures (layer > 0), sort by "feet" (y + offsetY) so nearer overlaps correctly
+    return visible.sort((a, b) => {
       const layerA = a.layer || 0;
       const layerB = b.layer || 0;
       if (layerA !== layerB) return layerA - layerB;
-      
-      // Secondary sort by Y-coordinate for props/objects (Depth sorting)
-      if (layerA > 0) {
-        return (a.y + (a.offsetY || 0) / TILE_SIZE) - (b.y + (b.offsetY || 0) / TILE_SIZE);
-      }
+      if (layerA > 0) return (a.y + (a.offsetY || 0) / TILE_SIZE) - (b.y + (b.offsetY || 0) / TILE_SIZE);
       return 0;
     });
   }, [tiles, customTileLookup, cullBox, worldSize]);
 
   const tileElements = useMemo(() => {
-    return sortedTiles.map(tile => (
+    return visibleTiles.map(tile => (
       <SmartPixiTile
         key={`${tile.id}-${tile.bitmask}-${tile.foamBitmask}`} tile={tile} customTileLookup={customTileLookup}
         autoTileSheetUrl={autoTileSheetUrl} dirtSheetUrl={dirtSheetUrl} waterSheetUrl={waterSheetUrl}
@@ -541,7 +565,7 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
       />
     ));
   }, [
-    sortedTiles, customTileLookup, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl,
+    visibleTiles, customTileLookup, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl,
     isFoamEnabled, foamStripTile, worldSize, stableOnPropMouseDown, showDebugNumbers,
     selectedTool
   ]);

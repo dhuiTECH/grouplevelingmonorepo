@@ -100,6 +100,8 @@ export const useCollisionTool = () => {
 
     if (stateChanged) {
       useMapStore.setState({ tiles: currentTiles, undoStack: [...state.undoStack, ...undoEntries] });
+      // Ensure collision changes are persisted to Supabase by forcing a chunk sync
+      await useMapStore.getState().forceSyncAllChunks();
     }
   };
 

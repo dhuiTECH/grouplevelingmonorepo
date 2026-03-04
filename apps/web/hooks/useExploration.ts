@@ -230,19 +230,24 @@ export function useExploration(
       let newY = wy;
       if (direction === 'N') newY = wy + 1;
       else if (direction === 'S') newY = wy - 1;
-      else       if (direction === 'E') newX = wx + 1;
+      else if (direction === 'E') newX = wx + 1;
       else if (direction === 'W') newX = wx - 1;
 
-      // CHECK COLLISION: Find all tiles at the target destination
-      const destinationTiles = worldTiles.filter(t => t.x === newX && t.y === newY);
-      
-      // If any tile at this position is marked as non-walkable, block the movement
-      const isBlocked = destinationTiles.some(t => t.isWalkable === false);
-      
-      if (isBlocked) {
-        console.log(`Movement blocked: Tile at ${newX}, ${newY} is not walkable.`);
-        return;
-      }
+      // Full-block collision: any tile at destination with isWalkable === false
+      const destinationTiles = worldTiles.filter((t: any) => t.x === newX && t.y === newY);
+      const isFullBlocked = destinationTiles.some((t: any) => t.isWalkable === false);
+      if (isFullBlocked) return;
+
+      // Edge-block collision (bitmask N=1, E=2, S=4, W=8): two-sided check
+      const currentTiles = worldTiles.filter((t: any) => t.x === wx && t.y === wy);
+      const currentEdgeBlocks = currentTiles.reduce((acc: number, t: any) => acc | (t.edgeBlocks ?? 0), 0);
+      const destEdgeBlocks = destinationTiles.reduce((acc: number, t: any) => acc | (t.edgeBlocks ?? 0), 0);
+      const blockedByEdge =
+        (direction === 'N' && ((currentEdgeBlocks & 1) || (destEdgeBlocks & 4))) ||
+        (direction === 'S' && ((currentEdgeBlocks & 4) || (destEdgeBlocks & 1))) ||
+        (direction === 'E' && ((currentEdgeBlocks & 2) || (destEdgeBlocks & 8))) ||
+        (direction === 'W' && ((currentEdgeBlocks & 8) || (destEdgeBlocks & 2)));
+      if (blockedByEdge) return;
 
       const stepsBanked = user.steps_banked ?? 0;
       if (stepsBanked < MOVE_COST) return;
@@ -254,7 +259,7 @@ export function useExploration(
       const node = nodes.find((n) => n.x === newX && n.y === newY);
       if (node) onEncounter(node);
     },
-    [user, wx, wy, nodes, updatePosition, refreshVision, onEncounter]
+    [user, wx, wy, worldTiles, nodes, updatePosition, refreshVision, onEncounter]
   );
 
   const fastTravel = useCallback(

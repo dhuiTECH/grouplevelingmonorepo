@@ -30,6 +30,8 @@ export interface DialogueLine {
   npc_name?: string;
   text: string;
   image_url?: string;
+  // Optional per-line voiced delivery uploaded via map editor
+  voice_line_url?: string;
 }
 
 export interface ActionButton {
@@ -77,6 +79,8 @@ export function DialogueScene({
   const [displayedText, setDisplayedText] = useState('');
   const [isTypingComplete, setIsTypingComplete] = useState(false);
   const [typeSound, setTypeSound] = useState<Audio.Sound | null>(null);
+  const [voiceSound, setVoiceSound] = useState<Audio.Sound | null>(null);
+  const voiceCacheRef = useRef<Record<string, Audio.Sound | null>>({});
 
   const [currentFrame, setCurrentFrame] = useState(0);
   
@@ -98,7 +102,7 @@ export function DialogueScene({
   // Resolve which portrait to show
   const currentPortrait = currentLine?.image_url ? { uri: currentLine.image_url } : npcSpriteUrl;
 
-  // 1. Initialize Audio
+  // 1. Initialize typewriter Audio (clicky text sound)
   useEffect(() => {
     let soundObj: Audio.Sound | null = null;
     const loadSound = async () => {
@@ -122,6 +126,68 @@ export function DialogueScene({
       }
     };
   }, [visible]);
+
+  // 1b. Per-line Voiceover (if voice_line_url is present)
+  useEffect(() => {
+    let isCancelled = false;
+
+    const setupVoice = async () => {
+      if (!visible) return;
+
+      // Stop any currently playing voice, but don't unload cached sounds
+      if (voiceSound) {
+        try {
+          await voiceSound.stopAsync();
+        } catch {
+          // ignore
+        }
+      }
+
+      const url = currentLine?.voice_line_url;
+      if (!url) return;
+
+      // Use cached sound if available
+      const cached = voiceCacheRef.current[url];
+      if (cached) {
+        if (isCancelled) return;
+        setVoiceSound(cached);
+        try {
+          await cached.setPositionAsync(0);
+          await cached.playAsync();
+        } catch (err) {
+          console.log('Failed to play cached voice line', err);
+        }
+        return;
+      }
+
+      // Otherwise, load and cache the sound once
+      try {
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: url },
+          { shouldPlay: true }
+        );
+        if (isCancelled) {
+          try {
+            await sound.unloadAsync();
+          } catch {
+            // ignore
+          }
+          return;
+        }
+        voiceCacheRef.current[url] = sound;
+        setVoiceSound(sound);
+      } catch (err) {
+        console.log('Failed to load voice line', err);
+        voiceCacheRef.current[url] = null;
+      }
+    };
+
+    setupVoice();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [visible, currentIndex, currentLine?.voice_line_url]);
 
   // 2. Typewriter Effect - Fixed to avoid undefined
   useEffect(() => {
@@ -151,8 +217,8 @@ export function DialogueScene({
         typingIndexRef.current = currentIdx + 1;
         charsTypedSinceHaptic++;
 
-        // Audio blip
-        if (typeSound) {
+        // Audio blip (skip if a voice line is playing to avoid noise stacking)
+        if (typeSound && !currentLine.voice_line_url) {
            typeSound.setPositionAsync(0);
            typeSound.playAsync();
         }

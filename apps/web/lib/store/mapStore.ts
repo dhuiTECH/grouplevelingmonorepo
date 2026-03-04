@@ -532,42 +532,50 @@ export const useMapStore = create<MapState>((set, get) => ({
     set((state) => ({ 
       nodes: [...state.nodes, { ...node, id: newId }] 
     }));
-    await supabase.from('world_map_nodes').insert({
+    const { error } = await supabase.from('world_map_nodes').insert({
       id: newId,
+      // Keep legacy (x, y) in-sync with new global_x/global_y so we don't hit the unique(x,y) constraint.
       global_x: node.x,
       global_y: node.y,
-      x: 0,
-      y: 0,
+      x: node.x,
+      y: node.y,
       type: node.type,
       name: node.name,
       icon_url: node.iconUrl,
       interaction_type: node.type === 'spawn' ? 'CITY' : node.type === 'enemy' ? 'BATTLE' : 'DIALOGUE',
       interaction_data: node.properties || {}
     });
+    if (error) {
+      // Keep the node in local state so the editor doesn't "lose" work,
+      // but surface the failure so it can be investigated.
+      console.error('Failed to persist world_map_node on insert', error);
+    }
   },
 
   updateNode: async (id, updates) => {
-    let updatedNode: MapNode | null = null;
-    set((state) => {
-      const newNodes = state.nodes.map((n) => {
-        if (n.id === id) {
-          updatedNode = { ...n, ...updates };
-          return updatedNode;
-        }
-        return n;
-      });
-      return { nodes: newNodes };
-    });
+    // 1) Update local state optimistically
+    set((state) => ({
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, ...updates } : n)),
+    }));
 
-    if (updatedNode) {
-      await supabase.from('world_map_nodes').update({
+    // 2) Read the latest version back from state for persistence
+    const updatedNode = get().nodes.find((n) => n.id === id);
+    if (!updatedNode) return;
+
+    const { error } = await supabase
+      .from('world_map_nodes')
+      .update({
         global_x: updatedNode.x,
         global_y: updatedNode.y,
         name: updatedNode.name,
         type: updatedNode.type,
         icon_url: updatedNode.iconUrl,
-        interaction_data: updatedNode.properties || {}
-      }).eq('id', id);
+        interaction_data: updatedNode.properties || {},
+      })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Failed to persist world_map_node on update', error);
     }
   },
 
@@ -576,7 +584,10 @@ export const useMapStore = create<MapState>((set, get) => ({
       nodes: state.nodes.filter((n) => n.id !== id),
       selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId
     }));
-    await supabase.from('world_map_nodes').delete().eq('id', id);
+    const { error } = await supabase.from('world_map_nodes').delete().eq('id', id);
+    if (error) {
+      console.error('Failed to delete world_map_node', error);
+    }
   },
 
   selectNode: (id) => set({ selectedNodeId: id, selectedTileId: null, selectedTool: 'select' }),
@@ -708,8 +719,8 @@ export const useMapStore = create<MapState>((set, get) => ({
           .filter(({ t }) => t.x === x && t.y === y && (t.layer || 0) === (layer || 0));
         const match = atCell.find(({ t }) =>
           t.snapToGrid === false &&
-          Math.abs(t.offsetX - (offsetX || 0)) < 8 &&
-          Math.abs(t.offsetY - (offsetY || 0)) < 8
+          Math.abs((t.offsetX || 0) - (offsetX || 0)) < 8 &&
+          Math.abs((t.offsetY || 0) - (offsetY || 0)) < 8
         );
         if (match) existingIdx = match.i;
       }
@@ -876,35 +887,33 @@ export const useMapStore = create<MapState>((set, get) => ({
   },
 
   forceSyncAllChunks: async () => {
-    // Clear all timeouts and run them immediately
-    const promises = Object.keys(syncTimeouts).map(async (key) => {
-      if (syncTimeouts[key]) {
-        clearTimeout(syncTimeouts[key]);
-        const [cx, cy] = key.split(',').map(Number);
-        
-        const sync = async () => {
-          if (syncQueue[key]) await syncQueue[key];
-          const allTiles = get().tiles;
-          const chunkTiles = allTiles
-            .filter(t => Math.floor(t.x / CHUNK_SIZE) === cx && Math.floor(t.y / CHUNK_SIZE) === cy)
-            .map(t => {
-              const { id, ...rest } = t;
-              return { ...rest, block_col: t.blockCol || 0, block_row: t.blockRow || 0 };
-            });
+    // Recompute all chunks from the current in-memory tiles and upsert them.
+    const allTiles = get().tiles;
+    const chunks = new Map<string, Tile[]>();
 
-          await supabase.from('map_chunks').upsert({
-            chunk_x: cx,
-            chunk_y: cy,
-            tile_data: chunkTiles,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'chunk_x,chunk_y' });
-        };
-
-        syncQueue[key] = sync();
-        await syncQueue[key];
-        syncTimeouts[key] = undefined;
-      }
+    allTiles.forEach(t => {
+      const cx = Math.floor(t.x / CHUNK_SIZE);
+      const cy = Math.floor(t.y / CHUNK_SIZE);
+      const key = `${cx},${cy}`;
+      if (!chunks.has(key)) chunks.set(key, []);
+      chunks.get(key)!.push(t);
     });
+
+    const promises = Array.from(chunks.entries()).map(async ([key, tiles]) => {
+      const [cx, cy] = key.split(',').map(Number);
+      const chunkTiles = tiles.map(t => {
+        const { id, ...rest } = t;
+        return { ...rest, block_col: t.blockCol || 0, block_row: t.blockRow || 0 };
+      });
+
+      await supabase.from('map_chunks').upsert({
+        chunk_x: cx,
+        chunk_y: cy,
+        tile_data: chunkTiles,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'chunk_x,chunk_y' });
+    });
+
     await Promise.all(promises);
   },
 

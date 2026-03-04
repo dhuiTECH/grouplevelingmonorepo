@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useMapStore, NodeType } from '@/lib/store/mapStore';
+import { useCursorStore } from '@/lib/store/cursorStore';
 import { usePaintTool } from './tools/usePaintTool';
 import { useCollisionTool } from './tools/useCollisionTool';
 import { normalizeUrl } from '@/components/admin/WorldMap/mapUtils';
@@ -11,19 +12,18 @@ export const useMapInteraction = (
   pixiTransformRef: React.MutableRefObject<any>,
   transformComponentRef: React.MutableRefObject<any>,
   dropTargetRef: React.MutableRefObject<HTMLDivElement | null>,
-  isSpacePressed: boolean,
-  setCursorCoords: (coords: { x: number; y: number }) => void,
-  setSmoothCursorCoords: (coords: { x: number; y: number }) => void,
-  setIsDrawing: (drawing: boolean) => void,
-  isDrawing: boolean
+  isSpacePressed: boolean
 ) => {
   const {
     nodes, tiles, customTiles, selectedTool, selectedTileId, selectedSmartType,
     setUndoStack, removeNode, updateNode,
     selectNode, setDraggingNode, setDragGrabOffset, setDraggingTile,
     rotateTile, removeTileById, setSelection, setCurrentStamp, selectTile,
-    moveTile, setTool, nodeSnapToGrid, activeNodeType, addNode, smartBrushLock
+    moveTile, setTool, nodeSnapToGrid, activeNodeType, addNode, smartBrushLock,
+    layerSettings,
   } = useMapStore();
+
+  const { setCursorCoords, setSmoothCursorCoords, setIsDrawing } = useCursorStore.getState();
 
   const { executePaint, executeErase } = usePaintTool();
   const { executeCollision } = useCollisionTool();
@@ -189,9 +189,27 @@ export const useMapInteraction = (
     const startY = Math.min(state.selection.start.y, state.selection.end.y);
     const endY = Math.max(state.selection.start.y, state.selection.end.y);
 
-    const capturedTiles = state.tiles.filter(t => 
+    // Only capture the topmost tile per grid cell (highest layer)
+    const tilesInRect = state.tiles.filter(t => 
       t.x >= startX && t.x <= endX && t.y >= startY && t.y <= endY
-    ).map(t => ({ ...t, x: t.x - startX, y: t.y - startY, isAutoTile: false })); 
+    );
+
+    const topByCell = new Map<string, typeof tilesInRect[number]>();
+    tilesInRect.forEach(t => {
+      const key = `${t.x},${t.y}`;
+      const current = topByCell.get(key);
+      const layer = t.layer || 0;
+      if (!current || (current.layer || 0) < layer) {
+        topByCell.set(key, t);
+      }
+    });
+
+    const capturedTiles = Array.from(topByCell.values()).map(t => ({
+      ...t,
+      x: t.x - startX,
+      y: t.y - startY,
+      isAutoTile: false
+    }));
 
     state.setCurrentStamp(capturedTiles);
     state.setSelection(null);
@@ -222,7 +240,15 @@ export const useMapInteraction = (
       e.stopPropagation();
       const tile = tiles.find(t => t.id === tileId);
       if (tile) {
-        setUndoStack((prev: any[]) => [...prev, { action: 'erase_tile', x: tile.x, y: tile.y, layer: tile.layer || 0, previousTile: tile }]);
+        const layerKey = tile.layer ?? 0;
+        // If this layer is locked in the sidebar, do not allow right-click erase
+        if (layerSettings[layerKey]?.locked) {
+          return;
+        }
+        setUndoStack((prev: any[]) => [
+          ...prev,
+          { action: 'erase_tile', x: tile.x, y: tile.y, layer: tile.layer || 0, previousTile: tile },
+        ]);
         removeTileById(tileId, smartBrushLock);
       }
       return;
@@ -354,6 +380,7 @@ export const useMapInteraction = (
     if (isSpacePressed) return;
     
     const { brushMode: currentBrushMode } = useMapStore.getState();
+    const { isDrawing } = useCursorStore.getState();
     const isPaintEraseOrCollision = selectedTool === 'paint' || selectedTool === 'erase' || selectedTool === 'collision';
 
     if (isDrawing && (e.buttons > 0 || e.button === 2) && (!isPaintEraseOrCollision || currentBrushMode)) {
@@ -421,7 +448,7 @@ export const useMapInteraction = (
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     const nodeType = e.dataTransfer.getData('nodeType') as NodeType;
-    if (!nodeType || !activeNodeType) return;
+  if (!nodeType) return;
 
     const rect = dropTargetRef.current!.getBoundingClientRect();
     const { x: dropX, y: dropY, scale: dropScale } = pixiTransformRef.current;
@@ -436,7 +463,7 @@ export const useMapInteraction = (
 
     if (!exists) {
       setUndoStack((prev: any[]) => [...prev, { action: 'node_add', x: nodeX, y: nodeY }]);
-      addNode({ x: nodeX, y: nodeY, type: nodeType, name: `New ${nodeType}`, iconUrl: '' });
+      await addNode({ x: nodeX, y: nodeY, type: nodeType, name: `New ${nodeType}`, iconUrl: '' });
     }
   };
 

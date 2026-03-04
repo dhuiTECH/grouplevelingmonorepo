@@ -66,10 +66,12 @@ export function useMapCharacter(
   });
 
   // --- 2D PET TRAILING PHYSICS ---
-  const petOffsetX = useSharedValue(36);
-  const petOffsetY = useSharedValue(16);
+  // Initialize to the default idle offsets so Frame 0 renders in the correct place.
+  const petOffsetX = useSharedValue(-32);
+  const petOffsetY = useSharedValue(26);
   const petScaleX = useSharedValue(1);
   const petZIndex = useSharedValue(101);
+  const hasSnapped = useSharedValue(false);
 
   useFrameCallback((frameInfo) => {
     'worklet';
@@ -103,6 +105,28 @@ export function useMapCharacter(
       const isFacingRight = lastFacingDirection.value === -1;
       targetX = isFacingRight ? -32 : 108;  // Match moving-right (-32) and moving-left (108)
       targetY = 26;
+    }
+
+    // First-frame snap: teleport pet to the correct offset, then enable smooth lerp.
+    if (!hasSnapped.value) {
+      petOffsetX.value = targetX;
+      petOffsetY.value = targetY;
+      hasSnapped.value = true;
+      return;
+    }
+
+    // If we are changing horizontal side (left/right of the player),
+    // avoid dragging the pet through the player's body by snapping across.
+    if (moving && (dir === 3 || dir === 4)) {
+      const side = (v: number) => (v > 0 ? 1 : v < 0 ? -1 : 0);
+      const currentSide = side(petOffsetX.value);
+      const targetSide = side(targetX);
+      if (currentSide !== 0 && targetSide !== 0 && currentSide !== targetSide) {
+        petOffsetX.value = targetX;
+        petOffsetY.value = targetY;
+        petZIndex.value = petOffsetY.value < -10 ? 99 : 101;
+        return;
+      }
     }
 
     // Frame-rate independent Lerp

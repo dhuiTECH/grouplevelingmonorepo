@@ -450,31 +450,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
           </div>
         </div>
 
-        {/* 2. Layer Manager Section (Moved below Tilesets) */}
-        <div className="p-4 border-b border-slate-800 bg-slate-950/20">
-          <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
-            <Grid size={12} /> Layers
-          </h3>
-          <div className="space-y-1">
-            {Array.from(new Set([-1, 0, 1, 2, ...customTiles.map(t => t.layer || 0)])).sort((a, b) => a - b).map(layerId => (
-              <div key={layerId} className="flex items-center justify-between p-2 rounded bg-slate-900/50 border border-slate-800/50">
-                <span className="text-[10px] font-bold text-slate-300 uppercase tracking-tight">
-                  {layerId < 0 ? `Water (${layerId})` : layerId === 0 ? 'Ground (0)' : layerId === 1 ? 'Road (1)' : `Prop (${layerId})`}
-                </span>
-                <div className="flex gap-1">
-                  <button onClick={() => setLayerVisibility(layerId, !!layerSettings[layerId]?.hidden)} className={`p-1 rounded ${!layerSettings[layerId]?.hidden ? 'text-cyan-400' : 'text-slate-600'}`}>
-                    {!layerSettings[layerId]?.hidden ? <Eye size={14} /> : <EyeOff size={14} />}
-                  </button>
-                  <button onClick={() => setLayerLocked(layerId, !layerSettings[layerId]?.locked)} className={`p-1 rounded ${layerSettings[layerId]?.locked ? 'text-amber-500' : 'text-slate-600'}`}>
-                    {layerSettings[layerId]?.locked ? <Lock size={14} /> : <Unlock size={14} />}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* 3. Tile Properties Section */}
+        {/* 2. Tile Properties Section */}
         {currentlyEditedTile && (
           <div className="p-4 border-b border-slate-800 bg-slate-900/30 space-y-2">
             <div className="text-[10px] text-green-400 font-mono flex items-center gap-1 mb-2">
@@ -583,6 +559,30 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
             )}
           </div>
         )}
+
+        {/* 3. Layer Manager (visibility + locked layers) */}
+        <div className="p-4 border-b border-slate-800 bg-slate-950/20">
+          <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
+            <Grid size={12} /> Layers
+          </h3>
+          <div className="space-y-1">
+            {Array.from(new Set([-1, 0, 1, 2, ...customTiles.map(t => t.layer || 0)])).sort((a, b) => a - b).map(layerId => (
+              <div key={layerId} className="flex items-center justify-between p-2 rounded bg-slate-900/50 border border-slate-800/50">
+                <span className="text-[10px] font-bold text-slate-300 uppercase tracking-tight">
+                  {layerId < 0 ? `Water (${layerId})` : layerId === 0 ? 'Ground (0)' : layerId === 1 ? 'Road (1)' : `Prop (${layerId})`}
+                </span>
+                <div className="flex gap-1">
+                  <button onClick={() => setLayerVisibility(layerId, !!layerSettings[layerId]?.hidden)} className={`p-1 rounded ${!layerSettings[layerId]?.hidden ? 'text-cyan-400' : 'text-slate-600'}`}>
+                    {!layerSettings[layerId]?.hidden ? <Eye size={14} /> : <EyeOff size={14} />}
+                  </button>
+                  <button onClick={() => setLayerLocked(layerId, !layerSettings[layerId]?.locked)} className={`p-1 rounded ${layerSettings[layerId]?.locked ? 'text-amber-500' : 'text-slate-600'}`}>
+                    {layerSettings[layerId]?.locked ? <Lock size={14} /> : <Unlock size={14} />}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
       
       {/* 4. Sheet Uploaders (Pinned to bottom, as requested) */}

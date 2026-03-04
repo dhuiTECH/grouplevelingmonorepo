@@ -25,6 +25,12 @@ export const usePaintTool = () => {
       const ty = gy + dy;
       let offsetX = 0, offsetY = 0;
 
+      // Respect per-layer locking: if this layer is locked, skip all paint ops on it
+      const layerKey = activeTileLayer ?? 0;
+      if (state.layerSettings[layerKey]?.locked) {
+        continue;
+      }
+
       const currentSnapMode = state.snapMode;
       if (currentSnapMode === 'free') {
         const exactX = worldX - WORLD_SIZE / 2 + (dx * TILE_SIZE);
@@ -92,7 +98,12 @@ export const usePaintTool = () => {
         tiles: [...currentTiles, ...newTilesToAppend],
         undoStack: [...state.undoStack, ...undoEntries]
       });
-      await batchUpdateTileAndNeighbors(autoTileQueue);
+
+      // Update smart neighbors and then persist all tile changes to Supabase
+      if (autoTileQueue.length > 0) {
+        await batchUpdateTileAndNeighbors(autoTileQueue);
+      }
+      await useMapStore.getState().forceSyncAllChunks();
     }
   };
 
@@ -117,7 +128,8 @@ export const usePaintTool = () => {
           tileToRemove = tilesAtPos.find(t => !t.isAutoTile) as any;
         }
 
-        if (tileToRemove) {
+        // Respect per-layer locking: never erase tiles from locked layers
+        if (tileToRemove && !state.layerSettings[(tileToRemove.layer || 0)]?.locked) {
           const idx = currentTiles.findIndex(t => t.id === tileToRemove.id);
           if (idx > -1) {
             currentTiles.splice(idx, 1);
@@ -143,7 +155,12 @@ export const usePaintTool = () => {
 
     if (stateChanged) {
       useMapStore.setState({ tiles: currentTiles, nodes: currentNodes, undoStack: [...state.undoStack, ...undoEntries] });
-      await batchUpdateTileAndNeighbors(autoTileQueue);
+
+      // Update smart neighbors and then persist all tile changes to Supabase
+      if (autoTileQueue.length > 0) {
+        await batchUpdateTileAndNeighbors(autoTileQueue);
+      }
+      await useMapStore.getState().forceSyncAllChunks();
     }
   };
 

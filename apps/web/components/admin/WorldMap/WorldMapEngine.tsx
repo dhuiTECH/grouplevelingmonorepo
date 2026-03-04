@@ -2,16 +2,20 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useMapStore, useTickStore } from '@/lib/store/mapStore';
+import { useCursorStore } from '@/lib/store/cursorStore';
 import { PixiMapCanvas } from './PixiMapCanvas';
 import { MapSidebar } from './MapSidebar';
 import { MapDataSidebar } from './MapDataSidebar';
 import {
-  Plus, Minus, Maximize, Grid, Zap, Loader2, Target, Map as MapIcon,
-  User, Sword, Box, Globe, Search, MousePointer2, Eraser, Wand2,
-  GripVertical, Copy, Square, CheckSquare, Pipette, X, XCircle, Paintbrush, Bug,
-  RotateCw, Lock, Unlock, Droplets, Move, ShieldOff, Eye, EyeOff
+  Plus,
+  Minus,
+  Target,
+  Map as MapIcon,
+  User,
+  Sword,
+  Box,
+  Search,
 } from 'lucide-react';
-import { WinluPalette } from './WinluPalette';
 import { DebugOverlay } from './DebugOverlay';
 import { normalizeUrl, snapPosition, getPixiTextureCoords, getLiquidTextureCoords } from './mapUtils';
 import NodeEditModal from '../NodeEditModal';
@@ -23,8 +27,11 @@ import { useMapClipboard } from './hooks/useMapClipboard';
 import { useMapInteraction } from './hooks/useMapInteraction';
 
 // Components
-import { CoordinateDisplay } from './components/CoordinateDisplay';
 import { BrushPreview } from './components/BrushPreview';
+import { GridHighlight } from './components/GridHighlight';
+import { StampPreview } from './components/StampPreview';
+import { MapToolbar } from './components/MapToolbar';
+import { MapHotbar } from './components/MapHotbar';
 
 const WORLD_SIZE = 100000; 
 const TILE_SIZE = 48;
@@ -33,25 +40,24 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
   const transformComponentRef = useRef<ReactZoomPanPinchRef>(null);
   const dropTargetRef = useRef<HTMLDivElement>(null);
   
-  // Store
   const {
     addNode, updateNode, selectNode, selectedNodeId,
     addTileSimple, selectedTileId, customTiles, selectedTool,
-    activeNodeType, removeTileAt, removeNode, batchAddTiles,
+    activeNodeType, removeNode,
     loadTilesFromSupabase, isDraggingTile, draggingTileId,
     setDraggingTile, isDraggingNode, draggingNodeId, setDraggingNode,
     moveTile, removeTileById, rotateTile,
-    isSmartMode, isRaiseMode, smartBrushLock, setSmartBrushLock, isFoamEnabled, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl,
+    isSmartMode, isRaiseMode, smartBrushLock, isFoamEnabled, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl,
     selectedSmartType, setSelectedSmartType, setSelectedBlock, smartBrushLayer, setSmartBrushLayer, setRaiseMode, waterBaseTile, foamStripTile, setTool,
     sidebarWidth, setSidebarWidth, rightSidebarWidth, setRightSidebarWidth,
-    favorites, setFavorite, selectTile,
-    brushSize, setBrushSize, brushMode, setBrushMode,
-    snapMode, setSnapMode,
+    favorites, selectTile,
+    brushSize, brushMode,
+    snapMode,
     nodeSnapToGrid, setNodeSnapToGrid,
-    isLoadingTiles, tiles, nodes, showDebugModal, setShowDebugModal, showDebugNumbers, setShowDebugNumbers, currentStamp, setCurrentStamp,
+    isLoadingTiles, tiles, nodes, showDebugModal, setShowDebugModal, showDebugNumbers,
     dragGrabOffset, setDragGrabOffset, selection, setSelection,
     showWalkabilityOverlay, setShowWalkabilityOverlay, setUndoStack,
-    collisionMode, setCollisionMode, edgeDirection, setEdgeDirection
+    collisionMode, edgeDirection
   } = useMapStore();
 
   // Local State
@@ -62,9 +68,12 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
   const pixiTransformRef = useRef({ x: 0, y: 0, scale: 0.5 });
   const [viewport, setViewport] = useState({ width: 1200, height: 800 });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
-  const [cursorCoords, setCursorCoords] = useState({ x: 0, y: 0 });
-  const [smoothCursorCoords, setSmoothCursorCoords] = useState({ x: 0, y: 0 });
-  const [isDrawing, setIsDrawing] = useState(false);
+  
+  // ⚡️ AAA FIX: Connect to the micro-store!
+  // We use direct state selectors to grab the setter functions WITHOUT subscribing the Engine to the coordinate changes!
+  const setCursorCoords = useCursorStore(state => state.setCursorCoords);
+  const setSmoothCursorCoords = useCursorStore(state => state.setSmoothCursorCoords);
+  const setIsDrawing = useCursorStore(state => state.setIsDrawing);
   
   // Go To Coords State
   const [goToX, setGoToX] = useState('');
@@ -111,11 +120,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
     pixiTransformRef,
     transformComponentRef,
     dropTargetRef,
-    isSpacePressed,
-    setCursorCoords,
-    setSmoothCursorCoords,
-    setIsDrawing,
-    isDrawing
+    isSpacePressed
   );
 
   // Resize Handlers
@@ -238,7 +243,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
       // Escape to clear selection and stamp
       if (e.key === 'Escape') {
         setSelection(null);
-        setCurrentStamp(null);
+        useMapStore.setState({ currentStamp: null });
         if (selectedTool === 'stamp') setTool('select');
         return;
       }
@@ -285,6 +290,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
       }
       // Paste (Ctrl+V) - using current cursor coords
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        const { cursorCoords } = useCursorStore.getState();
         handlePasteStamp(cursorCoords.x, cursorCoords.y);
         return;
       }
@@ -320,7 +326,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [zoomToFit, favorites, selectTile, cursorCoords.x, cursorCoords.y, setTool, handleUndo, handleCopySelection, handlePasteStamp, selectedTool, setSelection, setCurrentStamp, setShowDebugModal, setUndoStack, removeNode, removeTileById]);
+  }, [zoomToFit, favorites, selectTile, setTool, handleUndo, handleCopySelection, handlePasteStamp, selectedTool, setSelection, setShowDebugModal, setUndoStack, removeNode, removeTileById]);
 
   const hasInitialZoomed = useRef(false);
 
@@ -451,262 +457,12 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
       />
 
       <div className="flex-1 relative flex flex-col min-w-0">
-        {/* Toolbar */}
-        <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
-          <div className="flex gap-1.5 items-center pointer-events-auto max-w-[calc(100%-40px)] flex-wrap">
-            <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-1 flex gap-0.5 shadow-2xl">
-              <button onClick={() => transformComponentRef.current?.zoomIn()} className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Plus size={16} /></button>
-              <button onClick={() => transformComponentRef.current?.zoomOut()} className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"><Minus size={16} /></button>
-              <button onClick={() => zoomToFit()} className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all" title="Zoom to Fit (F)"><Maximize size={16} /></button>
-            </div>
-            
-            <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-1 shadow-2xl">
-              <input type="text" value={seed} onChange={(e) => setSeed(e.target.value)} className="w-16 bg-black/50 border border-slate-700 rounded px-1.5 py-1 text-[9px] text-cyan-400 outline-none font-bold text-center" />
-              <button onClick={handleAutoFill} disabled={isGenerating} className="bg-cyan-600 hover:bg-cyan-500 text-white px-2.5 py-1.5 rounded-lg text-[10px] font-black flex items-center gap-1.5 uppercase tracking-tighter shadow-lg shadow-cyan-900/20">
-                {isGenerating ? <Loader2 className="animate-spin" size={12} /> : <Globe size={12} />} Fill
-              </button>
-              {useMapStore.getState().undoStack.length > 0 && useMapStore.getState().undoStack[useMapStore.getState().undoStack.length - 1].action === 'autofill' && (
-                <button 
-                  onClick={handleUndo} 
-                  className="bg-red-600 hover:bg-red-500 text-white px-2 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter shadow-lg"
-                >
-                  Undo
-                </button>
-              )}
-            </div>
-
-            <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-1 flex gap-0.5 shadow-2xl items-center">
-              <button onClick={() => setTool('select')} className={`p-1.5 rounded-lg transition-all ${selectedTool === 'select' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Select Tool (V)">
-                <MousePointer2 size={18} />
-              </button>
-              <button onClick={() => setTool('paint')} className={`p-1.5 rounded-lg transition-all ${selectedTool === 'paint' ? 'bg-green-600 text-white shadow-lg shadow-green-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Paint Tool (B)">
-                <Paintbrush size={18} />
-              </button>
-              
-              {(selectedTool === 'paint' || selectedTool === 'erase' || selectedTool === 'collision') && (
-                <div className="flex items-center gap-1.5 px-1.5 border-l border-slate-700/50">
-                    <button
-                      onClick={() => setBrushMode(!brushMode)}
-                      className={`px-1.5 py-1 rounded text-[9px] font-black transition-all flex items-center gap-1 ${brushMode ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}
-                      title="Toggle Brush Mode (Shift)"
-                    >
-                      <Square size={10} />
-                      BRUSH
-                    </button>
-                    {brushMode && (
-                      <div className="flex gap-0.5">
-                        {[1, 3, 5, 10].map(size => (
-                          <button
-                            key={size}
-                            onClick={() => setBrushSize(size)}
-                            className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold transition-all ${brushSize === size ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}
-                          >
-                            {size === 10 ? '10' : size}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <div className="h-4 w-px bg-slate-700" />
-                    <div className="flex gap-0.5" title="Snap Mode">
-                      <button
-                        onClick={() => setSnapMode('full')}
-                        className={`px-1.5 py-1 rounded text-[9px] font-black transition-all flex items-center gap-1 ${snapMode === 'full' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}
-                        title="Full Snap — lock to tile grid"
-                      >
-                        <Grid size={10} />
-                        SNAP
-                      </button>
-                      <button
-                        onClick={() => setSnapMode('half')}
-                        className={`px-1.5 py-1 rounded text-[9px] font-black transition-all ${snapMode === 'half' ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}
-                        title="Half Snap — for bridges, fences, doors"
-                      >
-                        ½
-                      </button>
-                      <button
-                        onClick={() => setSnapMode('free')}
-                        className={`px-1.5 py-1 rounded text-[9px] font-black transition-all flex items-center gap-1 ${snapMode === 'free' ? 'bg-rose-500 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}
-                        title="Free Placement — no snapping"
-                      >
-                        <Move size={10} />
-                        FREE
-                      </button>
-                    </div>
-                </div>
-              )}
-              
-              <div className="h-6 w-px bg-slate-700 mx-0.5" />
-              
-              <WinluPalette compact />
-
-              <div className="h-6 w-px bg-slate-700 mx-0.5" />
-
-              <div className="flex gap-0.5 px-0.5">
-                <button
-                  onClick={() => setSelectedSmartType(selectedSmartType === 'off' ? 'grass' : 'off')}
-                  className={`p-1.5 rounded-lg transition-all flex items-center gap-1 ${selectedSmartType !== 'off' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-400 hover:bg-slate-800'}`}
-                  title="Toggle Smart Brush (Z)"
-                >
-                  <Zap size={16} className={selectedSmartType !== 'off' ? "fill-white" : ""} />
-                </button>
-                {selectedSmartType !== 'off' && (
-                  <div className="flex items-center gap-0.5 bg-slate-800/50 rounded-lg p-0.5 border border-slate-700/50">
-                      <button 
-                          onClick={() => setSmartBrushLayer(smartBrushLayer - 1)}
-                          className="p-1 rounded text-slate-400 hover:bg-slate-700 hover:text-white transition-colors"
-                          title="Lower Layer"
-                      >
-                          <Minus size={10} />
-                      </button>
-                      <span className="text-[10px] font-bold w-6 text-center text-cyan-400" title={`Current Layer: ${smartBrushLayer}`}>
-                          L{smartBrushLayer}
-                      </span>
-                      <button 
-                          onClick={() => setSmartBrushLayer(smartBrushLayer + 1)}
-                          className="p-1 rounded text-slate-400 hover:bg-slate-700 hover:text-white transition-colors"
-                          title="Raise Layer"
-                      >
-                          <Plus size={10} />
-                      </button>
-                  </div>
-                )}
-                <button
-                  onClick={() => setSmartBrushLock(!smartBrushLock)}
-                  className={`p-1.5 rounded-lg transition-all flex items-center gap-1 ${smartBrushLock ? 'bg-red-600/20 text-red-400 border border-red-500/50' : 'text-slate-400 hover:bg-slate-800'}`}
-                  title="Lock Smart Tiles"
-                >
-                  {smartBrushLock ? <Lock size={16} /> : <Unlock size={16} />}
-                </button>
-                <button
-                  onClick={() => setRaiseMode(!isRaiseMode)}
-                  className={`p-1.5 rounded-lg transition-all flex items-center gap-1 ${isRaiseMode ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/40' : 'text-slate-400 hover:bg-slate-800'}`}
-                  title="Toggle Raise Mode (R)"
-                >
-                  <Box size={16} />
-                </button>
-                <button
-                  onClick={() => setShowWalkabilityOverlay(!showWalkabilityOverlay)}
-                  className={`p-1.5 rounded-lg transition-all flex items-center gap-1 ${showWalkabilityOverlay ? 'bg-red-600/20 text-red-400 border border-red-500/50' : 'text-slate-400 hover:bg-slate-800'}`}
-                  title="Show Walkability Overlay"
-                >
-                  {showWalkabilityOverlay ? <Eye size={16} /> : <EyeOff size={16} />}
-                </button>
-                <button
-                  onClick={() => setShowDebugNumbers(!showDebugNumbers)}
-                  className={`p-1.5 rounded-lg transition-all flex items-center gap-1 ${showDebugNumbers ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40' : 'text-slate-400 hover:bg-slate-800'}`}
-                  title="Debug Numbers"
-                >
-                  <span className="text-[10px] font-black">#</span>
-                </button>
-                <button
-                  onClick={() => setShowDebugModal(true)}
-                  className="p-1.5 rounded-lg transition-all text-slate-400 hover:bg-slate-800"
-                  title="Open Debugger (D)"
-                >
-                  <Bug size={16} />
-                </button>
-              </div>
-
-              <div className="h-6 w-px bg-slate-700 mx-0.5" />
-
-              <div className="flex gap-0.5 px-0.5">
-                <button onClick={() => setTool('erase')} className={`p-1.5 rounded-lg transition-all ${selectedTool === 'erase' ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Eraser Tool (E)">
-                  <Eraser size={18} />
-                </button>
-                <button onClick={() => setTool('eyedropper')} className={`p-1.5 rounded-lg transition-all ${selectedTool === 'eyedropper' ? 'bg-orange-500 text-white shadow-lg shadow-orange-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Eyedropper Tool (Alt + Click)">
-                  <Pipette size={18} />
-                </button>
-                <button onClick={() => setTool('stamp')} className={`p-1.5 rounded-lg transition-all ${selectedTool === 'stamp' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Stamp Tool (S)">
-                  <Copy size={18} />
-                </button>
-                {(currentStamp || selection) && (
-                  <button 
-                    onClick={() => {
-                      setCurrentStamp(null);
-                      setSelection(null);
-                      if (selectedTool === 'stamp') setTool('select');
-                    }}
-                    className="p-1.5 rounded-lg text-red-400 hover:bg-red-900/30 transition-all border border-red-900/30"
-                    title="Clear Selection/Stamp (Esc)"
-                  >
-                    <XCircle size={18} />
-                  </button>
-                )}
-                <button onClick={() => setTool('rotate')} className={`p-1.5 rounded-lg transition-all ${selectedTool === 'rotate' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40' : 'text-slate-400 hover:bg-slate-800'}`} title="Rotate Tool (R)">
-                  <RotateCw size={18} />
-                </button>
-                <button
-                  onClick={() => { setTool('collision'); setShowWalkabilityOverlay(true); }}
-                  className={`p-1.5 rounded-lg transition-all ${selectedTool === 'collision' ? 'bg-red-700 text-white shadow-lg shadow-red-900/40' : 'text-slate-400 hover:bg-slate-800'}`}
-                  title="Collision Brush — paint non-walkable zones"
-                >
-                  <ShieldOff size={18} />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* EDGE COLLISION SUB-MODE — shown when collision tool is active */}
-          {selectedTool === 'collision' && (
-            <div className="flex items-center gap-1 bg-slate-900/90 border border-slate-700 rounded-lg px-2 py-1 pointer-events-auto shadow-2xl">
-              <button
-                onClick={() => setCollisionMode('full')}
-                className={`px-2 py-1 rounded text-[9px] font-black uppercase transition-all ${collisionMode === 'full' ? 'bg-red-700 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
-                title="Full Block — entire tile is non-walkable"
-              >
-                ■ Full
-              </button>
-              {([
-                { label: '▲', dir: 1, title: 'Block North edge' },
-                { label: '▶', dir: 2, title: 'Block East edge' },
-                { label: '▼', dir: 4, title: 'Block South edge (cliff top)' },
-                { label: '◀', dir: 8, title: 'Block West edge' },
-              ] as const).map(({ label, dir, title }) => (
-                <button
-                  key={dir}
-                  onClick={() => { setCollisionMode('edge'); setEdgeDirection(dir); }}
-                  className={`px-2 py-1 rounded text-[10px] font-black transition-all ${collisionMode === 'edge' && edgeDirection === dir ? 'bg-orange-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
-                  title={title}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className={`px-2 py-1 rounded-lg border text-[9px] font-black uppercase flex items-center gap-3 transition-all pointer-events-auto ${isSpacePressed ? 'bg-green-900/30 border-green-500 text-green-400' : 'bg-slate-900/90 border-slate-800 text-slate-500 shadow-2xl'}`}>
-            <div className="flex items-center gap-1.5">
-              <div className={`w-1.5 h-1.5 rounded-full ${isSpacePressed ? 'bg-green-500 animate-pulse' : 'bg-slate-700'}`} />
-              {isSpacePressed ? 'Pan' : 'Space: Pan'}
-            </div>
-            
-            {/* SMART BRUSH INDICATOR */}
-            {selectedSmartType !== 'off' && (
-              <div className="flex items-center gap-1.5 border-l border-slate-700 pl-3 text-purple-400">
-                <Wand2 size={10} className="animate-pulse" />
-                <span>{selectedSmartType.toUpperCase()}</span>
-                <span className="text-[8px] bg-slate-800 px-1 py-0.5 rounded border border-slate-600">L{smartBrushLayer}</span>
-                {isRaiseMode && <span className="bg-purple-900/50 px-1 rounded text-[7px] border border-purple-500/50">RAISE</span>}
-              </div>
-            )}
-
-            {/* COLLISION BRUSH INDICATOR */}
-            {selectedTool === 'collision' && (
-              <div className={`flex items-center gap-1.5 border-l border-slate-700 pl-3 ${collisionMode === 'edge' ? 'text-orange-400' : 'text-red-400'}`}>
-                <ShieldOff size={10} className="animate-pulse" />
-                <span>{collisionMode === 'full' ? 'Full Block' : `Edge ${edgeDirection === 1 ? '▲N' : edgeDirection === 2 ? '▶E' : edgeDirection === 4 ? '▼S' : '◀W'}`}</span>
-                <span className="text-[8px] text-slate-500">click to toggle</span>
-              </div>
-            )}
-
-            <CoordinateDisplay 
-              x={cursorCoords.x} 
-              y={cursorCoords.y} 
-              smoothX={smoothCursorCoords.x} 
-              smoothY={smoothCursorCoords.y} 
-            />
-          </div>
-        </div>
+        <MapToolbar
+          onZoomIn={() => transformComponentRef.current?.zoomIn()}
+          onZoomOut={() => transformComponentRef.current?.zoomOut()}
+          onZoomFit={zoomToFit}
+          isSpacePressed={isSpacePressed}
+        />
 
         {/* Viewport */}
         <div className={`flex-1 bg-[#6b705c] relative overflow-hidden ${isSpacePressed || isDraggingTile || isDraggingNode ? 'cursor-grabbing' : 'cursor-crosshair'}`} ref={dropTargetRef}>
@@ -725,7 +481,6 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
               showDebugNumbers={showDebugNumbers}
               showWalkabilityOverlay={showWalkabilityOverlay}
               nodes={nodes}
-              cursorCoords={cursorCoords}
               selectedTool={selectedTool}
               isSpacePressed={isSpacePressed}
               brushMode={brushMode}
@@ -783,35 +538,14 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
                 
                 {/* Layer 2: Grid Highlight */}
                 {!isSpacePressed && (selectedTool === 'paint' || selectedTool === 'erase' || selectedTool === 'collision') && (
-                  (() => {
-                    const selTile = customTiles.find(t => t.id === selectedTileId);
-                    const h = selTile?.frameHeight || TILE_SIZE;
-                    const w = selTile?.frameWidth || h;
-                    
-                    return (
-                      <div 
-                        className="absolute pointer-events-none" 
-                        style={{
-                          left: snapPosition(smoothCursorCoords.x, snapMode, cursorCoords.x, TILE_SIZE, WORLD_SIZE) - (snapMode === 'full' ? 0 : w/2) + (snapMode === 'full' ? 0 : TILE_SIZE/2),
-                          top: snapPosition(smoothCursorCoords.y, snapMode, cursorCoords.y, TILE_SIZE, WORLD_SIZE) - (snapMode === 'full' ? 0 : h) + (snapMode === 'full' ? 0 : TILE_SIZE),
-                          width: w,
-                          height: h,
-                          backgroundColor: 'rgba(56, 189, 248, 0.2)', 
-                          border: '1px solid rgba(56, 189, 248, 0.7)',
-                          zIndex: 60,
-                          opacity: 0.5 + Math.sin(Date.now() / 150) * 0.3
-                        }}
-                      />
-                    );
-                  })()
+                  <GridHighlight 
+                    selectedTool={selectedTool}
+                    selectedTileId={selectedTileId}
+                    customTiles={customTiles}
+                    snapMode={snapMode}
+                  />
                 )}
 
-      <div 
-        onMouseDown={(e) => { e.preventDefault(); setIsResizingRight(true); }}
-        className={`w-1 z-30 cursor-col-resize hover:bg-cyan-500/50 transition-colors ${isResizingRight ? 'bg-cyan-500' : 'bg-slate-800'}`}
-      />
-
-      <MapDataSidebar onEditNode={handleEditNodeProperties} onGoToNode={goToNode} />
                 {nodes.map(node => (
                   <div
                     key={node.id}
@@ -847,8 +581,6 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
                   selectedTool={selectedTool} 
                   selectedTileId={selectedTileId} 
                   customTiles={customTiles}
-                  cursorCoords={cursorCoords}
-                  smoothCursorCoords={smoothCursorCoords}
                   TILE_SIZE={TILE_SIZE}
                   WORLD_SIZE={WORLD_SIZE}
                   brushSize={brushSize}
@@ -858,79 +590,18 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
                 />
                 
                 {/* Stamp Tool Preview */}
-                {selectedTool === 'stamp' && currentStamp && !isSpacePressed && (
-                   <div 
-                      className="absolute pointer-events-none z-[70] opacity-60"
-                      style={{
-                        left: snapPosition(smoothCursorCoords.x, snapMode, cursorCoords.x, TILE_SIZE, WORLD_SIZE),
-                        top: snapPosition(smoothCursorCoords.y, snapMode, cursorCoords.y, TILE_SIZE, WORLD_SIZE),
-                      }}
-                   >
-                     {currentStamp.map((tile, stampIdx) => {
-                       // --- Frozen smart tile: render using bitmask + sheet url ---
-                       const isFrozenSmart = !!tile.smartType && tile.bitmask !== undefined;
-                       if (isFrozenSmart) {
-                         const smartType = tile.smartType!;
-                         let sheetUrl: string | null = null;
-                         if (smartType === 'water' && waterSheetUrl) sheetUrl = waterSheetUrl;
-                         else if (smartType === 'dirt' && dirtSheetUrl) sheetUrl = dirtSheetUrl;
-                         else if (autoTileSheetUrl) sheetUrl = autoTileSheetUrl;
-
-                         if (!sheetUrl) {
-                           return (
-                             <div key={`stamp-${stampIdx}-${tile.x}-${tile.y}-${tile.layer || 0}`}
-                               className="absolute bg-green-500/30 border border-green-500/50"
-                               style={{ left: tile.x * TILE_SIZE, top: tile.y * TILE_SIZE, width: TILE_SIZE, height: TILE_SIZE, imageRendering: 'pixelated' }}
-                             />
-                           );
-                         }
-
-                         const coords = smartType === 'water'
-                           ? getLiquidTextureCoords(tile.bitmask || 0, tile.blockCol || 0, tile.blockRow || 0)
-                           : getPixiTextureCoords(tile.bitmask || 0, tile.blockCol || 0, tile.blockRow || 0);
-                         const { sourceX, sourceY } = coords[0];
-
-                         return (
-                           <div key={`stamp-${stampIdx}-${tile.x}-${tile.y}-${tile.layer || 0}`}
-                             className="absolute"
-                             style={{
-                               left: tile.x * TILE_SIZE,
-                               top: tile.y * TILE_SIZE,
-                               width: TILE_SIZE,
-                               height: TILE_SIZE,
-                               backgroundImage: `url(${sheetUrl})`,
-                               backgroundPosition: `-${sourceX}px -${sourceY}px`,
-                               backgroundRepeat: 'no-repeat',
-                               imageRendering: 'pixelated',
-                             }}
-                           />
-                         );
-                       }
-
-                       // --- Regular palette tile ---
-                       const customTile = customTiles.find(ct => normalizeUrl(ct.url) === normalizeUrl(tile.imageUrl));
-                       if (!customTile) return null;
-                       
-                       const displayWidth = customTile.frameWidth || TILE_SIZE;
-                       const displayHeight = customTile.frameHeight || TILE_SIZE;
-                       
-                       return (
-                         <div key={`stamp-${stampIdx}-${tile.x}-${tile.y}-${tile.layer || 0}`}
-                           className="absolute"
-                           style={{
-                             left: tile.x * TILE_SIZE,
-                             top: tile.y * TILE_SIZE,
-                             width: displayWidth,
-                             height: displayHeight,
-                             backgroundImage: `url(${customTile.url})`,
-                             backgroundSize: 'cover',
-                             imageRendering: 'pixelated'
-                           }}
-                         />
-                       );
-                     })}
-                   </div>
-                )}
+                {selectedTool === 'stamp' &&
+                  useMapStore.getState().currentStamp &&
+                  !isSpacePressed && (
+                    <StampPreview
+                      currentStamp={useMapStore.getState().currentStamp!}
+                      snapMode={snapMode}
+                      waterSheetUrl={waterSheetUrl}
+                      dirtSheetUrl={dirtSheetUrl}
+                      autoTileSheetUrl={autoTileSheetUrl}
+                      customTiles={customTiles}
+                    />
+                  )}
 
 
                 {/* High-Visibility Black Grid Overlay */}
@@ -953,42 +624,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
           </TransformWrapper>
         </div>
 
-        {/* Hotbar */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex gap-2 p-2 bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-2xl shadow-2xl">
-          {favorites.map((tileId, idx) => {
-            const tile = customTiles.find(t => t.id === tileId);
-            return (
-              <button 
-                key={idx}
-                onClick={() => tileId && selectTile(tileId)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  if (selectedTileId) setFavorite(idx, selectedTileId);
-                }}
-                className={`w-12 h-12 rounded-xl border-2 flex flex-col items-center justify-center relative transition-all group ${tileId ? 'bg-slate-800 border-slate-600 hover:border-cyan-400' : 'bg-slate-950 border-slate-800 border-dashed hover:border-slate-600'}`}
-              >
-                {tile ? (
-                  <div 
-                    className="w-8 h-8"
-                    style={{
-                      backgroundImage: `url(${tile.url})`,
-                      backgroundSize: tile.isSpritesheet && tile.frameCount ? `${tile.frameCount * 100}% 100%` : 'contain',
-                      backgroundPosition: 'center',
-                      backgroundRepeat: 'no-repeat',
-                      imageRendering: 'pixelated'
-                    }}
-                  />
-                ) : (
-                  <span className="text-[10px] text-slate-700 font-bold">{idx + 1}</span>
-                )}
-                <div className="absolute -top-2 -right-2 w-4 h-4 bg-slate-800 rounded-full border border-slate-600 flex items-center justify-center text-[8px] font-bold text-slate-400">
-                  {idx + 1}
-                </div>
-                {!tileId && <Plus size={10} className="absolute inset-0 m-auto text-slate-800 opacity-0 group-hover:opacity-100" />}
-              </button>
-            );
-          })}
-        </div>
+        <MapHotbar />
       </div>
 
       <div 

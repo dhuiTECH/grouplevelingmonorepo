@@ -1,12 +1,11 @@
 import React, { useEffect, useRef } from 'react';
+import { useCursorStore } from '@/lib/store/cursorStore'; // ⚡️ Import the micro-store
 
 interface BrushPreviewProps {
   isSpacePressed: boolean;
   selectedTool: string;
   selectedTileId: string | null;
   customTiles: any[];
-  cursorCoords: { x: number; y: number };
-  smoothCursorCoords: { x: number; y: number };
   TILE_SIZE: number;
   WORLD_SIZE: number;
   brushSize: number;
@@ -23,9 +22,13 @@ const snapPosition = (smooth: number, snapMode: 'full' | 'half' | 'free', gridCo
 };
 
 export const BrushPreview = React.memo(({
-  isSpacePressed, selectedTool, selectedTileId, customTiles, cursorCoords, smoothCursorCoords, TILE_SIZE, WORLD_SIZE, brushSize, brushMode, selectedSmartType, snapMode
+  isSpacePressed, selectedTool, selectedTileId, customTiles, TILE_SIZE, WORLD_SIZE, brushSize, brushMode, selectedSmartType, snapMode
 }: BrushPreviewProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  // ⚡️ AAA FIX: Subscribe directly to the fast-updating store
+  const cursorCoords = useCursorStore(state => state.cursorCoords);
+  const smoothCursorCoords = useCursorStore(state => state.smoothCursorCoords);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -33,7 +36,6 @@ export const BrushPreview = React.memo(({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (isSpacePressed || (selectedTool !== 'paint' && selectedTool !== 'erase' && selectedTool !== 'collision')) return;
@@ -47,17 +49,10 @@ export const BrushPreview = React.memo(({
     const displayHeight = tile?.frameHeight || TILE_SIZE;
     const displayWidth = tile?.frameWidth || displayHeight;
 
-    // Center point of the canvas
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    
-    // Correct offset for even brush sizes to match selection logic
-    const gridOffset = isEven ? TILE_SIZE / 2 : 0;
-
     for (let dy = -half; dy < (isEven ? half : half + 1); dy++) {
       for (let dx = -half; dx < (isEven ? half : half + 1); dx++) {
-        const x = centerX + dx * TILE_SIZE - (isEven ? 0 : TILE_SIZE / 2);
-        const y = centerY + dy * TILE_SIZE - (isEven ? 0 : TILE_SIZE / 2);
+        const x = (dx + half) * TILE_SIZE;
+        const y = (dy + half) * TILE_SIZE;
 
         if (selectedTool === 'erase') {
           ctx.fillStyle = 'rgba(239, 68, 68, 0.3)';
@@ -94,17 +89,16 @@ export const BrushPreview = React.memo(({
   
   const brushLimit = brushMode ? brushSize : 1;
   const totalSize = brushLimit * TILE_SIZE;
-  const canvasPadding = TILE_SIZE * 4; // Extra space for large props
 
   return (
     <canvas
       ref={canvasRef}
-      width={totalSize + canvasPadding}
-      height={totalSize + canvasPadding}
+      width={totalSize}
+      height={totalSize}
       className="absolute pointer-events-none z-[60]"
       style={{
-        left: leftPos - (totalSize + canvasPadding) / 2 + (snapMode === 'full' ? TILE_SIZE / 2 : 0),
-        top: topPos - (totalSize + canvasPadding) / 2 + (snapMode === 'full' ? TILE_SIZE / 2 : 0),
+        left: snapMode === 'full' ? leftPos - Math.floor(brushLimit / 2) * TILE_SIZE : leftPos - totalSize / 2,
+        top: snapMode === 'full' ? topPos - Math.floor(brushLimit / 2) * TILE_SIZE : topPos - totalSize / 2,
         imageRendering: 'pixelated'
       }}
     />

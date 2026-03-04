@@ -26,6 +26,7 @@ export const OptimizedAvatarModal: React.FC<OptimizedAvatarModalProps> = ({
   const [pets, setPets] = useState<UserPet[]>([]);
   const [loadingPets, setLoadingPets] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [petAction, setPetAction] = useState<'idle' | 'enter'>('idle');
   const scrollViewRef = useRef<ScrollView>(null);
   const { shopItems } = useGameData();
 
@@ -33,8 +34,19 @@ export const OptimizedAvatarModal: React.FC<OptimizedAvatarModalProps> = ({
     if (user?.id && visible) {
       fetchUserPets(user.id);
       setActiveIndex(0); // Reset to avatar on open
+      setPetAction('idle');
     }
   }, [user?.id, visible]);
+
+  // Trigger a one-shot "enter" animation whenever a pet page becomes active.
+  useEffect(() => {
+    if (!visible) return;
+    if (activeIndex > 0 && pets.length >= activeIndex) {
+      setPetAction('enter');
+    } else {
+      setPetAction('idle');
+    }
+  }, [activeIndex, pets.length, visible]);
 
   const fetchUserPets = async (userId: string) => {
     setLoadingPets(true);
@@ -135,32 +147,38 @@ export const OptimizedAvatarModal: React.FC<OptimizedAvatarModalProps> = ({
               </View>
 
               {/* PAGE 2+: Pets */}
-              {pets.map((pet) => (
-                <View key={pet.id} style={[styles.page, { width: containerWidth }]}>
-                  {/* Using OptimizedPetAvatar with large size */}
-                  <View style={{ width: avatarSize, height: avatarSize, justifyContent: 'center', alignItems: 'center' }}>
-                    <OptimizedPetAvatar
-                      petDetails={pet.pet_details}
-                      size={avatarSize}
-                      square={true}
-                      // Using walking spritesheet with idle animation (breathing effect)
+              {pets.map((pet, index) => {
+                const pageIndex = index + 1; // 0 = avatar, 1+ = pets
+                const isActivePetPage = activeIndex === pageIndex;
+                return (
+                  <View key={pet.id} style={[styles.page, { width: containerWidth }]}>
+                    {/* Using OptimizedPetAvatar with large size */}
+                    <View style={{ width: avatarSize, height: avatarSize, justifyContent: 'center', alignItems: 'center' }}>
+                      <OptimizedPetAvatar
+                        petDetails={pet.pet_details}
+                        size={avatarSize}
+                        square={true}
+                        background={pet.metadata?.equipped_background || null}
+                        action={isActivePetPage ? petAction : 'idle'}
+                        onEnterComplete={() => setPetAction('idle')}
+                      />
+                    </View>
+                    
+                    {/* Gradient Scrim */}
+                    <LinearGradient
+                      colors={['transparent', 'rgba(0,0,0,0.8)']}
+                      style={styles.textScrim}
+                      pointerEvents="none"
                     />
-                  </View>
-                  
-                  {/* Gradient Scrim */}
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.8)']}
-                    style={styles.textScrim}
-                    pointerEvents="none"
-                  />
 
-                  <View style={styles.petNameContainer}>
-                    <Text style={styles.petNameText}>
+                    <View style={styles.petNameContainer}>
+                      <Text style={styles.petNameText}>
                         {pet.nickname || pet.pet_details?.name || 'Unknown Pet'}
-                    </Text>
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
 
             {/* Pagination Indicators */}
