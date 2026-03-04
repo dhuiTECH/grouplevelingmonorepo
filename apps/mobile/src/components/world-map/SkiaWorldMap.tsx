@@ -261,11 +261,32 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
           const collisionData = collisionDataRef.value;
           const targetCol = collisionData[`${nx},${ny}`];
 
-          if (!targetCol || targetCol.isWalkable) {
-            targetX.value = nx;
-            targetY.value = ny;
+          // 1. Check Full Block
+          if (targetCol && !targetCol.isWalkable) {
+            isMoving.value = false;
             return;
           }
+
+          // 2. Check Edge Block (This was missing from continuous movement)
+          const curCol = collisionData[`${currentTileX.value},${currentTileY.value}`];
+          const currentEdgeBlocks = curCol?.edgeBlocks ?? 0;
+          const destEdgeBlocks = targetCol?.edgeBlocks ?? 0;
+
+          const blockedByEdge =
+            (dirStr === 'UP'    && ((currentEdgeBlocks & 1) || (destEdgeBlocks & 4))) ||
+            (dirStr === 'DOWN'  && ((currentEdgeBlocks & 4) || (destEdgeBlocks & 1))) ||
+            (dirStr === 'RIGHT' && ((currentEdgeBlocks & 2) || (destEdgeBlocks & 8))) ||
+            (dirStr === 'LEFT'  && ((currentEdgeBlocks & 8) || (destEdgeBlocks & 2)));
+
+          if (blockedByEdge) {
+            isMoving.value = false;
+            return;
+          }
+
+          // Safe to keep moving
+          targetX.value = nx;
+          targetY.value = ny;
+          return;
         }
 
         isMoving.value = false;
@@ -296,9 +317,10 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       const hasBlockedTile = cell.tiles?.some((t: any) => 
         t.isWalkable === false || t.is_walk_able === false || t.is_walkable === false
       );
-      const edgeBlocks = cell.tiles?.reduce((acc: number, t: any) => 
-        acc | (t.edgeBlocks || 0), 0
-      ) || 0;
+      const edgeBlocks = cell.tiles?.reduce((acc: number, t: any) => {
+        const bits = Number(t.edgeBlocks ?? t.edge_blocks ?? t.edge_mask ?? t.edgeMask ?? 0);
+        return acc | bits;
+      }, 0) || 0;
       map.set(key, { isWalkable: !hasBlockedTile, edgeBlocks });
     });
     return map;
@@ -408,7 +430,10 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
           {showWalkabilityOverlay && (visionGrid || []).map(cell => {
             if (!cell) return null;
             const blockedTiles = cell.tiles?.filter((t: any) => (t.isWalkable === false || t.is_walk_able === false || t.is_walkable === false));
-            const edgeTiles = cell.tiles?.filter((t: any) => t.edgeBlocks !== undefined && t.edgeBlocks > 0);
+            const edgeTiles = cell.tiles?.filter((t: any) => {
+              const bits = Number(t.edgeBlocks ?? t.edge_blocks ?? t.edge_mask ?? t.edgeMask ?? 0);
+              return bits > 0;
+            });
             
             const cellX = cell.x * tileSize;
             const cellY = cell.y * tileSize;
@@ -420,7 +445,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
                   <SkiaRect x={cellX} y={cellY} width={tileSize} height={tileSize} color="rgba(220, 38, 38, 0.35)" />
                 )}
                 {edgeTiles?.map((t: any, i: number) => {
-                  const bits = t.edgeBlocks;
+                  const bits = Number(t.edgeBlocks ?? t.edge_blocks ?? t.edge_mask ?? t.edgeMask ?? 0);
                   return (
                     <Group key={`edge-bits-${cell.x}-${cell.y}-${i}`}>
                       {(bits & 1) && <SkiaRect x={cellX} y={cellY} width={tileSize} height={BAR} color="rgba(249, 115, 22, 0.85)" />}

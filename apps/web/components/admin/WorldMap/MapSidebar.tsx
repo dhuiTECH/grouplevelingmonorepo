@@ -72,7 +72,9 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
   const setFavorite = useMapStore(state => state.setFavorite);
   const forceSyncAllChunks = useMapStore(state => state.forceSyncAllChunks);
   const reorderCustomTiles = useMapStore(state => state.reorderCustomTiles);
+  const replaceCustomTileAsset = useMapStore(state => state.replaceCustomTileAsset);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
   const roadInputRef = useRef<HTMLInputElement>(null);
   const propInputRef = useRef<HTMLInputElement>(null);
   const structureInputRef = useRef<HTMLInputElement>(null);
@@ -86,12 +88,45 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
   
   const [isDragging, setIsDragging] = React.useState(false);
   const [uploadingTiles, setUploadingTiles] = React.useState(false);
+  const [frameInputValue, setFrameInputValue] = React.useState<string>('');
+  const [speedInputValue, setSpeedInputValue] = React.useState<string>('');
+  const [layerInputValue, setLayerInputValue] = React.useState<string>('');
+  const [rotationInputValue, setRotationInputValue] = React.useState<string>('');
+  const [widthInputValue, setWidthInputValue] = React.useState<string>('');
+  const [heightInputValue, setHeightInputValue] = React.useState<string>('');
+
   const selectedNode = nodes.find(n => n.id === selectedNodeId);
   const selectedCustomTile = customTiles.find(t => t.id === selectedTileId);
 
   const currentlyEditedTile = selectedCustomTile || 
     (selectedWaterBaseId && waterBaseTile()?.id === selectedTileId ? waterBaseTile() : undefined) ||
     (selectedFoamStripId && foamStripTile()?.id === selectedTileId ? foamStripTile() : undefined);
+
+  // Sync local inputs when tile changes
+  React.useEffect(() => {
+    if (currentlyEditedTile) {
+      setFrameInputValue(String(currentlyEditedTile.frameCount || 1));
+      setSpeedInputValue(String(currentlyEditedTile.animationSpeed || 0.8));
+      setLayerInputValue(String(currentlyEditedTile.layer ?? 0));
+      setRotationInputValue(String(currentlyEditedTile.rotation || 0));
+      setWidthInputValue(String(currentlyEditedTile.frameWidth || 48));
+      setHeightInputValue(String(currentlyEditedTile.frameHeight || 48));
+    }
+  }, [currentlyEditedTile?.id, currentlyEditedTile?.isSpritesheet]);
+
+  // Debounced store updates
+  const debounceTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const debouncedUpdate = (updates: Partial<CustomTile>) => {
+    if (!currentlyEditedTile) return;
+    
+    // Update local store immediately for visual feedback
+    // (Note: updateCustomTile already updates store before DB call)
+    
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      updateCustomTile(currentlyEditedTile.id, updates);
+    }, 500); // 500ms debounce for DB sync
+  };
 
   const [activeTab, setActiveTab] = React.useState<'water' | 'ground' | 'road' | 'prop' | 'structure' | 'mountain' | 'big_structure'>('ground');
 
@@ -241,6 +276,24 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
     if (bigStructureInputRef.current) bigStructureInputRef.current.value = '';
     if (waterBaseUploadRef.current) waterBaseUploadRef.current.value = '';
     if (foamStripUploadRef.current) foamStripUploadRef.current.value = '';
+  };
+
+  const handleReplaceAsset = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentlyEditedTile) return;
+    
+    setUploadingTiles(true);
+    try {
+      const publicUrl = await handleUploadAsset(file, 'tiles');
+      if (publicUrl) {
+        await replaceCustomTileAsset(currentlyEditedTile.id, publicUrl);
+      }
+    } catch (e) {
+      console.error('Failed to replace asset:', e);
+    } finally {
+      setUploadingTiles(false);
+      if (replaceInputRef.current) replaceInputRef.current.value = '';
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -478,8 +531,20 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
         {/* 2. Tile Properties Section */}
         {currentlyEditedTile && (
           <div className="p-4 border-b border-slate-800 bg-slate-900/30 space-y-2">
-            <div className="text-[10px] text-green-400 font-mono flex items-center gap-1 mb-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> TILE PROPERTIES
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] text-green-400 font-mono flex items-center gap-1">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> TILE PROPERTIES
+              </div>
+              <button 
+                onClick={() => replaceInputRef.current?.click()}
+                disabled={uploadingTiles}
+                className="text-[9px] bg-cyan-900/40 hover:bg-cyan-800/60 text-cyan-400 px-2 py-1 rounded border border-cyan-500/30 flex items-center gap-1 transition-all"
+                title="Replace this asset with a new image"
+              >
+                {uploadingTiles ? <Loader2 className="animate-spin" size={10} /> : <Zap size={10} />}
+                REPLACE ASSET
+              </button>
+              <input type="file" ref={replaceInputRef} className="hidden" accept="image/png" onChange={handleReplaceAsset} />
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2">
               <div className="flex flex-col gap-1">
@@ -496,19 +561,79 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-[9px] text-slate-500 uppercase font-bold">Layer</label>
-                <input type="number" value={currentlyEditedTile.layer ?? 0} onChange={(e) => updateCustomTile(currentlyEditedTile.id, { layer: parseInt(e.target.value) || 0 })} className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" />
+                <input 
+                  type="number" 
+                  value={layerInputValue} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setLayerInputValue(val);
+                    if (val !== '' && !isNaN(parseInt(val))) debouncedUpdate({ layer: parseInt(val) });
+                  }}
+                  onBlur={() => {
+                    if (layerInputValue === '' || isNaN(parseInt(layerInputValue))) {
+                      setLayerInputValue('0');
+                      debouncedUpdate({ layer: 0 });
+                    }
+                  }}
+                  className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" 
+                />
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-[9px] text-slate-500 uppercase font-bold">Rotation</label>
-                <input type="number" value={currentlyEditedTile.rotation || 0} onChange={(e) => updateCustomTile(currentlyEditedTile.id, { rotation: parseInt(e.target.value) || 0 })} className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" />
+                <input 
+                  type="number" 
+                  value={rotationInputValue} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setRotationInputValue(val);
+                    if (val !== '' && !isNaN(parseInt(val))) debouncedUpdate({ rotation: parseInt(val) });
+                  }}
+                  onBlur={() => {
+                    if (rotationInputValue === '' || isNaN(parseInt(rotationInputValue))) {
+                      setRotationInputValue('0');
+                      debouncedUpdate({ rotation: 0 });
+                    }
+                  }}
+                  className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" 
+                />
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-[9px] text-slate-500 uppercase font-bold">Width</label>
-                <input type="number" value={currentlyEditedTile.frameWidth || 48} onChange={(e) => updateCustomTile(currentlyEditedTile.id, { frameWidth: parseInt(e.target.value) || 48 })} className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" />
+                <input 
+                  type="number" 
+                  value={widthInputValue} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setWidthInputValue(val);
+                    if (val !== '' && !isNaN(parseInt(val))) debouncedUpdate({ frameWidth: parseInt(val) });
+                  }}
+                  onBlur={() => {
+                    if (widthInputValue === '' || isNaN(parseInt(widthInputValue))) {
+                      setWidthInputValue('48');
+                      debouncedUpdate({ frameWidth: 48 });
+                    }
+                  }}
+                  className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" 
+                />
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-[9px] text-slate-500 uppercase font-bold">Height</label>
-                <input type="number" value={currentlyEditedTile.frameHeight || 48} onChange={(e) => updateCustomTile(currentlyEditedTile.id, { frameHeight: parseInt(e.target.value) || 48 })} className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" />
+                <input 
+                  type="number" 
+                  value={heightInputValue} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setHeightInputValue(val);
+                    if (val !== '' && !isNaN(parseInt(val))) debouncedUpdate({ frameHeight: parseInt(val) });
+                  }}
+                  onBlur={() => {
+                    if (heightInputValue === '' || isNaN(parseInt(heightInputValue))) {
+                      setHeightInputValue('48');
+                      debouncedUpdate({ frameHeight: 48 });
+                    }
+                  }}
+                  className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" 
+                />
               </div>
             </div>
             {/* Toggles Grid */}
@@ -565,8 +690,18 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
                   <label className="text-[8px] text-slate-500 font-bold">Frames</label>
                   <input 
                     type="number" 
-                    value={currentlyEditedTile.frameCount || 1} 
-                    onChange={(e) => updateCustomTile(currentlyEditedTile.id, { frameCount: parseInt(e.target.value) || 1 })}
+                    value={frameInputValue} 
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFrameInputValue(val);
+                      if (val !== '' && !isNaN(parseInt(val))) debouncedUpdate({ frameCount: parseInt(val) });
+                    }}
+                    onBlur={() => {
+                      if (frameInputValue === '' || isNaN(parseInt(frameInputValue))) {
+                        setFrameInputValue('1');
+                        debouncedUpdate({ frameCount: 1 });
+                      }
+                    }}
                     className="bg-slate-900 border border-slate-700 text-[9px] text-cyan-400 rounded px-1 py-0.5 text-center"
                   />
                 </div>
@@ -575,8 +710,18 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
                   <input 
                     type="number" 
                     step="0.1"
-                    value={currentlyEditedTile.animationSpeed || 0.8} 
-                    onChange={(e) => updateCustomTile(currentlyEditedTile.id, { animationSpeed: parseFloat(e.target.value) || 0.8 })}
+                    value={speedInputValue} 
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSpeedInputValue(val);
+                      if (val !== '' && val !== '0.' && !isNaN(parseFloat(val))) debouncedUpdate({ animationSpeed: parseFloat(val) });
+                    }}
+                    onBlur={() => {
+                      if (speedInputValue === '' || isNaN(parseFloat(speedInputValue))) {
+                        setSpeedInputValue('0.8');
+                        debouncedUpdate({ animationSpeed: 0.8 });
+                      }
+                    }}
                     className="bg-slate-900 border border-slate-700 text-[9px] text-cyan-400 rounded px-1 py-0.5 text-center"
                   />
                 </div>

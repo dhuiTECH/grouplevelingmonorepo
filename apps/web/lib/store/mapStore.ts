@@ -250,6 +250,7 @@ interface MapState {
   removeTileById: (id: string, excludeAutoTiles?: boolean) => Promise<void>;
   moveTile: (tileId: string, newX: number, newY: number, newOffsetX: number, newOffsetY: number) => Promise<void>;
   rotateTile: (tileId: string, rotationDelta: number) => Promise<void>;
+  replaceCustomTileAsset: (id: string, newUrl: string) => Promise<void>;
   updateTileAndNeighbors: (x: number, y: number, layer: number, isRemoving?: boolean, smartType?: string, blockCol?: number, blockRow?: number) => Promise<void>; // NEW
   batchUpdateTileAndNeighbors: (updates: { x: number, y: number, layer: number, isRemoving?: boolean, smartType?: string, blockCol?: number, blockRow?: number }[]) => Promise<void>;
   forceSyncAllChunks: () => Promise<void>;
@@ -648,27 +649,32 @@ export const useMapStore = create<MapState>((set, get) => ({
     set((state) => ({
       customTiles: state.customTiles.map(t => t.id === id ? { ...t, ...updates } : t)
     }));
-    const tile = get().customTiles.find(t => t.id === id);
-    if (tile) {
-      const { error } = await supabase.from('custom_tiles').update({
-        name: tile.name,
-        type: tile.type,
-        layer: tile.layer || 0,
-        is_spritesheet: tile.isSpritesheet,
-        frame_count: tile.frameCount,
-        frame_width: tile.frameWidth,
-        frame_height: tile.frameHeight,
-        animation_speed: tile.animationSpeed,
-        is_walkable: tile.isWalkable ?? true,
-        snap_to_grid: tile.snapToGrid ?? false,
-        is_autofill: tile.isAutoFill ?? true,
-        is_autotile: tile.isAutoTile ?? false,
-        smartType: tile.smartType, // Ensure smartType is updated
-        category: tile.category, // NEW
-        rotation: tile.rotation || 0,
-        sort_order: tile.sort_order || 0
-      }).eq('id', id);
-      if (error) console.error("Failed to update custom tile:", error);
+    
+    // Map updates to snake_case for Supabase
+    const dbUpdates: any = {};
+    if ('name' in updates) dbUpdates.name = updates.name;
+    if ('url' in updates) dbUpdates.url = updates.url;
+    if ('type' in updates) dbUpdates.type = updates.type;
+    if ('isSpritesheet' in updates) dbUpdates.is_spritesheet = updates.isSpritesheet;
+    if ('frameCount' in updates) dbUpdates.frame_count = updates.frameCount;
+    if ('frameWidth' in updates) dbUpdates.frame_width = updates.frameWidth;
+    if ('frameHeight' in updates) dbUpdates.frame_height = updates.frameHeight;
+    if ('animationSpeed' in updates) dbUpdates.animation_speed = updates.animationSpeed;
+    if ('layer' in updates) dbUpdates.layer = updates.layer;
+    if ('isWalkable' in updates) dbUpdates.is_walkable = updates.isWalkable;
+    if ('snapToGrid' in updates) dbUpdates.snap_to_grid = updates.snapToGrid;
+    if ('isAutoFill' in updates) dbUpdates.is_autofill = updates.isAutoFill;
+    if ('isAutoTile' in updates) dbUpdates.is_autotile = updates.isAutoTile;
+    if ('smartType' in updates) dbUpdates.smartType = updates.smartType;
+    if ('category' in updates) dbUpdates.category = updates.category;
+    if ('rotation' in updates) dbUpdates.rotation = updates.rotation;
+    if ('sort_order' in updates) dbUpdates.sort_order = updates.sort_order;
+
+    if (Object.keys(dbUpdates).length > 0) {
+      const { error } = await supabase.from('custom_tiles').update(dbUpdates).eq('id', id);
+      if (error) {
+        console.error("Failed to update custom tile:", error.message, error.details, error.hint);
+      }
     }
   },
 
@@ -884,6 +890,40 @@ export const useMapStore = create<MapState>((set, get) => ({
     const chunkX = Math.floor(tile.x / CHUNK_SIZE);
     const chunkY = Math.floor(tile.y / CHUNK_SIZE);
     triggerChunkSync(chunkX, chunkY, get);
+  },
+
+  replaceCustomTileAsset: async (id, newUrl) => {
+    const state = get();
+    const oldTile = state.customTiles.find(t => t.id === id);
+    if (!oldTile) return;
+
+    const oldUrl = oldTile.url;
+
+    // 1. Update Custom Tile Library
+    set((state) => ({
+      customTiles: state.customTiles.map(t => t.id === id ? { ...t, url: newUrl } : t)
+    }));
+    
+    await supabase.from('custom_tiles').update({ url: newUrl }).eq('id', id);
+
+    // 2. Update all placed tiles that use this asset
+    const touchedChunks = new Set<string>();
+    set((state) => {
+      const newTiles = state.tiles.map(t => {
+        if (t.imageUrl === oldUrl) {
+          touchedChunks.add(`${Math.floor(t.x / CHUNK_SIZE)},${Math.floor(t.y / CHUNK_SIZE)}`);
+          return { ...t, imageUrl: newUrl };
+        }
+        return t;
+      });
+      return { tiles: newTiles };
+    });
+
+    // 3. Trigger debounced sync for touched chunks
+    touchedChunks.forEach(key => {
+      const [cx, cy] = key.split(',').map(Number);
+      triggerChunkSync(cx, cy, get);
+    });
   },
 
   forceSyncAllChunks: async () => {
