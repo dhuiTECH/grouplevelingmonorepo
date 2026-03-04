@@ -36,29 +36,47 @@ import { MapHotbar } from './components/MapHotbar';
 const WORLD_SIZE = 100000; 
 const TILE_SIZE = 48;
 
-export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = [] }) => {
+export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [] }) => {
   const transformComponentRef = useRef<ReactZoomPanPinchRef>(null);
   const dropTargetRef = useRef<HTMLDivElement>(null);
   
-  const {
-    addNode, updateNode, selectNode, selectedNodeId,
-    addTileSimple, selectedTileId, customTiles, selectedTool,
-    activeNodeType, removeNode,
-    loadTilesFromSupabase, isDraggingTile, draggingTileId,
-    setDraggingTile, isDraggingNode, draggingNodeId, setDraggingNode,
-    moveTile, removeTileById, rotateTile,
-    isSmartMode, isRaiseMode, smartBrushLock, isFoamEnabled, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl,
-    selectedSmartType, setSelectedSmartType, setSelectedBlock, smartBrushLayer, setSmartBrushLayer, setRaiseMode, waterBaseTile, foamStripTile, setTool,
-    sidebarWidth, setSidebarWidth, rightSidebarWidth, setRightSidebarWidth,
-    favorites, selectTile,
-    brushSize, brushMode,
-    snapMode,
-    nodeSnapToGrid, setNodeSnapToGrid,
-    isLoadingTiles, tiles, nodes, showDebugModal, setShowDebugModal, showDebugNumbers,
-    dragGrabOffset, setDragGrabOffset, selection, setSelection,
-    showWalkabilityOverlay, setShowWalkabilityOverlay, setUndoStack,
-    collisionMode, edgeDirection
-  } = useMapStore();
+  // ⚡️ ATOMIC SELECTORS - No 'tiles' or 'nodes' arrays here! 
+  // The Engine will never re-render when painting or adding nodes!
+  const addNode = useMapStore(state => state.addNode);
+  const removeNode = useMapStore(state => state.removeNode);
+  const selectNode = useMapStore(state => state.selectNode);
+  const selectedNodeId = useMapStore(state => state.selectedNodeId);
+  const selectedTileId = useMapStore(state => state.selectedTileId);
+  const selectedTool = useMapStore(state => state.selectedTool);
+  const setTool = useMapStore(state => state.setTool);
+  const isDraggingTile = useMapStore(state => state.isDraggingTile);
+  const draggingTileId = useMapStore(state => state.draggingTileId);
+  const setDraggingTile = useMapStore(state => state.setDraggingTile);
+  const isDraggingNode = useMapStore(state => state.isDraggingNode);
+  const draggingNodeId = useMapStore(state => state.draggingNodeId);
+  const setDraggingNode = useMapStore(state => state.setDraggingNode);
+  const setDragGrabOffset = useMapStore(state => state.setDragGrabOffset);
+  const removeTileById = useMapStore(state => state.removeTileById);
+  const selectTile = useMapStore(state => state.selectTile);
+  const favorites = useMapStore(state => state.favorites);
+  const sidebarWidth = useMapStore(state => state.sidebarWidth);
+  const setSidebarWidth = useMapStore(state => state.setSidebarWidth);
+  const setRightSidebarWidth = useMapStore(state => state.setRightSidebarWidth);
+  const rightSidebarWidth = useMapStore(state => state.rightSidebarWidth);
+  const loadTilesFromSupabase = useMapStore(state => state.loadTilesFromSupabase);
+  const isLoadingTiles = useMapStore(state => state.isLoadingTiles);
+  const showDebugModal = useMapStore(state => state.showDebugModal);
+  const setShowDebugModal = useMapStore(state => state.setShowDebugModal);
+  const setUndoStack = useMapStore(state => state.setUndoStack);
+  const setSelection = useMapStore(state => state.setSelection);
+  const waterBaseTile = useMapStore(state => state.waterBaseTile);
+  const foamStripTile = useMapStore(state => state.foamStripTile);
+  const showDebugNumbers = useMapStore(state => state.showDebugNumbers);
+  const showWalkabilityOverlay = useMapStore(state => state.showWalkabilityOverlay);
+  const setShowWalkabilityOverlay = useMapStore(state => state.setShowWalkabilityOverlay);
+  const brushMode = useMapStore(state => state.brushMode);
+  const brushSize = useMapStore(state => state.brushSize);
+  const customTiles = useMapStore(state => state.customTiles); // Only needed for passing down to sub-components if they don't select it themselves
 
   // Local State
   const [isResizingLeft, setIsResizingLeft] = useState(false);
@@ -80,18 +98,18 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
   const [goToY, setGoToY] = useState('');
 
   // Custom Hooks
-  const { 
-    handleUndo, 
-    handleCopySelection, 
-    handlePasteStamp 
-  } = useMapClipboard();
-
-  const { 
+    const { 
     handleAutoFill, 
     isGenerating, 
     seed, 
     setSeed 
   } = useMapGeneration();
+
+  const { 
+    handleUndo, 
+    handleCopySelection, 
+    handlePasteStamp 
+  } = useMapClipboard();
 
   const {
     showNodeModal, setShowNodeModal,
@@ -101,7 +119,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
     uploadingDialogueImageLine, uploadingVoiceLineLine, iconGalleryUrls,
     nodeIconInputRef, sceneBgInputRef, npcSpriteInputRef, nodeMusicInputRef,
     dialogueExpressionInputRef, dialogueVoiceLineInputRef, currentUploadIdx,
-    fetchSupportData, fetchIconGallery, loadStockedItems,
+    fetchSupportData, fetchIconGallery,
     handleEditNodeProperties, handleSaveNodeDetails, handleUploadAsset,
     handleUploadIcon, handleDeleteIcon, onAddStockItem, onRemoveStockItem,
     handleUploadNodeMusic, handleUploadDialogueExpression, handleUploadDialogueVoiceLine,
@@ -153,6 +171,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
   const zoomToFit = useCallback((animate = true) => {
     if (!transformComponentRef.current) return;
 
+    // Fetch state directly to avoid re-rendering on every change
     const allTiles = useMapStore.getState().tiles;
     const allNodes = useMapStore.getState().nodes;
 
@@ -208,7 +227,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
     const targetPosY = containerH / 2 - centerY * targetScale;
 
     transformComponentRef.current.setTransform(targetPosX, targetPosY, targetScale, animate ? 400 : 0, 'easeOut');
-  }, [tiles.length, nodes.length, viewport.width, viewport.height]);
+  }, [viewport.width, viewport.height]);
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -248,34 +267,34 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
         return;
       }
       
-      // Zoom to Fit (F or 0)
+          // Zoom to Fit (F or 0)
       if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
         if (e.key.toLowerCase() === 'f' || e.key === '0') {
           zoomToFit();
           return;
         }
         if (e.key.toLowerCase() === 'v') {
-          setTool('select');
+          useMapStore.getState().setTool('select');
           return;
         }
         if (e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'p') {
-          setTool('paint');
+          useMapStore.getState().setTool('paint');
           return;
         }
         if (e.key.toLowerCase() === 'e') {
-          setTool('erase');
+          useMapStore.getState().setTool('erase');
           return;
         }
         if (e.key.toLowerCase() === 'o') {
-          setTool('eyedropper');
+          useMapStore.getState().setTool('eyedropper');
           return;
         }
         if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey) {
-          setTool('stamp');
+          useMapStore.getState().setTool('stamp');
           return;
         }
         if (e.key.toLowerCase() === 'r') {
-          setTool('rotate');
+          useMapStore.getState().setTool('rotate');
           return;
         }
         if (e.key.toLowerCase() === 'd') {
@@ -326,19 +345,21 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [zoomToFit, favorites, selectTile, setTool, handleUndo, handleCopySelection, handlePasteStamp, selectedTool, setSelection, setShowDebugModal, setUndoStack, removeNode, removeTileById]);
+  }, [zoomToFit, favorites, selectTile, handleUndo, handleCopySelection, handlePasteStamp, setSelection, setShowDebugModal, setUndoStack, removeNode, removeTileById]);
 
   const hasInitialZoomed = useRef(false);
 
   useEffect(() => {
-    if (!isLoadingTiles && !hasInitialZoomed.current && (tiles.length > 0 || nodes.length > 0)) {
+    // Check lengths via getState to avoid subscription
+    const state = useMapStore.getState();
+    if (!isLoadingTiles && !hasInitialZoomed.current && (state.tiles.length > 0 || state.nodes.length > 0)) {
       const timer = setTimeout(() => {
         zoomToFit(false);
         hasInitialZoomed.current = true;
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [isLoadingTiles, zoomToFit, tiles.length, nodes.length]);
+  }, [isLoadingTiles, zoomToFit]);
 
   useEffect(() => {
     if (dropTargetRef.current) {
@@ -407,7 +428,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
   const goToNode = useCallback((nodeId: string) => {
     selectNode(nodeId);
   
-    const node = nodes.find(n => n.id === nodeId);
+    const node = useMapStore.getState().nodes.find(n => n.id === nodeId);
     if (!node || !transformComponentRef.current) {
       console.error(`[GoTo ERROR] Node ${nodeId} not found`);
       return;
@@ -444,7 +465,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
         );
       });
     });
-  }, [nodes, selectNode]);
+  }, [selectNode]);
 
   return (
     <div className="flex w-full h-full bg-[#0a0a0a] overflow-hidden font-mono text-slate-300">
@@ -480,7 +501,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
               foamStripTile={foamStripTile()}
               showDebugNumbers={showDebugNumbers}
               showWalkabilityOverlay={showWalkabilityOverlay}
-              nodes={nodes}
+              nodes={useMapStore.getState().nodes}
               selectedTool={selectedTool}
               isSpacePressed={isSpacePressed}
               brushMode={brushMode}
@@ -537,16 +558,17 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
               >
                 
                 {/* Layer 2: Grid Highlight */}
+                {/* GridHighlight needs current info but is cheap to render */}
                 {!isSpacePressed && (selectedTool === 'paint' || selectedTool === 'erase' || selectedTool === 'collision') && (
                   <GridHighlight 
                     selectedTool={selectedTool}
                     selectedTileId={selectedTileId}
                     customTiles={customTiles}
-                    snapMode={snapMode}
+                    snapMode={useMapStore.getState().snapMode}
                   />
                 )}
 
-                {nodes.map(node => (
+                {useMapStore.getState().nodes.map(node => (
                   <div
                     key={node.id}
                     onMouseDown={(e) => handleNodeMouseDown(node.id, e)}
@@ -585,8 +607,8 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
                   WORLD_SIZE={WORLD_SIZE}
                   brushSize={brushSize}
                   brushMode={brushMode}
-                  selectedSmartType={selectedSmartType}
-                  snapMode={snapMode}
+                  selectedSmartType={useMapStore.getState().selectedSmartType}
+                  snapMode={useMapStore.getState().snapMode}
                 />
                 
                 {/* Stamp Tool Preview */}
@@ -595,10 +617,10 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
                   !isSpacePressed && (
                     <StampPreview
                       currentStamp={useMapStore.getState().currentStamp!}
-                      snapMode={snapMode}
-                      waterSheetUrl={waterSheetUrl}
-                      dirtSheetUrl={dirtSheetUrl}
-                      autoTileSheetUrl={autoTileSheetUrl}
+                      snapMode={useMapStore.getState().snapMode}
+                      waterSheetUrl={useMapStore.getState().waterSheetUrl}
+                      dirtSheetUrl={useMapStore.getState().dirtSheetUrl}
+                      autoTileSheetUrl={useMapStore.getState().autoTileSheetUrl}
                       customTiles={customTiles}
                     />
                   )}
@@ -639,7 +661,7 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
           open={showNodeModal}
           onClose={() => setShowNodeModal(false)}
           mode="edit"
-          coords={{ x: nodes.find(n => n.id === selectedNodeId)?.x || 0, y: nodes.find(n => n.id === selectedNodeId)?.y || 0 }}
+          coords={{ x: useMapStore.getState().nodes.find(n => n.id === selectedNodeId)?.x || 0, y: useMapStore.getState().nodes.find(n => n.id === selectedNodeId)?.y || 0 }}
           nodeData={nodeFormData}
           onChange={setNodeFormData}
           onSave={handleSaveNodeDetails}
@@ -675,8 +697,8 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
 
       {showDebugModal && (
         <DebugOverlay
-          winluSheetUrl={autoTileSheetUrl}
-          waterSheetUrl={waterSheetUrl}
+          winluSheetUrl={useMapStore.getState().autoTileSheetUrl}
+          waterSheetUrl={useMapStore.getState().waterSheetUrl}
           onClose={() => setShowDebugModal(false)}
         />
       )}
@@ -686,6 +708,6 @@ export const WorldMapEngine: React.FC<{ shopItems?: any[] }> = ({ shopItems = []
       <input type="file" ref={dialogueVoiceLineInputRef} className="hidden" accept="audio/*" onChange={handleUploadDialogueVoiceLine} />
     </div>
   );
-};
+});
 
 export default WorldMapEngine;

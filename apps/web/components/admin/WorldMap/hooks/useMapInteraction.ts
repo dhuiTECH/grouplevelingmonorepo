@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useMapStore, NodeType } from '@/lib/store/mapStore';
 import { useCursorStore } from '@/lib/store/cursorStore';
 import { usePaintTool } from './tools/usePaintTool';
@@ -79,7 +79,27 @@ export const useMapInteraction = (
     });
   };
 
-  const handleMapInteraction = async (clientX: number, clientY: number, isMove = false, isShift = false, forceErase = false, isAlt = false, buttons = 0) => {
+    const brushArea = useRef<{dx: number, dy: number}[]>([{dx: 0, dy: 0}]);
+    
+    // Memoize brush area calculation to avoid re-creation on every mouse move
+    useEffect(() => {
+       const { brushMode, brushSize } = useMapStore.getState();
+       if (brushMode && brushSize > 1) {
+          const half = Math.floor(brushSize / 2);
+          const isEven = brushSize % 2 === 0;
+          const area = [];
+          for (let dy = -half; dy < (isEven ? half : half + 1); dy++) {
+            for (let dx = -half; dx < (isEven ? half : half + 1); dx++) {
+              area.push({dx, dy});
+            }
+          }
+          brushArea.current = area;
+       } else {
+          brushArea.current = [{dx: 0, dy: 0}];
+       }
+    }, [useMapStore.getState().brushSize, useMapStore.getState().brushMode]);
+
+    const handleMapInteraction = async (clientX: number, clientY: number, isMove = false, isShift = false, forceErase = false, isAlt = false, buttons = 0) => {
     if (!transformComponentRef.current || !dropTargetRef.current || (isSpacePressed && !isMove)) return;
     const state = useMapStore.getState();
     const { positionX, positionY, scale } = transformComponentRef.current.instance.transformState;
@@ -138,26 +158,12 @@ export const useMapInteraction = (
     if (isMove && buttons === 0) return;
     if (tool === 'select') return;
 
-    // Build the Brush Area Matrix
-    let brushArea = [{dx: 0, dy: 0}];
-    const { brushMode: currentBrushMode, brushSize: currentBrushSize } = state;
-    if ((tool === 'paint' || tool === 'erase' || tool === 'collision') && currentBrushMode && currentBrushSize > 1) {
-      const half = Math.floor(currentBrushSize / 2);
-      const isEven = currentBrushSize % 2 === 0;
-      brushArea = [];
-      for (let dy = -half; dy < (isEven ? half : half + 1); dy++) {
-        for (let dx = -half; dx < (isEven ? half : half + 1); dx++) {
-          brushArea.push({dx, dy});
-        }
-      }
-    }
-
     if (tool === 'paint') {
-      await executePaint(gx, gy, worldX, worldY, isMove, isShift, brushArea);
+      await executePaint(gx, gy, worldX, worldY, isMove, isShift, brushArea.current);
     } else if (tool === 'erase') {
-      await executeErase(gx, gy, isMove, brushArea);
+      await executeErase(gx, gy, isMove, brushArea.current);
     } else if (tool === 'collision') {
-      await executeCollision(gx, gy, isMove, forceErase, drawingModeRef, brushArea);
+      await executeCollision(gx, gy, isMove, forceErase, drawingModeRef, brushArea.current);
     } else if (tool === 'stamp') {
       if (state.currentStamp) await handlePasteStamp(gx, gy);
       else {

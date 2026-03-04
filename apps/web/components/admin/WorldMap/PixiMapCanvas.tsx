@@ -159,11 +159,11 @@ PixiTile.displayName = 'PixiTile';
 
 // --- Smart Tile Component ---
 const SmartPixiTile = React.memo(({
-  tile, customTileLookup, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl, isFoamEnabled, foamStripTile, worldSize, onPropMouseDown, showDebugNumbers, selectedTool
+  tile, customTileLookup, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl, isFoamEnabled, foamStripTile, worldSize, showDebugNumbers
 }: {
   tile: Tile; customTileLookup: Map<string, CustomTile>; autoTileSheetUrl?: string | null; dirtSheetUrl?: string | null; waterSheetUrl?: string | null;
   isFoamEnabled: boolean; foamStripTile?: CustomTile; worldSize: number; onPropMouseDown?: (tileId: string, e: any) => void;
-  showDebugNumbers?: boolean; selectedTool: string;
+  showDebugNumbers?: boolean; selectedTool?: string;
 }) => {
   const normalizedTileUrl = normalizeUrl(tile.imageUrl);
   const liveCustomTile = customTileLookup.get(normalizedTileUrl);
@@ -183,16 +183,16 @@ const SmartPixiTile = React.memo(({
   const foamUrl = (isFoamEnabled && foamStripTile?.url && (tile.foamBitmask || 0) > 0) ? foamStripTile.url : null;
   const foamTextureBase = useTexture(foamUrl);
 
-  const isSmartRendered = tile.isAutoTile || isFrozenSmartTile;
-  const displayHeight = isSmartRendered ? TILE_SIZE : (liveCustomTile?.frameHeight || tile.frameHeight || TILE_SIZE);
-  const displayWidth = isSmartRendered ? TILE_SIZE : (liveCustomTile?.frameWidth || tile.frameWidth || displayHeight);
+    const isSmartRendered = tile.isAutoTile || isFrozenSmartTile;
+    const displayHeight = isSmartRendered ? TILE_SIZE : (liveCustomTile?.frameHeight || tile.frameHeight || TILE_SIZE);
+    const displayWidth = isSmartRendered ? TILE_SIZE : (liveCustomTile?.frameWidth || tile.frameWidth || displayHeight);
+    
+    // Compute Z-Index so WebGL can do depth sorting natively
+    const zIndex = (tileLayer * 100000) + (tile.y + (tile.offsetY || 0) / TILE_SIZE);
 
   const frameCount = liveCustomTile?.frameCount || tile.frameCount || 1;
   const isAnimated = (liveCustomTile?.isSpritesheet || tile.isSpritesheet) && frameCount > 1;
   const speed = Number(liveCustomTile?.animationSpeed || tile.animationSpeed || 1);
-  
-  // Compute Z-Index so WebGL can do depth sorting natively
-  const zIndex = (tileLayer * 100000) + (tile.y + (tile.offsetY || 0) / TILE_SIZE);
 
   const spriteRef = useRef<PIXI.Sprite | null>(null);
   const prevFrameRef = useRef(-1);
@@ -338,8 +338,8 @@ const SmartPixiTile = React.memo(({
       width={displayWidth}
       height={displayHeight}
       rotation={tile.rotation || 0}
-      isInteractive={tileLayer !== 0 || selectedTool === 'rotate' || selectedTool === 'select'}
-      onMouseDown={(e: any) => onPropMouseDown?.(tile.id, e)}
+      isInteractive={false}
+      onMouseDown={undefined}
       foamTexture={foamTexture}
       quarterTextures={quarterTextures || undefined}
       foamQuarterTextures={foamQuarterTextures || undefined}
@@ -488,7 +488,6 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
   const dirtSheetUrl = useMapStore(state => state.dirtSheetUrl);
   const waterSheetUrl = useMapStore(state => state.waterSheetUrl);
   const selection = useMapStore(state => state.selection);
-  const cursorCoords = useCursorStore(state => state.cursorCoords);
 
   // Pre-calculate custom tile lookup map for O(1) access during culling and rendering
   const customTileLookup = useMemo(() => {
@@ -560,14 +559,12 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
         key={`${tile.id}-${tile.bitmask}-${tile.foamBitmask}`} tile={tile} customTileLookup={customTileLookup}
         autoTileSheetUrl={autoTileSheetUrl} dirtSheetUrl={dirtSheetUrl} waterSheetUrl={waterSheetUrl}
         isFoamEnabled={isFoamEnabled} foamStripTile={foamStripTile} worldSize={worldSize}
-        onPropMouseDown={stableOnPropMouseDown} showDebugNumbers={showDebugNumbers}
-        selectedTool={selectedTool}
+        showDebugNumbers={showDebugNumbers}
       />
     ));
   }, [
     visibleTiles, customTileLookup, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl,
-    isFoamEnabled, foamStripTile, worldSize, stableOnPropMouseDown, showDebugNumbers,
-    selectedTool
+    isFoamEnabled, foamStripTile, worldSize, showDebugNumbers
   ]);
 
   return (
