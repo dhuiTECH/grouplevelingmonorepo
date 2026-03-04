@@ -11,9 +11,10 @@ const CHUNK_SIZE = 16;
 const GRID_REFRESH_DISTANCE = 5;
 
 // Buffer zone: grid is larger than "visible" so we don't need a new array every few steps.
-// 25x25 grid (radius 12) = 5-tile buffer each side; only refresh when player leaves that buffer.
-const VISIBLE_RADIUS_X = 12;
-const VISIBLE_RADIUS_Y = 12;
+// 30x30 grid (radius 15) = 10-tile buffer each side if refresh is at 5.
+// Prevents flickering at edges on large screens (iPad, Pro Max) during fast movement.
+const VISIBLE_RADIUS_X = 18;
+const VISIBLE_RADIUS_Y = 20;
 
 // Keep prefetch large so DB background fetching remains seamless
 const PREFETCH_RADIUS_X = 32;

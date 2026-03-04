@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect, useRef } from 'react';
 import { Dimensions, View, StyleSheet } from 'react-native';
-import { Canvas, Group, Fill, Rect as SkiaRect, useClock } from '@shopify/react-native-skia';
+import { Canvas, Group, Fill, Rect as SkiaRect, useClock, Skia, Picture, FilterMode } from '@shopify/react-native-skia';
 import Reanimated, {
   useSharedValue,
   useDerivedValue,
@@ -18,6 +18,7 @@ import { SkiaTile } from './SkiaTile';
 import { useTileLibrary } from '../../contexts/TileContext';
 import { SkiaLayeredAvatar } from './SkiaLayeredAvatar';
 import { SkiaPetSprite } from './SkiaPetSprite';
+import { getPixiTextureCoords, getLiquidTextureCoords } from './mapUtils';
 
 interface SkiaWorldMapProps {
   visionGrid: any[];
@@ -312,55 +313,74 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     collisionDataRef.value = collisionObj;
   }, [collisionMap]);
 
-  // Extract layers and sort props by zIndex (single pass)
-  const sortedLayers = useMemo(() => {
-    const lMinus1: any[] = [];
-    const l0: any[] = [];
-    const props: any[] = [];
+  // Extract layers and sort ALL tiles by zIndex (single pass)
+  const sortedTiles = useMemo(() => {
+    const all: any[] = [];
+
+    // OVERSCAN BUFFER CULLING
+    let gMinX = Infinity, gMaxX = -Infinity, gMinY = Infinity, gMaxY = -Infinity;
+    if (visionGrid && visionGrid.length > 0) {
+      for (let i = 0; i < visionGrid.length; i++) {
+        const c = visionGrid[i];
+        if (c.x < gMinX) gMinX = c.x;
+        if (c.x > gMaxX) gMaxX = c.x;
+        if (c.y < gMinY) gMinY = c.y;
+        if (c.y > gMaxY) gMaxY = c.y;
+      }
+    } else {
+       gMinX = spawnX; gMaxX = spawnX;
+       gMinY = spawnY; gMaxY = spawnY;
+    }
+
+    const gridCenterX = (gMinX + gMaxX) / 2;
+    const gridCenterY = (gMinY + gMaxY) / 2;
+
+    const BUFFER = 10;
+    const screenTilesX = Math.ceil(width / tileSize);
+    const screenTilesY = Math.ceil(height / tileSize);
+    const halfScreenX = Math.ceil(screenTilesX / 2);
+    const halfScreenY = Math.ceil(screenTilesY / 2);
+
+    const minX = gridCenterX - halfScreenX - BUFFER;
+    const maxX = gridCenterX + halfScreenX + BUFFER;
+    const minY = gridCenterY - halfScreenY - BUFFER;
+    const maxY = gridCenterY + halfScreenY + BUFFER;
 
     if (visionGrid) {
       for (let i = 0; i < visionGrid.length; i++) {
         const cell = visionGrid[i];
+        
+        // Skip tiles outside the buffered viewport
+        if (cell.x < minX || cell.x > maxX || cell.y < minY || cell.y > maxY) continue;
+
         if (!cell?.tiles) continue;
 
         for (let j = 0; j < cell.tiles.length; j++) {
           const t = cell.tiles[j];
-          // Skip invisible collision/edge-block layers — they carry walkability data only
-          const rawLayer = (t.layer !== undefined && t.layer !== null) ? Number(t.layer) : 0;
-          if (rawLayer <= -2) continue;
+          if (!t) continue;
 
           const cleanUrl = t.cleanUrl;
           const dictData = cleanUrl ? tileLibrary.get(cleanUrl) : null;
 
-          // Determine logical layer. Priority: Chunk Data -> Dictionary Data -> Default 0
-          let tileLayer = rawLayer !== 0 ? rawLayer : (isNaN(Number(dictData?.layer)) ? 0 : Number(dictData?.layer));
-          const isWater = (t.type === 'water') || (dictData?.type === 'water') || (dictData?.category === 'water_base');
+          // Compute Z-Index logic to match PixiMapCanvas
+          const tileLayer = t.layer || 0;
+          
+          // Z-Index calculation: (layer * 100000) + (y + offsetY/TILE_SIZE)
+          // This ensures higher layers are always on top, and same-layer tiles are Y-sorted.
+          const zIndex = (tileLayer * 100000) + (cell.y + (t.offsetY || 0) / tileSize);
 
-          if (tileLayer < 0 || isWater) {
-            // Push flat array [tile, absX, absY, index, cleanUrl, dictData]
-            lMinus1.push([t, cell.x, cell.y, j, cleanUrl, dictData]);
-          } else if (tileLayer === 0) {
-            l0.push([t, cell.x, cell.y, j, cleanUrl, dictData]);
-          } else {
-            // Y-sort props by their visual bottom edge
-            const frameHeight = dictData?.frame_height ?? t.frameHeight ?? t.frame_height ?? 48;
-            const displayHeight = frameHeight * (tileSize / 48);
-            const finalTop = cell.y * tileSize - (displayHeight - tileSize) + (t.offsetY || 0);
-            const zIndex = (tileLayer + 10) * 100 + Math.floor(finalTop + displayHeight);
-            // [tile, absX, absY, index, cleanUrl, dictData, zIndex]
-            props.push([t, cell.x, cell.y, j, cleanUrl, dictData, zIndex]);
-          }
+          all.push([t, cell.x, cell.y, j, cleanUrl, dictData, zIndex, tileLayer]);
         }
       }
     }
 
-    // Sort the flat arrays by the 6th index (zIndex)
-    props.sort((a, b) => a[6] - b[6]);
+    // Sort by zIndex
+    all.sort((a, b) => a[6] - b[6]);
 
-    return { layerMinus1Tiles: lMinus1, layer0Tiles: l0, allProps: props };
-  }, [visionGrid, tileSize, tileLibrary]);
+    return all;
+  }, [visionGrid, tileSize, tileLibrary, spawnX, spawnY]);
 
-  const { layerMinus1Tiles, layer0Tiles, allProps } = sortedLayers;
+  const allVisibleTiles = sortedTiles;
 
   const spritesheet = activePet?.pet_details?.metadata?.visuals?.walking_spritesheet;
 
@@ -369,9 +389,9 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       <Canvas style={{ position: 'absolute', width, height, zIndex: 1 }} pointerEvents="none">
         <Fill color="#1a1c0e" />
         <Group transform={transform}>
-          {layerMinus1Tiles.map((e) => (
+          {allVisibleTiles.map((e) => (
             <SkiaTile
-              key={`tile-${e[0].id || (e[1] + ',' + e[2] + ',' + (e[0].layer || -1) + ',' + e[3])}`}
+              key={`tile-${e[0].id || (e[1] + ',' + e[2] + ',' + e[7] + ',' + e[3])}`}
               tile={e[0]}
               absPx={e[1] * tileSize}
               absPy={e[2] * tileSize}
@@ -380,37 +400,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
               mapSettings={mapSettings}
               animationFrame={animationFrame}
               foamOpacity={foamOpacity}
-              isProp={false}
-              dictionaryData={e[5]}
-            />
-          ))}
-          {layer0Tiles.map((e) => (
-            <SkiaTile
-              key={`tile-${e[0].id || (e[1] + ',' + e[2] + ',' + (e[0].layer || 0) + ',' + e[3])}`}
-              tile={e[0]}
-              absPx={e[1] * tileSize}
-              absPy={e[2] * tileSize}
-              tileSize={tileSize}
-              images={images}
-              mapSettings={mapSettings}
-              animationFrame={animationFrame}
-              foamOpacity={foamOpacity}
-              isProp={false}
-              dictionaryData={e[5]}
-            />
-          ))}
-          {allProps.map((e) => (
-            <SkiaTile
-              key={`tile-${e[0].id || (e[1] + ',' + e[2] + ',' + (e[0].layer || 1) + ',' + e[3])}`}
-              tile={e[0]}
-              absPx={e[1] * tileSize}
-              absPy={e[2] * tileSize}
-              tileSize={tileSize}
-              images={images}
-              mapSettings={mapSettings}
-              animationFrame={animationFrame}
-              foamOpacity={foamOpacity}
-              isProp={true}
+              isProp={e[7] > 0}
               dictionaryData={e[5]}
             />
           ))}
