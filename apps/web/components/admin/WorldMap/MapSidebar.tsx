@@ -34,17 +34,44 @@ const getImageDimensions = (file: File): Promise<{ width: number; height: number
 };
 
 export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, onGoToNode }) => {
-  const { 
-    tiles, nodes, selectedNodeId, updateNode, removeNode, customTiles, addCustomTile, removeCustomTile, 
-    selectedTileId, selectTile, setTool, selectedTool, activeNodeType, exportMap, updateCustomTile,
-    isSmartMode, setSmartMode, isRaiseMode, setRaiseMode, isFoamEnabled, setFoamEnabled,
-    autoTileSheetUrl, setAutoTileSheetUrl, 
-    selectedSmartType, setSelectedSmartType, dirtSheetUrl, setDirtSheetUrl,
-    waterSheetUrl, setWaterSheetUrl,
-    selectedWaterBaseId, setSelectedWaterBaseId, selectedFoamStripId, setSelectedFoamStripId,
-    waterBaseTile, foamStripTile, sidebarWidth, layerSettings, setLayerVisibility, setLayerLocked,
-    favorites, setFavorite, loadTilesFromSupabase, forceSyncAllChunks
-  } = useMapStore();
+  // ⚡️ ATOMIC SELECTORS - No 'tiles' array here! The sidebar will never re-render when painting!
+  const nodes = useMapStore(state => state.nodes);
+  const selectedNodeId = useMapStore(state => state.selectedNodeId);
+  const customTiles = useMapStore(state => state.customTiles);
+  const selectedTileId = useMapStore(state => state.selectedTileId);
+  const selectedTool = useMapStore(state => state.selectedTool);
+  const isFoamEnabled = useMapStore(state => state.isFoamEnabled);
+  const autoTileSheetUrl = useMapStore(state => state.autoTileSheetUrl);
+  const dirtSheetUrl = useMapStore(state => state.dirtSheetUrl);
+  const waterSheetUrl = useMapStore(state => state.waterSheetUrl);
+  const selectedWaterBaseId = useMapStore(state => state.selectedWaterBaseId);
+  const selectedFoamStripId = useMapStore(state => state.selectedFoamStripId);
+  const sidebarWidth = useMapStore(state => state.sidebarWidth);
+  const layerSettings = useMapStore(state => state.layerSettings);
+  const favorites = useMapStore(state => state.favorites);
+
+  // Actions
+  const updateNode = useMapStore(state => state.updateNode);
+  const removeNode = useMapStore(state => state.removeNode);
+  const addCustomTile = useMapStore(state => state.addCustomTile);
+  const removeCustomTile = useMapStore(state => state.removeCustomTile);
+  const selectTile = useMapStore(state => state.selectTile);
+  const setTool = useMapStore(state => state.setTool);
+  const exportMap = useMapStore(state => state.exportMap);
+  const updateCustomTile = useMapStore(state => state.updateCustomTile);
+  const setFoamEnabled = useMapStore(state => state.setFoamEnabled);
+  const setAutoTileSheetUrl = useMapStore(state => state.setAutoTileSheetUrl);
+  const setDirtSheetUrl = useMapStore(state => state.setDirtSheetUrl);
+  const setWaterSheetUrl = useMapStore(state => state.setWaterSheetUrl);
+  const setSelectedWaterBaseId = useMapStore(state => state.setSelectedWaterBaseId);
+  const setSelectedFoamStripId = useMapStore(state => state.setSelectedFoamStripId);
+  const waterBaseTile = useMapStore(state => state.waterBaseTile);
+  const foamStripTile = useMapStore(state => state.foamStripTile);
+  const setLayerVisibility = useMapStore(state => state.setLayerVisibility);
+  const setLayerLocked = useMapStore(state => state.setLayerLocked);
+  const setFavorite = useMapStore(state => state.setFavorite);
+  const forceSyncAllChunks = useMapStore(state => state.forceSyncAllChunks);
+  const reorderCustomTiles = useMapStore(state => state.reorderCustomTiles);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const roadInputRef = useRef<HTMLInputElement>(null);
   const propInputRef = useRef<HTMLInputElement>(null);
@@ -67,8 +94,6 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
     (selectedFoamStripId && foamStripTile()?.id === selectedTileId ? foamStripTile() : undefined);
 
   const [activeTab, setActiveTab] = React.useState<'water' | 'ground' | 'road' | 'prop' | 'structure' | 'mountain' | 'big_structure'>('ground');
-
-  const { reorderCustomTiles } = useMapStore();
 
   const filteredTiles = React.useMemo(() => {
     return customTiles.filter(t => {
