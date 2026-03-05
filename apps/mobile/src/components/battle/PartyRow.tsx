@@ -19,6 +19,7 @@ interface PartyRowProps {
   allShopItems?: any[];
   petAction?: 'idle' | 'walk' | 'enter';
   onPetEnterComplete?: () => void;
+  lastDamageEvent?: any;
 }
 
 export function PartyRow({
@@ -34,6 +35,7 @@ export function PartyRow({
   allShopItems,
   petAction = 'idle',
   onPetEnterComplete,
+  lastDamageEvent,
 }: PartyRowProps) {
   return (
     <Animated.View style={[styles.partyContainer, { opacity: partyOpacity }]}>
@@ -63,11 +65,11 @@ export function PartyRow({
                   size={110}
                   square
                   hideBackground
-                  // In battle: play the spritesheet ONCE when the pet first enters,
-                  // then snap back to the first frame and stay idle/breathing.
+                  // Play spritesheet ONCE for entrance and every time it performs an action (attack/damage event).
+                  // We no longer rely on the generic petSpriteActive for the playback key to avoid double-triggers.
                   animate={false}
-                  playOnceKey={petAction === 'enter' ? char.id : undefined}
-                  breathe={petAction !== 'enter'}
+                  playOnceKey={(petAction === 'enter' || (lastDamageEvent?.casterCharId === char.id)) ? `${char.id}-${petAction}-${lastDamageEvent?.timestamp || 0}` : undefined}
+                  breathe={!petSpriteActive && petAction !== 'enter'}
                   onPlayOnceComplete={onPetEnterComplete}
                 />
               ) : char.avatar ? (

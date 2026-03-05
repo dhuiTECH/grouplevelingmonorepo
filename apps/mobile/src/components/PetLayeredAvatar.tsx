@@ -174,31 +174,20 @@ const PetLayeredAvatarInternal = ({
       <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ scaleY }] }]}>
         {uri && spriteConfig ? (
           <View style={[styles.window, { width: safeSize, height: safeSize, borderRadius }]}>
-            {animate ? (
-              <Animated.View
-                style={{
-                  width: stripWidth,
-                  height: safeSize,
-                  transform: [{ translateX }],
-                }}
-              >
-                <Image
-                  source={{ uri }}
-                  style={{ width: stripWidth, height: safeSize }}
-                  contentFit="fill"
-                  cachePolicy="memory-disk"
-                />
-              </Animated.View>
-            ) : (
-              <View style={{ width: stripWidth, height: safeSize }}>
-                <Image
-                  source={{ uri }}
-                  style={{ width: stripWidth, height: safeSize }}
-                  contentFit="fill"
-                  cachePolicy="memory-disk"
-                />
-              </View>
-            )}
+            <Animated.View
+              style={{
+                width: stripWidth,
+                height: safeSize,
+                transform: [{ translateX }],
+              }}
+            >
+              <Image
+                source={{ uri }}
+                style={{ width: stripWidth, height: safeSize }}
+                contentFit="fill"
+                cachePolicy="memory-disk"
+              />
+            </Animated.View>
           </View>
         ) : uri ? (
           <Image

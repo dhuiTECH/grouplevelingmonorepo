@@ -183,14 +183,16 @@ export default function BattleScreen() {
     if (isTransitioning) return;
     // Removed 80ms delay and shortened duration to 250ms for snappier appearance
     Animated.timing(partyOpacity, { toValue: 1, duration: 250, useNativeDriver: true }).start();
+    // Trigger pet entrance animation once in position
+    setPetAction('enter');
   }, [isTransitioning]);
 
-  const [petSpriteActive, setPetSpriteActive] = useState(true);
-  const [enemySpriteActive, setEnemySpriteActive] = useState(true);
+  const [petSpriteActive, setPetSpriteActive] = useState(false);
+  const [enemySpriteActive, setEnemySpriteActive] = useState(false);
   
   // Pet and enemy animation actions
-  const [petAction, setPetAction] = useState<'idle' | 'enter'>('enter'); // Start with enter animation
-  const [enemyAction, setEnemyAction] = useState<'idle' | 'enter'>('enter'); // Start with enter animation
+  const [petAction, setPetAction] = useState<'idle' | 'enter'>('idle'); // Start idle, trigger after transition
+  const [enemyAction, setEnemyAction] = useState<'idle' | 'enter'>('enter'); // Enemy can start enter immediately as they are on top
 
   const petInParty = party.find((c: any) => c.type === 'pet');
   const petCycleDuration = useMemo(() => {
@@ -1009,6 +1011,7 @@ export default function BattleScreen() {
                 allShopItems={allShopItems}
                 petAction={petAction}
                 onPetEnterComplete={() => setPetAction('idle')}
+                lastDamageEvent={lastDamageEvent}
               />
           </View>
 

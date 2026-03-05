@@ -1320,6 +1320,17 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
     const dmg = ability ? Math.floor(ability.power) : 20;
 
     const timer = setTimeout(() => {
+      // Trigger damage event and HP update together so they are "at the same time"
+      setLastDamageEvent({
+        targetId: 'ENEMY',
+        value: dmg,
+        type: 'damage',
+        timestamp: Date.now(),
+        casterCharId: pet.id,
+        skillId: ability?.id,
+        abilityName: ability?.name,
+      });
+
       setEnemy((prev: any) => {
         if (!prev) return null;
         const newHp = Math.max(0, prev.hp - dmg);
@@ -1329,24 +1340,20 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
         }
         return { ...prev, hp: newHp };
       });
-      setLastDamageEvent({
-        targetId: 'ENEMY',
-        value: dmg,
-        type: 'damage',
-        timestamp: Date.now(),
-        casterCharId: pet.id,
-      });
+      
       if (isBoss && raidId && dmg > 0 && user?.id) {
         supabase.rpc('land_raid_hit', { t_raid_id: raidId, t_user_id: user.id, t_damage: dmg });
       }
+
+      // Advance turn after the impact
       setTimeout(() => {
         if (!battleEndedRef.current) {
           setQueueIndex(prev => prev + 1);
           startPlayerTurn();
         }
         petTurnStartedRef.current = false;
-      }, 100);
-    }, 800);
+      }, 400);
+    }, 400); // Initial wind-up before the pet "strikes"
 
     return () => clearTimeout(timer);
   }, [queueIndex, currentPhase, activeActorType, lastSkillAnimationConfig]);
