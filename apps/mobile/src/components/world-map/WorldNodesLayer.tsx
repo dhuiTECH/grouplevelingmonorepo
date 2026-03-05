@@ -1,7 +1,5 @@
 import React, { memo } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
-import { Image } from 'expo-image';
-import { mapNodeIcon } from '@/utils/assetMapper';
+import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
 import { worldMapStyles } from '@/screens/WorldMapScreen.styles';
 
 interface MapNode {
@@ -21,41 +19,44 @@ interface WorldNodesLayerProps {
 
 function WorldNodesLayerInner({ nodes, tileSize, onSelectNode }: WorldNodesLayerProps) {
   return (
-    <>
+    // pointerEvents="box-none" ensures the wrapper doesn't block touches to the map
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {(nodes || []).map((node) => {
         const nodeLeft = node.x * tileSize;
         const nodeTop = node.y * tileSize;
+        
         return (
           <View
-            key={`node-${node.id}`}
-            style={[
-              worldMapStyles.tile,
-              {
+            key={`node-wrapper-${node.id}`}
+            style={{
+              position: 'absolute',
+              left: nodeLeft,
+              top: nodeTop,
+              width: tileSize,
+              height: tileSize,
+              zIndex: 1000 - Math.floor(node.y),
+              alignItems: 'center',
+            }}
+            pointerEvents="box-none"
+          >
+            <TouchableOpacity
+              onPress={() => onSelectNode(node)}
+              activeOpacity={1}
+              style={{
                 width: tileSize,
                 height: tileSize,
-                position: 'absolute',
-                left: nodeLeft,
-                top: nodeTop,
-                zIndex: 1000 - Math.floor(node.y),
-              },
-            ]}
-          >
-            <TouchableOpacity onPress={() => onSelectNode(node)} activeOpacity={0.7}>
-              <View style={worldMapStyles.nodeContainer}>
-                <View style={worldMapStyles.nodeIconWrapper}>
-                  <Image
-                    source={mapNodeIcon(node.icon_url, node.type)}
-                    style={worldMapStyles.nodeIcon}
-                    contentFit="contain"
-                  />
-                </View>
-                <Text style={worldMapStyles.nodeLabel}>{node.name}</Text>
-              </View>
-            </TouchableOpacity>
+                backgroundColor: 'transparent',
+              }}
+            />
+            <View style={{ position: 'absolute', bottom: -18, alignItems: 'center', width: tileSize * 2 }} pointerEvents="none">
+              <Text style={worldMapStyles.nodeLabel} numberOfLines={1}>
+                {node.name}
+              </Text>
+            </View>
           </View>
         );
       })}
-    </>
+    </View>
   );
 }
 

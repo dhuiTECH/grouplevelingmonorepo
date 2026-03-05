@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { View, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { PetSprite } from './PetSprite';
-import { getPetSpriteSource } from '@/utils/pet-sprites';
+import { getPetSpriteSource, getPetSpriteConfig } from '@/utils/pet-sprites';
 
 function toNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -48,72 +48,63 @@ export const OptimizedPetAvatar = ({
   const borderRadius = square ? 12 : safeSize / 2;
   const effectiveBackground = background || petDetails?.metadata?.equipped_background;
 
-  // 1. Determine which spritesheet to use based on spritesheetType
-  const { imageUrl, spriteData, isAnimatedSheet } = useMemo(() => {
+  // 1. Determine which image URL to use (Always prefer a high-res spritesheet URL)
+  const imageUrl = useMemo(() => {
     const visuals = petDetails?.metadata?.visuals;
     const legacyUrl = getPetSpriteSource(petDetails);
-    
-    if (spritesheetType === 'walking') {
-      const walkSheet = visuals?.walking_spritesheet;
-      if (walkSheet && toStringOrNull(walkSheet.url)) {
-        return { 
-          imageUrl: toStringOrNull(walkSheet.url)!, 
-          spriteData: walkSheet,
-          isAnimatedSheet: true
-        };
-      }
-    } else {
-      const monsterUrl = visuals?.monster_url;
-      const spriteSheet = visuals?.spritesheet;
-      if (monsterUrl && spriteSheet) {
-        return {
-          imageUrl: monsterUrl,
-          spriteData: spriteSheet,
-          isAnimatedSheet: true
-        };
-      }
+
+    const walkSheetUrl = toStringOrNull(visuals?.walking_spritesheet?.url);
+    const monsterUrl = toStringOrNull(visuals?.monster_url);
+    const spriteSheetUrl =
+      toStringOrNull(visuals?.spritesheet?.url) ??
+      toStringOrNull(visuals?.spritesheet_url);
+
+    // A. If it asks for 'walking' and we have it, use that dedicated sheet.
+    if (spritesheetType === 'walking' && walkSheetUrl) {
+      return walkSheetUrl;
     }
-    
-    return { 
-      imageUrl: legacyUrl || '', 
-      spriteData: null,
-      isAnimatedSheet: false
-    };
+
+    // B. If it asks for 'monster' and we have a monster/spritesheet URL, use that.
+    if (spritesheetType === 'monster' && (monsterUrl || spriteSheetUrl)) {
+      return monsterUrl ?? spriteSheetUrl!;
+    }
+
+    // C. THE FIX: If the requested sheet is missing, grab ANY available high-res spritesheet URL.
+    if (walkSheetUrl) return walkSheetUrl;
+    if (spriteSheetUrl) return spriteSheetUrl;
+    if (monsterUrl) return monsterUrl;
+
+    // D. Absolute last resort: whatever getPetSpriteSource gives us (may be a thumbnail).
+    return legacyUrl || '';
   }, [petDetails, spritesheetType]);
 
-  // 2. Extract Math from the selected spritesheet
+  // 2. Extract math from the selected spritesheet metadata (match PetLayeredAvatar / getPetSpriteConfig)
+  const spriteConfig = useMemo(() => getPetSpriteConfig(petDetails), [petDetails]);
+
   const { totalFrames, durationMs, frameWidth, frameHeight, idleIndex } = useMemo(() => {
-    if (isAnimatedSheet && spriteData) {
-      const fWidth = toNumber(spriteData.frame_width) ?? 64;
-      const fHeight = toNumber(spriteData.frame_height) ?? 64;
-      const tFrames = toNumber(spriteData.frame_count) ?? 1;
-      const dMs = toNumber(spriteData.duration_ms) ?? 1000;
-      
-      let iIndex = toNumber(spriteData.idle_frame);
-      if (iIndex == null && spriteData.idle_loop_range && Array.isArray(spriteData.idle_loop_range)) {
-        iIndex = spriteData.idle_loop_range[0];
-      }
-      if (iIndex == null) {
-        iIndex = toNumber(spriteData.start_frame) ?? 0;
-      }
+    if (spriteConfig) {
+      const fWidth = spriteConfig.frameWidth || 64;
+      const fHeight = spriteConfig.frameHeight || 64;
+      const tFrames = spriteConfig.totalFrames || 1;
+      const fps = spriteConfig.fps || 10;
 
       return {
         totalFrames: Math.max(1, Math.floor(tFrames)),
-        durationMs: dMs,
+        durationMs: Math.max(1, Math.floor((tFrames * 1000) / fps)),
         frameWidth: fWidth,
         frameHeight: fHeight,
-        idleIndex: iIndex
+        idleIndex: 0, // First frame as idle
       };
     }
-    
+
     return {
       totalFrames: 1,
       durationMs: 1000,
       frameWidth: safeSize,
       frameHeight: safeSize,
-      idleIndex: 0
+      idleIndex: 0,
     };
-  }, [isAnimatedSheet, spriteData, safeSize]);
+  }, [spriteConfig, safeSize]);
 
   // 3. Calculate Scale
   // We need to fit the larger dimension into safeSize with a safety margin

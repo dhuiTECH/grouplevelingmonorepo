@@ -13,6 +13,10 @@ interface PetLayeredAvatarProps {
   breathe?: boolean;
   borderRadius?: number;
   background?: string | null; // Added prop for background URL
+  /** Optional key to trigger a one-shot spritesheet playback (non-looping). */
+  playOnceKey?: string | number;
+  /** Called after a one-shot playback finishes. */
+  onPlayOnceComplete?: () => void;
 }
 
 const PetLayeredAvatarInternal = ({
@@ -25,6 +29,8 @@ const PetLayeredAvatarInternal = ({
   breathe = true,
   borderRadius: customBorderRadius,
   background, // Destructure new prop
+  playOnceKey,
+  onPlayOnceComplete,
 }: PetLayeredAvatarProps): JSX.Element => {
   const uri = useMemo(() => getPetSpriteSource(petDetails), [petDetails]);
   const spriteConfig = useMemo(() => getPetSpriteConfig(petDetails), [petDetails]);
@@ -36,13 +42,57 @@ const PetLayeredAvatarInternal = ({
   const frameAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (!spriteConfig || !animate || totalFrames <= 1) {
+    if (!spriteConfig || totalFrames <= 1) {
       frameAnim.setValue(0);
       return;
     }
 
     const frameDuration = 1000 / fps;
-    const steps = [];
+
+    // One-shot playback when playOnceKey is provided.
+    if (playOnceKey !== undefined && playOnceKey !== null) {
+      frameAnim.setValue(0);
+
+      const steps: Animated.CompositeAnimation[] = [];
+      for (let i = 0; i < totalFrames; i++) {
+        steps.push(
+          Animated.timing(frameAnim, {
+            toValue: i,
+            duration: 0,
+            easing: Easing.step0,
+            useNativeDriver: true,
+          }),
+          Animated.delay(frameDuration),
+        );
+      }
+
+      // After reaching the last frame, snap back to frame 0 (idle) and notify caller.
+      steps.push(
+        Animated.timing(frameAnim, {
+          toValue: 0,
+          duration: 0,
+          easing: Easing.step0,
+          useNativeDriver: true,
+        }),
+      );
+
+      const sequence = Animated.sequence(steps);
+      sequence.start(() => {
+        onPlayOnceComplete?.();
+      });
+
+      return () => {
+        sequence.stop();
+      };
+    }
+
+    // Looping animation when animate=true and no one-shot key.
+    if (!animate) {
+      frameAnim.setValue(0);
+      return;
+    }
+
+    const steps: Animated.CompositeAnimation[] = [];
     for (let i = 0; i < totalFrames; i++) {
       steps.push(
         Animated.timing(frameAnim, {
@@ -58,7 +108,7 @@ const PetLayeredAvatarInternal = ({
     const loop = Animated.loop(Animated.sequence(steps));
     loop.start();
     return () => loop.stop();
-  }, [spriteConfig, animate, totalFrames, fps, frameAnim]);
+  }, [spriteConfig, animate, totalFrames, fps, frameAnim, playOnceKey, onPlayOnceComplete]);
 
   const interpFrames = Math.max(2, totalFrames);
   const translateX = frameAnim.interpolate({
@@ -171,6 +221,7 @@ export const PetLayeredAvatar = React.memo(PetLayeredAvatarInternal, (prev, next
   if (prev.breathe !== next.breathe) return false;
   if (prev.hideBackground !== next.hideBackground) return false;
   if (prev.background !== next.background) return false;
+  if (prev.playOnceKey !== next.playOnceKey) return false;
   
   if (prev.petDetails?.id !== next.petDetails?.id) return false;
   if (prev.petDetails?.image_url !== next.petDetails?.image_url) return false;

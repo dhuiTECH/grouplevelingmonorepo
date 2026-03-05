@@ -294,6 +294,7 @@ export const WorldMapScreen = () => {
 
         <SkiaWorldMap
           visionGrid={visionGrid}
+          nodesInVision={nodesInVision}
           mapSettings={mapSettings}
           spawnX={user?.world_x ?? 0}
           spawnY={user?.world_y ?? 0}

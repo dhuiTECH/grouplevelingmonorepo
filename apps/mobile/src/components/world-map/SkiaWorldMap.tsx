@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect, useRef } from 'react';
 import { Dimensions, View, StyleSheet } from 'react-native';
-import { Canvas, Group, Fill, Rect as SkiaRect, useClock, Skia, Picture, FilterMode } from '@shopify/react-native-skia';
+import { Canvas, Group, Fill, Rect as SkiaRect, useClock, Skia, Picture, FilterMode, Circle, Image as SkiaImage } from '@shopify/react-native-skia';
 import Reanimated, {
   useSharedValue,
   useDerivedValue,
@@ -22,6 +22,7 @@ import { getPixiTextureCoords, getLiquidTextureCoords } from './mapUtils';
 
 interface SkiaWorldMapProps {
   visionGrid: any[];
+  nodesInVision?: any[];
   mapSettings: any;
   spawnX: number;
   spawnY: number;
@@ -56,6 +57,7 @@ const RUN_DURATION = 134;
 
 const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   visionGrid,
+  nodesInVision,
   mapSettings,
   spawnX,
   spawnY,
@@ -138,8 +140,15 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
         }
       }
     }
+
+    if (nodesInVision) {
+      for (let i = 0; i < nodesInVision.length; i++) {
+        const url = nodesInVision[i].icon_url;
+        if (url) urls.add(url.split('?')[0]);
+      }
+    }
     return Array.from(urls);
-  }, [visibleGrid, mapSettings, activePet]);
+  }, [visibleGrid, mapSettings, activePet, nodesInVision]);
 
   const images = useSkiaAssets(urlsToLoad);
 
@@ -417,6 +426,59 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
                     </Group>
                   );
                 })}
+              </Group>
+            );
+          })}
+
+          {/* NATIVE SKIA NODE RENDERING (Zero Shaking!) */}
+          {nodesInVision?.map((node) => {
+            // 1. Get the pre-loaded image from Supabase
+            const cleanUrl = node.icon_url?.split('?')[0];
+            const img = cleanUrl ? images.get(cleanUrl) : null;
+            
+            // 2. Calculate exact pixel-perfect positions
+            const nodeX = Math.round(node.x * tileSize);
+            const nodeY = Math.round(node.y * tileSize);
+            const centerX = Math.round(nodeX + tileSize / 2);
+            const centerY = Math.round(nodeY + tileSize / 2);
+            const radius = Math.round(tileSize * 0.45); 
+            const tokenSize = radius * 2;
+
+            return (
+              <Group 
+                key={`skia-node-${node.id}`}
+                clip={Skia.RRectXY(Skia.XYWHRect(centerX - radius, centerY - radius, tokenSize, tokenSize), radius, radius)}
+              >
+                {/* The Opaque Pedestal/Background */}
+                <Circle
+                  cx={centerX}
+                  cy={centerY}
+                  r={radius}
+                  color="rgba(15, 23, 42, 0.8)"
+                />
+
+                {/* The NPC Sprite - Fills the token area, clipped by the circle */}
+                {img && (
+                  <SkiaImage
+                    image={img}
+                    x={centerX - radius}
+                    y={centerY - radius} 
+                    width={tokenSize}
+                    height={tokenSize}
+                    fit="contain"
+                    sampling={{ filter: FilterMode.Nearest }}
+                  />
+                )}
+                
+                {/* The Bright Blue Token Border */}
+                <Circle
+                  cx={centerX}
+                  cy={centerY}
+                  r={radius}
+                  color="rgba(59, 130, 246, 1.0)"
+                  style="stroke"
+                  strokeWidth={2}
+                />
               </Group>
             );
           })}

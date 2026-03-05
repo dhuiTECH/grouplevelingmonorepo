@@ -2,7 +2,7 @@ import React, { type MutableRefObject } from 'react';
 import { View, Text, TouchableOpacity, Animated, StyleSheet } from 'react-native';
 import { ArrowUp } from 'lucide-react-native';
 import LayeredAvatar from '@/components/LayeredAvatar';
-import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
+import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
 import { StatusBarMetric } from './StatusBarMetric';
 import { COLORS } from './battleTheme';
 
@@ -58,13 +58,17 @@ export function PartyRow({
               ]}
             >
               {isPet && char.petDetails ? (
-                <OptimizedPetAvatar
+                <PetLayeredAvatar
                   petDetails={char.petDetails}
                   size={110}
                   square
                   hideBackground
-                  action={petAction}
-                  onEnterComplete={onPetEnterComplete}
+                  // In battle: play the spritesheet ONCE when the pet first enters,
+                  // then snap back to the first frame and stay idle/breathing.
+                  animate={false}
+                  playOnceKey={petAction === 'enter' ? char.id : undefined}
+                  breathe={petAction !== 'enter'}
+                  onPlayOnceComplete={onPetEnterComplete}
                 />
               ) : char.avatar ? (
                 <LayeredAvatar
