@@ -469,7 +469,14 @@ export const useMapInteraction = (
 
     if (!exists) {
       setUndoStack((prev: any[]) => [...prev, { action: 'node_add', x: nodeX, y: nodeY }]);
-      await addNode({ x: nodeX, y: nodeY, type: nodeType, name: `New ${nodeType}`, iconUrl: '' });
+      await addNode({ 
+        x: nodeX, 
+        y: nodeY, 
+        type: nodeType, 
+        name: `New ${nodeType}`, 
+        iconUrl: '',
+        properties: { can_travel_to: false }
+      });
     }
   };
 
