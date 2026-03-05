@@ -8,10 +8,10 @@ import Reanimated, {
   withRepeat,
   Easing,
   useAnimatedStyle,
-  useFrameCallback,
   runOnJS,
   SharedValue,
   cancelAnimation,
+  useAnimatedReaction,
 } from 'react-native-reanimated';
 import { useSkiaAssets } from './useSkiaAssets';
 import { SkiaTile } from './SkiaTile';
@@ -81,6 +81,41 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 }) => {
   const { tileLibrary } = useTileLibrary();
 
+  const visibleGrid = useMemo(() => {
+    if (!visionGrid || visionGrid.length === 0) return [];
+    
+    // Viewport Culling logic
+    const BUFFER_X = 8;
+    const BUFFER_Y_TOP = 8;
+    const BUFFER_Y_BOTTOM = 15;
+
+    const screenTilesX = Math.ceil(width / tileSize);
+    const screenTilesY = Math.ceil(height / tileSize);
+    const halfScreenX = Math.ceil(screenTilesX / 2);
+    const halfScreenY = Math.ceil(screenTilesY / 2);
+
+    // Calculate grid center to proxy player viewport
+    let minG = Infinity, maxG = -Infinity, minGY = Infinity, maxGY = -Infinity;
+    for (let i = 0; i < visionGrid.length; i++) {
+      const c = visionGrid[i];
+      if (c.x < minG) minG = c.x;
+      if (c.x > maxG) maxG = c.x;
+      if (c.y < minGY) minGY = c.y;
+      if (c.y > maxGY) maxGY = c.y;
+    }
+    const centerX = (minG + maxG) / 2;
+    const centerY = (minGY + maxGY) / 2;
+
+    const minX = centerX - halfScreenX - BUFFER_X;
+    const maxX = centerX + halfScreenX + BUFFER_X;
+    const minY = centerY - halfScreenY - BUFFER_Y_TOP;
+    const maxY = centerY + halfScreenY + BUFFER_Y_BOTTOM;
+
+    return visionGrid.filter(cell => 
+      cell.x >= minX && cell.x <= maxX && cell.y >= minY && cell.y <= maxY
+    );
+  }, [visionGrid, tileSize]);
+
   // Extract URLs to load - optimized to avoid unnecessary Set operations
   const urlsToLoad = useMemo(() => {
     const urls = new Set<string>();
@@ -92,9 +127,9 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     const walkSheet = activePet?.pet_details?.metadata?.visuals?.walking_spritesheet;
     if (walkSheet?.url) urls.add(walkSheet.url.split('?')[0]);
 
-    if (visionGrid) {
-      for (let i = 0; i < visionGrid.length; i++) {
-        const cell = visionGrid[i];
+    if (visibleGrid) {
+      for (let i = 0; i < visibleGrid.length; i++) {
+        const cell = visibleGrid[i];
         if (cell?.tiles) {
           for (let j = 0; j < cell.tiles.length; j++) {
             const t = cell.tiles[j];
@@ -104,7 +139,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       }
     }
     return Array.from(urls);
-  }, [visionGrid, mapSettings, activePet]);
+  }, [visibleGrid, mapSettings, activePet]);
 
   const images = useSkiaAssets(urlsToLoad);
 
@@ -141,6 +176,8 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
     if (dx >= 5 || dy >= 5) {
       isMoving.value = false;
+      cancelAnimation(mapLeft);
+      cancelAnimation(mapTop);
       mapLeft.value = -ux * tileSize - (tileSize / 2);
       mapTop.value = -uy * tileSize - (tileSize / 2);
       currentTileX.value = ux;
@@ -158,160 +195,118 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   // Collision data
   const collisionDataRef = useSharedValue<{[key: string]: {isWalkable: boolean; edgeBlocks: number}}>({});
 
-  // --- DELTA-TIME CONTINUOUS GAME LOOP ---
-  // Replaces withTiming to prevent 1-frame stutters between grid steps
-  useFrameCallback((frameInfo) => {
+  const handleTileEnter = React.useCallback((tx: number, ty: number) => {
+    if (onTileEnter) {
+      onTileEnter(tx, ty);
+    }
+  }, [onTileEnter]);
+
+  const checkTileEnter = (tx: number, ty: number) => {
     'worklet';
-    const rawDt = frameInfo.timeSincePreviousFrame;
-    if (rawDt === null) return;
+    if (tx !== lastEnteredTileX.value || ty !== lastEnteredTileY.value) {
+      lastEnteredTileX.value = tx;
+      lastEnteredTileY.value = ty;
+      runOnJS(handleTileEnter)(tx, ty);
+    }
+  };
 
-    // Cap dt to 33ms (approx 30fps drop).
-    // This prevents the camera from violently jumping if the phone lags.
-    const dt = Math.min(rawDt, 33);
-
-    if (!isMoving.value) {
-      const dirStr = activeDirection.value;
-      if (!dirStr) return;
-
-      let nx = currentTileX.value;
-      let ny = currentTileY.value;
-
-      if (dirStr === 'UP') ny -= 1;
-      else if (dirStr === 'DOWN') ny += 1;
-      else if (dirStr === 'LEFT') nx -= 1;
-      else if (dirStr === 'RIGHT') nx += 1;
-
-      const collisionData = collisionDataRef.value;
-      const targetCol = collisionData[`${nx},${ny}`];
-      if (targetCol && !targetCol.isWalkable) return;
-
-      // Edge-block collision (bitmask N=1, E=2, S=4, W=8): two-sided check,
-      // mirroring the web world's movement logic.
-      const curCol = collisionData[`${currentTileX.value},${currentTileY.value}`];
-      const currentEdgeBlocks = curCol?.edgeBlocks ?? 0;
-      const destEdgeBlocks = targetCol?.edgeBlocks ?? 0;
-
-      const blockedByEdge =
-        (dirStr === 'UP'    && ((currentEdgeBlocks & 1) || (destEdgeBlocks & 4))) ||
-        (dirStr === 'DOWN'  && ((currentEdgeBlocks & 4) || (destEdgeBlocks & 1))) ||
-        (dirStr === 'RIGHT' && ((currentEdgeBlocks & 2) || (destEdgeBlocks & 8))) ||
-        (dirStr === 'LEFT'  && ((currentEdgeBlocks & 8) || (destEdgeBlocks & 2)));
-
-      if (blockedByEdge) return;
-
-      targetX.value = nx;
-      targetY.value = ny;
-      isMoving.value = true;
+  const moveNext = () => {
+    'worklet';
+    const dirStr = activeDirection.value;
+    if (!dirStr) {
+      return;
     }
 
-    if (isMoving.value) {
-      // Convert fixed pixels to time-based speed (Pixels per millisecond)
-      // 3px at 60fps (16.6ms) = ~0.18px/ms
-      // 6px at 60fps (16.6ms) = ~0.36px/ms
-      const speed = isRunning.value ? 0.36 : 0.18;
-      const stepDistance = speed * dt;
+    let nx = currentTileX.value;
+    let ny = currentTileY.value;
 
-      const targetPixelX = -targetX.value * tileSize - (tileSize / 2);
-      const targetPixelY = -targetY.value * tileSize - (tileSize / 2);
+    if (dirStr === 'UP') ny -= 1;
+    else if (dirStr === 'DOWN') ny += 1;
+    else if (dirStr === 'LEFT') nx -= 1;
+    else if (dirStr === 'RIGHT') nx += 1;
 
-      let reachedX = false;
-      let reachedY = false;
+    const collisionData = collisionDataRef.value;
+    const targetCol = collisionData[`${nx},${ny}`];
+    
+    // 1. Check Full Block
+    if (targetCol && !targetCol.isWalkable) {
+      return;
+    }
 
-      if (mapLeft.value < targetPixelX) {
-        mapLeft.value = Math.min(mapLeft.value + stepDistance, targetPixelX);
-      } else if (mapLeft.value > targetPixelX) {
-        mapLeft.value = Math.max(mapLeft.value - stepDistance, targetPixelX);
-      }
-      if (Math.abs(mapLeft.value - targetPixelX) < 0.1) {
-        mapLeft.value = targetPixelX;
-        reachedX = true;
-      }
+    // 2. Check Edge Block
+    const curCol = collisionData[`${currentTileX.value},${currentTileY.value}`];
+    const currentEdgeBlocks = curCol?.edgeBlocks ?? 0;
+    const destEdgeBlocks = targetCol?.edgeBlocks ?? 0;
 
-      if (mapTop.value < targetPixelY) {
-        mapTop.value = Math.min(mapTop.value + stepDistance, targetPixelY);
-      } else if (mapTop.value > targetPixelY) {
-        mapTop.value = Math.max(mapTop.value - stepDistance, targetPixelY);
-      }
-      if (Math.abs(mapTop.value - targetPixelY) < 0.1) {
-        mapTop.value = targetPixelY;
-        reachedY = true;
-      }
+    const blockedByEdge =
+      (dirStr === 'UP'    && ((currentEdgeBlocks & 1) || (destEdgeBlocks & 4))) ||
+      (dirStr === 'DOWN'  && ((currentEdgeBlocks & 4) || (destEdgeBlocks & 1))) ||
+      (dirStr === 'RIGHT' && ((currentEdgeBlocks & 2) || (destEdgeBlocks & 8))) ||
+      (dirStr === 'LEFT'  && ((currentEdgeBlocks & 8) || (destEdgeBlocks & 2)));
 
-      if (reachedX && reachedY) {
-        currentTileX.value = targetX.value;
-        currentTileY.value = targetY.value;
+    if (blockedByEdge) {
+      return;
+    }
 
-        const tx = targetX.value;
-        const ty = targetY.value;
-        if (onTileEnter && (tx !== lastEnteredTileX.value || ty !== lastEnteredTileY.value)) {
-          lastEnteredTileX.value = tx;
-          lastEnteredTileY.value = ty;
-          runOnJS(onTileEnter)(tx, ty);
+    targetX.value = nx;
+    targetY.value = ny;
+    isMoving.value = true;
+
+    const targetPixelX = -nx * tileSize - (tileSize / 2);
+    const targetPixelY = -ny * tileSize - (tileSize / 2);
+    const duration = isRunning.value ? RUN_DURATION : WALK_DURATION;
+
+    if (nx !== currentTileX.value) {
+      mapLeft.value = withTiming(targetPixelX, { duration, easing: Easing.linear }, (finished) => {
+        if (finished) {
+          currentTileX.value = nx;
+          checkTileEnter(nx, ny);
+          isMoving.value = false;
         }
-
-        const dirStr = activeDirection.value;
-        if (dirStr) {
-          let nx = currentTileX.value;
-          let ny = currentTileY.value;
-          if (dirStr === 'UP') ny -= 1;
-          else if (dirStr === 'DOWN') ny += 1;
-          else if (dirStr === 'LEFT') nx -= 1;
-          else if (dirStr === 'RIGHT') nx += 1;
-
-          const collisionData = collisionDataRef.value;
-          const targetCol = collisionData[`${nx},${ny}`];
-
-          // 1. Check Full Block
-          if (targetCol && !targetCol.isWalkable) {
-            isMoving.value = false;
-            return;
-          }
-
-          // 2. Check Edge Block (This was missing from continuous movement)
-          const curCol = collisionData[`${currentTileX.value},${currentTileY.value}`];
-          const currentEdgeBlocks = curCol?.edgeBlocks ?? 0;
-          const destEdgeBlocks = targetCol?.edgeBlocks ?? 0;
-
-          const blockedByEdge =
-            (dirStr === 'UP'    && ((currentEdgeBlocks & 1) || (destEdgeBlocks & 4))) ||
-            (dirStr === 'DOWN'  && ((currentEdgeBlocks & 4) || (destEdgeBlocks & 1))) ||
-            (dirStr === 'RIGHT' && ((currentEdgeBlocks & 2) || (destEdgeBlocks & 8))) ||
-            (dirStr === 'LEFT'  && ((currentEdgeBlocks & 8) || (destEdgeBlocks & 2)));
-
-          if (blockedByEdge) {
-            isMoving.value = false;
-            return;
-          }
-
-          // Safe to keep moving
-          targetX.value = nx;
-          targetY.value = ny;
-          return;
+      });
+    } else if (ny !== currentTileY.value) {
+      mapTop.value = withTiming(targetPixelY, { duration, easing: Easing.linear }, (finished) => {
+        if (finished) {
+          currentTileY.value = ny;
+          checkTileEnter(nx, ny);
+          isMoving.value = false;
         }
+      });
+    }
+  };
 
-        isMoving.value = false;
+  useAnimatedReaction(
+    () => ({
+      dir: activeDirection.value,
+      moving: isMoving.value
+    }),
+    (state, prevState) => {
+      if (state.dir !== null && state.moving === false) {
+        if (prevState?.moving === true || prevState?.dir !== state.dir) {
+          moveNext();
+        }
       }
     }
-  });
+  );
 
   // Pre-calculate centered offsets to prevent half-pixel blurring on odd-resolution screens (e.g., iPhone 15 width is 393)
   const centerX = Math.floor(width / 2);
   const centerY = Math.floor(height / 2);
 
-  // Feed the raw, continuous floating-point values straight to Skia
+  // Snap to integers (Math.round) to eliminate sub-pixel jitter
   const transform = useDerivedValue(() => [
-    { translateX: mapLeft.value + centerX },
-    { translateY: mapTop.value + centerY }
+    { translateX: Math.round(mapLeft.value + centerX) },
+    { translateY: Math.round(mapTop.value + centerY) }
   ]);
 
   const transformStyle = useAnimatedStyle(() => ({
     transform: transform.value,
   }));
 
-  // Build collision lookup from visionGrid
+  // Build collision lookup from visibleGrid
   const collisionMap = useMemo(() => {
     const map = new Map<string, { isWalkable: boolean; edgeBlocks: number }>();
-    (visionGrid || []).forEach(cell => {
+    (visibleGrid || []).forEach(cell => {
       if (!cell) return;
       const key = `${cell.x},${cell.y}`;
       const hasBlockedTile = cell.tiles?.some((t: any) => 
@@ -324,7 +319,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       map.set(key, { isWalkable: !hasBlockedTile, edgeBlocks });
     });
     return map;
-  }, [visionGrid]);
+  }, [visibleGrid]);
 
   // Sync collision data to shared value for UI-thread access
   useEffect(() => {
@@ -339,42 +334,9 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   const sortedTiles = useMemo(() => {
     const all: any[] = [];
 
-    // OVERSCAN BUFFER CULLING
-    let gMinX = Infinity, gMaxX = -Infinity, gMinY = Infinity, gMaxY = -Infinity;
-    if (visionGrid && visionGrid.length > 0) {
-      for (let i = 0; i < visionGrid.length; i++) {
-        const c = visionGrid[i];
-        if (c.x < gMinX) gMinX = c.x;
-        if (c.x > gMaxX) gMaxX = c.x;
-        if (c.y < gMinY) gMinY = c.y;
-        if (c.y > gMaxY) gMaxY = c.y;
-      }
-    } else {
-       gMinX = spawnX; gMaxX = spawnX;
-       gMinY = spawnY; gMaxY = spawnY;
-    }
-
-    const gridCenterX = (gMinX + gMaxX) / 2;
-    const gridCenterY = (gMinY + gMaxY) / 2;
-
-    const BUFFER = 10;
-    const screenTilesX = Math.ceil(width / tileSize);
-    const screenTilesY = Math.ceil(height / tileSize);
-    const halfScreenX = Math.ceil(screenTilesX / 2);
-    const halfScreenY = Math.ceil(screenTilesY / 2);
-
-    const minX = gridCenterX - halfScreenX - BUFFER;
-    const maxX = gridCenterX + halfScreenX + BUFFER;
-    const minY = gridCenterY - halfScreenY - BUFFER;
-    const maxY = gridCenterY + halfScreenY + BUFFER;
-
-    if (visionGrid) {
-      for (let i = 0; i < visionGrid.length; i++) {
-        const cell = visionGrid[i];
-        
-        // Skip tiles outside the buffered viewport
-        if (cell.x < minX || cell.x > maxX || cell.y < minY || cell.y > maxY) continue;
-
+    if (visibleGrid) {
+      for (let i = 0; i < visibleGrid.length; i++) {
+        const cell = visibleGrid[i];
         if (!cell?.tiles) continue;
 
         for (let j = 0; j < cell.tiles.length; j++) {
@@ -400,7 +362,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     all.sort((a, b) => a[6] - b[6]);
 
     return all;
-  }, [visionGrid, tileSize, tileLibrary, spawnX, spawnY]);
+  }, [visibleGrid, tileSize, tileLibrary]);
 
   const allVisibleTiles = sortedTiles;
 
@@ -427,7 +389,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
             />
           ))}
           {/* Pet moved to overlay layer to prevent clipping by player avatar */}
-          {showWalkabilityOverlay && (visionGrid || []).map(cell => {
+          {showWalkabilityOverlay && (visibleGrid || []).map(cell => {
             if (!cell) return null;
             const blockedTiles = cell.tiles?.filter((t: any) => (t.isWalkable === false || t.is_walk_able === false || t.is_walkable === false));
             const edgeTiles = cell.tiles?.filter((t: any) => {

@@ -118,7 +118,7 @@ const SkiaAnimatedLayer: React.FC<SkiaAnimatedLayerProps> = ({ uri, x, y, width,
   const currentFrame = useSharedValue(0);
   const frameTimer = useSharedValue(0);
 
-  // 1. The Game Loop for this specific item
+  // 1. The Game Loop: Robust "Catch-up" logic for smooth animation even during lag
   useFrameCallback((frameInfo) => {
     'worklet';
     if (!totalFrames || totalFrames <= 1 || fps <= 0) return;
@@ -128,16 +128,26 @@ const SkiaAnimatedLayer: React.FC<SkiaAnimatedLayerProps> = ({ uri, x, y, width,
 
     frameTimer.value += dt;
     if (frameTimer.value >= timePerFrame) {
-      currentFrame.value = (Math.floor(currentFrame.value) + 1) % totalFrames;
-      frameTimer.value -= timePerFrame;
+      // Robust catch-up: increment multiple frames if needed
+      const framesToAdvance = Math.floor(frameTimer.value / timePerFrame);
+      currentFrame.value = (Math.floor(currentFrame.value) + framesToAdvance) % totalFrames;
+      frameTimer.value -= framesToAdvance * timePerFrame;
     }
   });
 
-  // 2. Safely slide the spritesheet behind the clipping window
+  // 2. FIXED: Match AnimatedEquip logic exactly
+  // Standard top-left clipping window
+  const actualFrameWidth = skiaImg 
+    ? (skiaImg.width() / totalFrames) * (width / frameWidth) 
+    : width;
+
+  const clipRect = useMemo(() => rect(0, 0, width, height), [width, height]);
+
   const imageTransform = useDerivedValue(() => {
-    const shiftX = Math.floor(currentFrame.value) * width;
+    // Shift by exactly one frame width per index
+    const shiftX = Math.floor(currentFrame.value) * actualFrameWidth;
     return [{ translateX: -shiftX }];
-  });
+  }, [actualFrameWidth]);
 
   const multiplyMatrix = useMemo(() => {
     if (!tintColor) return null;
@@ -152,19 +162,24 @@ const SkiaAnimatedLayer: React.FC<SkiaAnimatedLayerProps> = ({ uri, x, y, width,
 
   if (!uri || !skiaImg) return null;
 
-  // Force the spritesheet to stretch exactly to our layout math; ignore physical PNG resolution.
-  const fullSpriteWidth = width * (totalFrames || 1);
-  const fullSpriteHeight = height;
+  // Calculate scaling factor to match the intended display width
+  const imgW = skiaImg.width();
+  const imgH = skiaImg.height();
+  
+  // 3. SCALE CALCULATION: Scale based on physical frame dimensions, NOT totalFrames.
+  // This ensures frames align perfectly even if the PNG has extra padding pixels at the end.
+  const scaleX = width / frameWidth;
+  const scaleY = height / frameHeight;
 
   return (
     <Group transform={[{ translateX: x }, { translateY: y }]}>
-      <Group clip={rect(0, 0, width, height)}>
+      <Group clip={clipRect}>
         <SkiaImage
           image={skiaImg}
           x={0}
           y={0}
-          width={fullSpriteWidth}
-          height={fullSpriteHeight}
+          width={imgW * scaleX}
+          height={imgH * scaleY}
           transform={imageTransform}
           sampling={{ filter: FilterMode.Nearest }}
         >
@@ -286,32 +301,33 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
       if (item.is_animated && item.animation_config) {
         try {
           let config: any = item.animation_config;
-          if (typeof config === 'string') {
-            if (config.trim().startsWith('{')) {
-              config = JSON.parse(config);
+          // Robust parsing for string vs object and potential double-encoding
+          if (config && typeof config === 'string') {
+            const trimmed = config.trim();
+            if (trimmed.startsWith('{')) {
+              config = JSON.parse(trimmed);
               if (typeof config === 'string' && config.trim().startsWith('{')) {
                 config = JSON.parse(config);
               }
-            } else {
-              config = {};
             }
           }
+
           if (config && typeof config === 'object') {
-            const w = config.frameWidth ?? config.frame_width;
-            const h = config.frameHeight ?? config.frame_height;
-            if (w != null && h != null) {
-              frameWidth = Number(w) || 512;
-              frameHeight = Number(h) || 512;
-              isAnimated = true;
-            }
-            const total = config.totalFrames ?? config.frame_count ?? config.total_frames;
+            const w = config.frameWidth ?? config.frame_width ?? config.width;
+            const h = config.frameHeight ?? config.frame_height ?? config.height;
+            if (w != null) frameWidth = Number(w) || 512;
+            if (h != null) frameHeight = Number(h) || 512;
+            if (w != null || h != null) isAnimated = true;
+            
+            const total = config.totalFrames ?? config.frame_count ?? config.total_frames ?? config.frames;
             if (total != null) totalFrames = Math.max(1, Number(total) || 4);
+            
             const fpsVal = config.fps ?? (config.duration_ms != null && total != null && Number(total) > 1
               ? (Number(total) * 1000) / Number(config.duration_ms)
               : null);
             if (fpsVal != null) fps = Math.max(1, Number(fpsVal) || 10);
           }
-        } catch (e) { console.warn('Animation parse error:', e); }
+        } catch (e) { console.warn('Animation parse error for', item.name, e); }
       }
 
       // MATHEMATICALLY PERFECT PORT OF YOUR RN SYSTEM:
@@ -324,15 +340,10 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
       const centerY = topPercent * size;
 
       // 3. Final layer size based on scale
-      // CRITICAL FIX: Animated layers use their frame dimensions as the base size.
-      // If frameWidth is 512, layerWidth becomes 512 * scale * (size/512).
-      const layerWidth = isAnimated 
-        ? (frameWidth * scale * scaleRatio) 
-        : (size * scale);
-      
-      const layerHeight = isAnimated 
-        ? (frameHeight * scale * scaleRatio) 
-        : (size * scale);
+      // CRITICAL FIX: We calculate dimensions based on the 512px reference frame.
+      // This ensures 284px items (Flame Sword) are scaled correctly relative to the body.
+      const layerWidth = (frameWidth / 512) * size * scale;
+      const layerHeight = (frameHeight / 512) * size * scale;
 
       // 4. Skia draws from top-left, so subtract half width/height from the center
       const lx = centerX - (layerWidth / 2);

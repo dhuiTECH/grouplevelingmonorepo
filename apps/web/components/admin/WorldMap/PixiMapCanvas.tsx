@@ -383,20 +383,23 @@ const PixiScene: React.FC<PixiSceneProps> = ({
 
     // Cull box lazy update: only recalculate when viewport approaches the safe-zone edge
     if (width && height && t.scale) {
+      const vw = width / t.scale;
+      const vh = height / t.scale;
       const viewportLeft = -t.x / t.scale;
       const viewportTop = -t.y / t.scale;
-      const viewportRight = viewportLeft + width / t.scale;
-      const viewportBottom = viewportTop + height / t.scale;
-      const safeBuffer = TILE_SIZE * 4;
+      const viewportRight = viewportLeft + vw;
+      const viewportBottom = viewportTop + vh;
+      
+      // Update when we're within 20% of the edge of our current cullBox buffer
+      const triggerBufferX = vw * 0.2;
+      const triggerBufferY = vh * 0.2;
 
       if (
-        viewportLeft < cullBox.minX + safeBuffer ||
-        viewportTop < cullBox.minY + safeBuffer ||
-        viewportRight > cullBox.maxX - safeBuffer ||
-        viewportBottom > cullBox.maxY - safeBuffer
+        viewportLeft < cullBox.minX + triggerBufferX ||
+        viewportTop < cullBox.minY + triggerBufferY ||
+        viewportRight > cullBox.maxX - triggerBufferX ||
+        viewportBottom > cullBox.maxY - triggerBufferY
       ) {
-        const vw = viewportRight - viewportLeft;
-        const vh = viewportBottom - viewportTop;
         setCullBox({
           minX: viewportLeft - vw,
           minY: viewportTop - vh,

@@ -16,6 +16,7 @@ import Animated, {
   withSequence,
   FadeIn,
   FadeOut,
+  ZoomIn,
   SlideInDown,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
@@ -275,21 +276,22 @@ export function DialogueScene({
     onClose();
   };
 
-  // 4. Bobbing Animation for NPC Sprite
-  const bobbingStyle = useAnimatedStyle(() => {
+  // 4. Breathing Animation for NPC Sprite
+  const breathingStyle = useAnimatedStyle(() => {
     return {
       transform: [
         {
-          translateY: withRepeat(
+          scaleY: withRepeat(
             withSequence(
-              withTiming(-10, { duration: 1500 }),
-              withTiming(0, { duration: 1500 })
+              withTiming(1.015, { duration: 3000 }),
+              withTiming(1, { duration: 3000 })
             ),
             -1,
             true
           ),
         },
       ],
+      transformOrigin: 'bottom',
     };
   });
 
@@ -307,7 +309,7 @@ export function DialogueScene({
       <ImageBackground
         source={backgroundUrl || require('../../assets/stone-bg.jpg')}
         style={styles.container}
-        contentFit="cover"
+        resizeMode="cover"
       >
         <BlurView intensity={30} style={StyleSheet.absoluteFill} tint="dark" />
 
@@ -315,7 +317,7 @@ export function DialogueScene({
         {!!npcSpriteUrl && (
           <Animated.View
             entering={FadeIn.delay(300)}
-            style={[styles.spriteContainer, bobbingStyle]}
+            style={[styles.spriteContainer, breathingStyle]}
             pointerEvents="none"
           >
             {isSpritesheet ? (
@@ -349,7 +351,7 @@ export function DialogueScene({
 
         {/* Dialogue Box Area */}
         <Animated.View
-          entering={SlideInDown.springify().damping(15)}
+          entering={ZoomIn.duration(400).springify().damping(15)}
           style={styles.dialogueWrapper}
         >
           <BlurView intensity={80} tint="dark" style={styles.dialogueBox}>
@@ -458,12 +460,12 @@ const styles = StyleSheet.create({
   },
   spriteContainer: {
     position: 'absolute',
-    top: height * 0.02,
     left: 0,
     right: 0,
-    bottom: height * 0.25,
+    bottom: height * 0.14,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
+    height: height * 0.65,
   },
   sprite: {
     width: width,
@@ -471,7 +473,7 @@ const styles = StyleSheet.create({
   },
   spriteFrame: {
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
   },
   header: {
     position: 'absolute',

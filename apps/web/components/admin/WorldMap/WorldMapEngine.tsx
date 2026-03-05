@@ -218,7 +218,7 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
 
     const scaleX = containerW / contentWidth;
     const scaleY = containerH / contentHeight;
-    const targetScale = Math.max(0.005, Math.min(scaleX, scaleY, 0.8));
+    const targetScale = Math.max(0.0001, Math.min(scaleX, scaleY, 0.8));
 
     const centerX = ((minX + maxX + 1) / 2) * TILE_SIZE + WORLD_SIZE / 2;
     const centerY = ((minY + maxY + 1) / 2) * TILE_SIZE + WORLD_SIZE / 2;
@@ -514,7 +514,7 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
           <TransformWrapper 
             ref={transformComponentRef} 
             initialScale={0.5} 
-            minScale={0.001} 
+            minScale={0.0001} 
             maxScale={10} 
             centerOnInit={false}
             initialPositionX={-(WORLD_SIZE / 2 * 0.5) + (viewport.width / 2)}
@@ -528,6 +528,8 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
               };
               if (dropTargetRef.current) {
                 dropTargetRef.current.style.setProperty('--zoom-scale', p.state.scale.toString());
+                const gridOpacity = p.state.scale < 0.08 ? Math.max(0, (p.state.scale - 0.03) / 0.05) : 1;
+                dropTargetRef.current.style.setProperty('--grid-opacity', gridOpacity.toString());
               }
             }}
             limitToBounds={false} 
@@ -631,6 +633,7 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
                   className="absolute inset-0 pointer-events-none"
                   style={{
                     zIndex: 50,
+                    opacity: 'var(--grid-opacity, 1)',
                     backgroundImage: `
                       linear-gradient(to right, rgba(0,0,0,0.1) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1))),
                       linear-gradient(to bottom, rgba(0,0,0,0.1) calc(1px / var(--zoom-scale, 1)), transparent calc(1px / var(--zoom-scale, 1))),

@@ -50,7 +50,7 @@ const TILE_SIZE = 48;
 
 export const WorldMapScreen = () => {
   const navigation = useNavigation<any>();
-  const { user, setUser } = useAuth();
+  const { user, setUser, refreshProfile } = useAuth();
   const { playTrack } = useAudio();
   const { pets } = usePets();
   const { activePetId } = useActivePet();
@@ -191,7 +191,8 @@ export const WorldMapScreen = () => {
   useFocusEffect(
     useCallback(() => {
       playTrack('Beginning Map');
-    }, [playTrack])
+      refreshProfile();
+    }, [playTrack, refreshProfile])
   );
 
   const handleUnstuck = useCallback(async () => {

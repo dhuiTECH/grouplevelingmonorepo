@@ -37,6 +37,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   setUser: (user: User | null) => void;
   checkProfileExists: (identifier: string) => Promise<any>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -49,6 +50,84 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
   const [supabaseUser, setSupabaseUser] = useState<SupabaseAuthUser | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  const refreshProfile = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+
+    try {
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select(`
+          *,
+          cosmetics:user_cosmetics(
+            id,
+            equipped,
+            shop_item_id,
+            quantity,
+            created_at:acquired_at,
+            shop_items:shop_item_id(*)
+          )
+        `)
+        .eq('id', session.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error('Error refreshing profile:', profileError);
+        return;
+      }
+
+      if (profile) {
+        const profileAsUser = { ...profile, level: profile.level || 1 } as User;
+        const derived = calculateDerivedStats(profileAsUser);
+        const maxHP = derived.maxHP ?? 100;
+        const maxMP = derived.maxMP ?? 50;
+        const syncedHP = profile.max_hp == null || profile.max_hp < maxHP ? maxHP : Math.min(profile.current_hp ?? maxHP, maxHP);
+        const syncedMP = profile.max_mp == null || profile.max_mp < maxMP ? maxMP : Math.min(profile.current_mp ?? maxMP, maxMP);
+        
+        setUser({
+          id: session.user.id,
+          email: session.user.email || '',
+          name: profile.hunter_name || session.user.user_metadata?.display_name || 'User',
+          level: profile.level || 1,
+          exp: Number(profile.exp) || 0,
+          coins: Number(profile.coins) || 0,
+          gems: profile.gems || 0,
+          hunter_rank: profile.hunter_rank || getRank(profile.level || 1),
+          current_class: profile.current_class,
+          gender: profile.gender,
+          onboarding_completed: profile.onboarding_completed,
+          tutorial_completed: profile.tutorial_completed,
+          cosmetics: profile.cosmetics || [],
+          submittedIds: [],
+          slotsUsed: 0,
+          createdAt: new Date(profile.created_at || new Date()),
+          updatedAt: new Date(profile.updated_at || new Date()),
+          current_hp: syncedHP,
+          max_hp: maxHP,
+          current_mp: syncedMP,
+          max_mp: maxMP,
+          profilePicture: resolveAvatar(profile.avatar),
+          rank_tier: profile.rank_tier,
+          next_advancement_attempt: profile.next_advancement_attempt,
+          current_title: profile.current_title,
+          unassigned_stat_points: profile.unassigned_stat_points,
+          skill_loadout: profile.skill_loadout,
+          last_reset: profile.last_reset,
+          base_body_silhouette_url: profile.base_body_silhouette_url,
+          base_body_tint_hex: profile.base_body_tint_hex,
+          current_ap: profile.current_ap || 3,
+          max_ap: profile.max_ap || 3,
+          world_x: profile.world_x ?? 0,
+          world_y: profile.world_y ?? 0,
+          steps_banked: profile.steps_banked ?? 0,
+          last_sync_time: profile.last_sync_time,
+        } as User);
+      }
+    } catch (err) {
+      console.error('Fatal error refreshing profile:', err);
+    }
+  };
 
   useEffect(() => {
     // Handle deep links for OAuth
@@ -335,7 +414,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
   };
 
   return (
-    <AuthContext.Provider value={{ user, supabaseUser, isLoading, signInWithOtp, signInWithGoogle, verifyOtp, logout, setUser, checkProfileExists }}>
+    <AuthContext.Provider value={{ user, supabaseUser, isLoading, signInWithOtp, signInWithGoogle, verifyOtp, logout, setUser, checkProfileExists, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
