@@ -105,7 +105,17 @@ export const useExploration = (
     });
 
     tileMap.forEach(layers => {
-      layers.sort((a, b) => (Number(a.layer) || 0) - (Number(b.layer) || 0));
+      layers.sort((a, b) => {
+        // Primary Sort: By Layer
+        const layerDiff = (Number(a.layer) || 0) - (Number(b.layer) || 0);
+        if (layerDiff !== 0) return layerDiff;
+        
+        // Secondary Sort: By ID (or cleanUrl) to PREVENT Z-FIGHTING
+        // If they are on the same layer, their order is now permanently locked.
+        const idA = a.id || a.cleanUrl || '';
+        const idB = b.id || b.cleanUrl || '';
+        return idA.localeCompare(idB);
+      });
     });
 
     return tileMap;

@@ -31,13 +31,12 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
   const offsetX = tile.offsetX || 0;
   const offsetY = tile.offsetY || 0;
 
-  // No +1 overlap hack needed: the parent Group transform is pixel-snapped
-  // via Math.round in SkiaWorldMap, which eliminates sub-pixel tile seams.
+  // Lock the destination rect to the pixel grid to stop Nearest Neighbor tearing
   const destRect = useMemo(() => rect(
-    absPx - (displayWidth - tileSize) / 2 + offsetX,
-    absPy - (displayHeight - tileSize) + offsetY,
-    displayWidth,
-    displayHeight
+    Math.round(absPx - (displayWidth - tileSize) / 2 + offsetX),
+    Math.round(absPy - (displayHeight - tileSize) + offsetY),
+    Math.round(displayWidth),
+    Math.round(displayHeight)
   ), [absPx, absPy, displayWidth, displayHeight, offsetX, offsetY, tileSize]);
 
   // Handle Foam Layer (Now uses dictionary lookup for foam strip)
@@ -51,7 +50,7 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
       
       // Foam is rendered at the base tile position (48x48), ignoring the prop size
       // Remove the + 1 hack. Strict 48x48 clipping to prevent spritesheet bleed.
-      const foamDestRect = rect(absPx, absPy, Math.ceil(tileSize), Math.ceil(tileSize));
+      const foamDestRect = rect(Math.round(absPx), Math.round(absPy), Math.ceil(tileSize), Math.ceil(tileSize));
       
       foamLayer = (
         <Group opacity={foamOpacity} clip={foamDestRect}>
@@ -100,7 +99,7 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
     
     // Even if it's on a higher layer, smart tiles typically use the base 48x48 grid
     // Remove the + 1 hack. Strict 48x48 clipping to prevent spritesheet bleed.
-    let baseDestRect = rect(absPx, absPy, Math.ceil(tileSize), Math.ceil(tileSize));
+    let baseDestRect = rect(Math.round(absPx), Math.round(absPy), Math.ceil(tileSize), Math.ceil(tileSize));
 
     if (img) {
       // Re-calculate the bitmask for the mobile app using the shared function
