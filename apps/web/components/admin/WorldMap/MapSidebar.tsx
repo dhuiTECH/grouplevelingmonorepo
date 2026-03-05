@@ -157,6 +157,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
       }
     }
     
+    // We intentionally don't await this so the UI updates instantly
     reorderCustomTiles(newFullOrder);
   };
 

@@ -688,9 +688,26 @@ export const useMapStore = create<MapState>((set, get) => ({
       sort_order: index
     }));
 
-    await Promise.all(updates.map(u => 
-      supabase.from('custom_tiles').update({ sort_order: u.sort_order }).eq('id', u.id)
-    ));
+    // Debounce the Supabase call to avoid lag when dragging quickly
+    if ((window as any)._reorderTimeout) {
+      clearTimeout((window as any)._reorderTimeout);
+    }
+    
+    (window as any)._reorderTimeout = setTimeout(async () => {
+      // Create a single upsert instead of firing N individual requests which can cause rate limiting/lag
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      
+      // We can't do bulk upsert easily with partial updates via the client so we fall back to Promise.all
+      // but only run it once dragging has stopped for 500ms
+      try {
+        await Promise.all(updates.map(u => 
+          supabase.from('custom_tiles').update({ sort_order: u.sort_order }).eq('id', u.id)
+        ));
+      } catch (e) {
+        console.error('Failed to sync reorder', e);
+      }
+    }, 500);
   },
 
   setSpawnPoint: (x, y) => set({ spawnPoint: { x, y } }),
