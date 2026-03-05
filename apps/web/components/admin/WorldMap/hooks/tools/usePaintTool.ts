@@ -15,21 +15,29 @@ export const usePaintTool = () => {
     if (!tile && state.selectedSmartType === 'off') return;
 
     const activeTileLayer = tile ? tile.layer : state.smartBrushLayer;
-    let currentTiles = [...state.tiles];
+    const layerKey = activeTileLayer ?? 0;
+    
+    // Respect per-layer locking: if this layer is locked, skip all paint ops
+    if (state.layerSettings[layerKey]?.locked) return;
+
     const newTilesToAppend: Tile[] = [];
     const undoEntries: any[] = [];
-    const autoTileQueue = [];
+    const autoTileQueue: any[] = [];
+    const touchedChunks = new Set<string>();
+    
+    // 1. O(N) pass to find existing tiles in the brush area on the target layer
+    const brushAreaKeys = new Set(brushArea.map(p => `${gx + p.dx},${gy + p.dy}`));
+    const tilesInBrushArea = state.tiles.filter(t => 
+       brushAreaKeys.has(`${t.x},${t.y}`) && (t.layer || 0) === layerKey
+    );
+    const prevTileMap = new Map(tilesInBrushArea.map(t => [`${t.x},${t.y}`, t]));
+    const keysToRemove = new Set<string>();
 
     for (const {dx, dy} of brushArea) {
       const tx = gx + dx;
       const ty = gy + dy;
+      touchedChunks.add(`${Math.floor(tx / 16)},${Math.floor(ty / 16)}`);
       let offsetX = 0, offsetY = 0;
-
-      // Respect per-layer locking: if this layer is locked, skip all paint ops on it
-      const layerKey = activeTileLayer ?? 0;
-      if (state.layerSettings[layerKey]?.locked) {
-        continue;
-      }
 
       const currentSnapMode = state.snapMode;
       if (currentSnapMode === 'free') {
@@ -55,17 +63,14 @@ export const usePaintTool = () => {
          if (isShift) elevation = 0;
       }
 
-      const prevIndex = currentTiles.findIndex(t => t.x === tx && t.y === ty && (t.layer || 0) === (activeTileLayer || 0));
-      let prevTile = null;
-
-      if (prevIndex > -1) {
-        prevTile = currentTiles[prevIndex];
+      const prevTile = prevTileMap.get(`${tx},${ty}`);
+      if (prevTile) {
         if (state.smartBrushLock && prevTile.isAutoTile) continue;
-        currentTiles.splice(prevIndex, 1);
+        keysToRemove.add(`${tx},${ty}`);
       }
 
       if (!isMove || (dx === 0 && dy === 0)) {
-        undoEntries.push({ action: 'paint', x: tx, y: ty, layer: activeTileLayer || 0, previousTile: prevTile });
+        undoEntries.push({ action: 'paint', x: tx, y: ty, layer: activeTileLayer || 0, previousTile: prevTile || null });
       }
 
       newTilesToAppend.push({
@@ -94,8 +99,12 @@ export const usePaintTool = () => {
     }
 
     if (newTilesToAppend.length > 0) {
+      const remainingTiles = keysToRemove.size > 0 
+        ? state.tiles.filter(t => !keysToRemove.has(`${t.x},${t.y}`) || (t.layer || 0) !== layerKey)
+        : state.tiles;
+
       useMapStore.setState({
-        tiles: [...currentTiles, ...newTilesToAppend],
+        tiles: [...remainingTiles, ...newTilesToAppend],
         undoStack: [...state.undoStack, ...undoEntries]
       });
 
@@ -103,23 +112,38 @@ export const usePaintTool = () => {
       if (autoTileQueue.length > 0) {
         await batchUpdateTileAndNeighbors(autoTileQueue);
       }
-      await useMapStore.getState().forceSyncAllChunks();
+      useMapStore.getState().syncChunks(Array.from(touchedChunks));
     }
   };
 
   const executeErase = async (gx: number, gy: number, isMove: boolean, brushArea: {dx: number, dy: number}[]) => {
     const state = useMapStore.getState();
-    let currentTiles = [...state.tiles];
     let currentNodes = [...state.nodes];
     let stateChanged = false;
     const undoEntries: any[] = [];
     const autoTileQueue: any[] = [];
+    const touchedChunks = new Set<string>();
+
+    // 1. O(N) pass to find existing tiles in the brush area
+    const brushAreaKeys = new Set(brushArea.map(p => `${gx + p.dx},${gy + p.dy}`));
+    const tilesInBrushArea = state.tiles.filter(t => brushAreaKeys.has(`${t.x},${t.y}`));
+    
+    // Group tiles by position to easily find the topmost one
+    const tilesByPos = new Map<string, Tile[]>();
+    tilesInBrushArea.forEach(t => {
+      const key = `${t.x},${t.y}`;
+      if (!tilesByPos.has(key)) tilesByPos.set(key, []);
+      tilesByPos.get(key)!.push(t);
+    });
+
+    const tileIdsToRemove = new Set<string>();
 
     for (const {dx, dy} of brushArea) {
       const tx = gx + dx;
       const ty = gy + dy;
+      touchedChunks.add(`${Math.floor(tx / 16)},${Math.floor(ty / 16)}`);
 
-      const tilesAtPos = currentTiles.filter(t => t.x === tx && t.y === ty);
+      const tilesAtPos = tilesByPos.get(`${tx},${ty}`) || [];
       if (tilesAtPos.length > 0) {
         tilesAtPos.sort((a, b) => (b.layer || 0) - (a.layer || 0));
         let tileToRemove = tilesAtPos[0];
@@ -130,17 +154,14 @@ export const usePaintTool = () => {
 
         // Respect per-layer locking: never erase tiles from locked layers
         if (tileToRemove && !state.layerSettings[(tileToRemove.layer || 0)]?.locked) {
-          const idx = currentTiles.findIndex(t => t.id === tileToRemove.id);
-          if (idx > -1) {
-            currentTiles.splice(idx, 1);
-            stateChanged = true;
+          tileIdsToRemove.add(tileToRemove.id);
+          stateChanged = true;
 
-            if (!isMove || (dx === 0 && dy === 0)) {
-              undoEntries.push({ action: 'erase_tile', x: tx, y: ty, layer: tileToRemove.layer || 0, previousTile: tileToRemove });
-            }
-            if (tileToRemove.isAutoTile) {
-              autoTileQueue.push({ x: tx, y: ty, layer: tileToRemove.layer || 0, isRemoving: true, smartType: tileToRemove.smartType, blockCol: tileToRemove.blockCol, blockRow: tileToRemove.blockRow });
-            }
+          if (!isMove || (dx === 0 && dy === 0)) {
+            undoEntries.push({ action: 'erase_tile', x: tx, y: ty, layer: tileToRemove.layer || 0, previousTile: tileToRemove });
+          }
+          if (tileToRemove.isAutoTile) {
+            autoTileQueue.push({ x: tx, y: ty, layer: tileToRemove.layer || 0, isRemoving: true, smartType: tileToRemove.smartType, blockCol: tileToRemove.blockCol, blockRow: tileToRemove.blockRow });
           }
         }
       }
@@ -154,13 +175,17 @@ export const usePaintTool = () => {
     }
 
     if (stateChanged) {
-      useMapStore.setState({ tiles: currentTiles, nodes: currentNodes, undoStack: [...state.undoStack, ...undoEntries] });
+      const remainingTiles = tileIdsToRemove.size > 0 
+        ? state.tiles.filter(t => !tileIdsToRemove.has(t.id))
+        : state.tiles;
+
+      useMapStore.setState({ tiles: remainingTiles, nodes: currentNodes, undoStack: [...state.undoStack, ...undoEntries] });
 
       // Update smart neighbors and then persist all tile changes to Supabase
       if (autoTileQueue.length > 0) {
-        await batchUpdateTileAndNeighbors(autoTileQueue);
+        await useMapStore.getState().batchUpdateTileAndNeighbors(autoTileQueue);
       }
-      await useMapStore.getState().forceSyncAllChunks();
+      useMapStore.getState().syncChunks(Array.from(touchedChunks));
     }
   };
 

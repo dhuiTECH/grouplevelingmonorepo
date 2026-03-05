@@ -13,9 +13,9 @@ export const useCollisionTool = () => {
     brushArea: {dx: number, dy: number}[]
   ) => {
     const state = useMapStore.getState();
-    const currentCollisionMode = state.collisionMode || 'full'; // 🔥 FIX 1: Fallback if undefined
+    const currentCollisionMode = state.collisionMode || 'full';
     
-    // 🔥 FIX 2: Check if ANY tile at this position is non-walkable to determine mode
+    // Check if ANY tile at this position is non-walkable to determine mode
     if (!isMove) {
       if (forceErase) drawingModeRef.current = 'removing';
       else {
@@ -24,39 +24,49 @@ export const useCollisionTool = () => {
       }
     }
 
-    let currentTiles = [...state.tiles];
     let stateChanged = false;
-    const undoEntries = [];
+    const undoEntries: any[] = [];
+    const touchedChunks = new Set<string>();
+
+    const brushAreaKeys = new Set(brushArea.map(p => `${gx + p.dx},${gy + p.dy}`));
+    const tilesInBrushArea = state.tiles.filter(t => brushAreaKeys.has(`${t.x},${t.y}`));
+    
+    const tileIdsToRemove = new Set<string>();
+    const tilesToUpdate = new Map<string, Partial<any>>(); // id -> changes
+    const newTilesToAppend: any[] = [];
 
     if (currentCollisionMode === 'full') {
+      const tilesByPos = new Map<string, any[]>();
+      tilesInBrushArea.forEach(t => {
+        const key = `${t.x},${t.y}`;
+        if (!tilesByPos.has(key)) tilesByPos.set(key, []);
+        tilesByPos.get(key)!.push(t);
+      });
+
       for (const {dx, dy} of brushArea) {
         const tx = gx + dx; const ty = gy + dy;
-        const tilesAtPos = currentTiles.filter(t => t.x === tx && t.y === ty);
-        const collisionTileIdx = currentTiles.findIndex(t => t.x === tx && t.y === ty && t.layer === COLLISION_LAYER);
+        touchedChunks.add(`${Math.floor(tx / 16)},${Math.floor(ty / 16)}`);
+        const tilesAtPos = tilesByPos.get(`${tx},${ty}`) || [];
+        const collisionTile = tilesAtPos.find(t => t.layer === COLLISION_LAYER);
         
         if (drawingModeRef.current === 'removing') {
-          // Remove the red tile
-          if (collisionTileIdx > -1) {
-            undoEntries.push({ action: 'erase_tile', x: tx, y: ty, layer: COLLISION_LAYER, previousTile: currentTiles[collisionTileIdx] });
-            currentTiles.splice(collisionTileIdx, 1);
+          if (collisionTile) {
+            undoEntries.push({ action: 'erase_tile', x: tx, y: ty, layer: COLLISION_LAYER, previousTile: collisionTile });
+            tileIdsToRemove.add(collisionTile.id);
             stateChanged = true;
           }
           // Restore walkability to props/ground underneath
           for (const t of tilesAtPos) {
             if (t.layer !== COLLISION_LAYER && t.isWalkable === false) {
-              const idx = currentTiles.findIndex(ct => ct.id === t.id);
-              if (idx > -1) {
-                currentTiles[idx] = { ...currentTiles[idx], isWalkable: true };
-                stateChanged = true;
-              }
+              tilesToUpdate.set(t.id, { isWalkable: true });
+              stateChanged = true;
             }
           }
         } else if (drawingModeRef.current === 'adding') {
-          // Add the red tile only if nothing is already non-walkable here
-          const alreadyBlocked = tilesAtPos.some(t => t.isWalkable === false);
-          if (!alreadyBlocked && collisionTileIdx === -1) {
+          const alreadyBlocked = tilesAtPos.some(t => t.isWalkable === false && !tilesToUpdate.has(t.id)); // Not strictly accurate with pending updates but good enough
+          if (!alreadyBlocked && !collisionTile) {
             undoEntries.push({ action: 'paint', x: tx, y: ty, layer: COLLISION_LAYER, previousTile: null });
-            currentTiles.push({
+            newTilesToAppend.push({
               id: generateId(), x: tx, y: ty, type: 'collision', imageUrl: '',
               isSpritesheet: false, frameCount: 0, frameWidth: TILE_SIZE, frameHeight: TILE_SIZE, animationSpeed: 0,
               layer: COLLISION_LAYER, offsetX: 0, offsetY: 0, isWalkable: false, snapToGrid: true, isAutoFill: false, isAutoTile: false,
@@ -69,25 +79,32 @@ export const useCollisionTool = () => {
     } else {
       // Edge Mode
       const currentEdgeDirection = state.edgeDirection || 1; 
+      const edgeTilesByPos = new Map<string, any>();
+      tilesInBrushArea.forEach(t => {
+        if ((t.layer || 0) === EDGE_BLOCK_LAYER) {
+          edgeTilesByPos.set(`${t.x},${t.y}`, t);
+        }
+      });
+
       for (const {dx, dy} of brushArea) {
         const tx = gx + dx; const ty = gy + dy;
-        const edgeIdx = currentTiles.findIndex(t => t.x === tx && t.y === ty && (t.layer || 0) === EDGE_BLOCK_LAYER);
-        const edgeTile = edgeIdx > -1 ? currentTiles[edgeIdx] : null;
+        touchedChunks.add(`${Math.floor(tx / 16)},${Math.floor(ty / 16)}`);
+        const edgeTile = edgeTilesByPos.get(`${tx},${ty}`);
         const currentBits = edgeTile?.edgeBlocks ?? 0;
 
         if (drawingModeRef.current === 'removing') {
           const newBits = currentBits & ~currentEdgeDirection;
           if (edgeTile && (currentBits & currentEdgeDirection)) {
-            if (newBits === 0) currentTiles.splice(edgeIdx, 1);
-            else currentTiles[edgeIdx] = { ...currentTiles[edgeIdx], edgeBlocks: newBits };
+            if (newBits === 0) tileIdsToRemove.add(edgeTile.id);
+            else tilesToUpdate.set(edgeTile.id, { edgeBlocks: newBits });
             stateChanged = true;
           }
         } else if (drawingModeRef.current === 'adding') {
           const newBits = currentBits | currentEdgeDirection;
           if (newBits !== currentBits) {
-            if (edgeTile) currentTiles[edgeIdx] = { ...currentTiles[edgeIdx], edgeBlocks: newBits };
+            if (edgeTile) tilesToUpdate.set(edgeTile.id, { edgeBlocks: newBits });
             else {
-              currentTiles.push({
+              newTilesToAppend.push({
                 id: generateId(), x: tx, y: ty, type: 'edge_block', imageUrl: '',
                 layer: EDGE_BLOCK_LAYER, offsetX: 0, offsetY: 0, isWalkable: true, snapToGrid: true, isAutoFill: false, isAutoTile: false, edgeBlocks: newBits
               });
@@ -99,9 +116,21 @@ export const useCollisionTool = () => {
     }
 
     if (stateChanged) {
-      useMapStore.setState({ tiles: currentTiles, undoStack: [...state.undoStack, ...undoEntries] });
-      // Ensure collision changes are persisted to Supabase by forcing a chunk sync
-      await useMapStore.getState().forceSyncAllChunks();
+      let finalTiles = state.tiles;
+      if (tileIdsToRemove.size > 0 || tilesToUpdate.size > 0) {
+        finalTiles = state.tiles.filter(t => !tileIdsToRemove.has(t.id)).map(t => {
+          if (tilesToUpdate.has(t.id)) return { ...t, ...tilesToUpdate.get(t.id) };
+          return t;
+        });
+      }
+      
+      if (newTilesToAppend.length > 0) {
+        finalTiles = [...finalTiles, ...newTilesToAppend];
+      }
+
+      useMapStore.setState({ tiles: finalTiles, undoStack: [...state.undoStack, ...undoEntries] });
+      // Ensure collision changes are persisted to Supabase by syncing touched chunks
+      useMapStore.getState().syncChunks(Array.from(touchedChunks));
     }
   };
 

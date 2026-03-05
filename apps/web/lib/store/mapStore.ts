@@ -254,6 +254,7 @@ interface MapState {
   updateTileAndNeighbors: (x: number, y: number, layer: number, isRemoving?: boolean, smartType?: string, blockCol?: number, blockRow?: number) => Promise<void>; // NEW
   batchUpdateTileAndNeighbors: (updates: { x: number, y: number, layer: number, isRemoving?: boolean, smartType?: string, blockCol?: number, blockRow?: number }[]) => Promise<void>;
   forceSyncAllChunks: () => Promise<void>;
+  syncChunks: (chunkKeys: string[]) => void; // NEW: Optimised sync for specific chunks
   exportMap: () => string;
 }
 
@@ -955,6 +956,14 @@ export const useMapStore = create<MapState>((set, get) => ({
     });
 
     await Promise.all(promises);
+  },
+
+  syncChunks: (chunkKeys: string[]) => {
+    const uniqueKeys = new Set(chunkKeys);
+    uniqueKeys.forEach(key => {
+      const [cx, cy] = key.split(',').map(Number);
+      triggerChunkSync(cx, cy, get);
+    });
   },
 
   exportMap: () => {
