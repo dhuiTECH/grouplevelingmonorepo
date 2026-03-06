@@ -279,6 +279,8 @@ export const createMapDataSlice: StateCreator<
     // Batch update sort order in Supabase
     const updates = tiles.map((t, index) => ({
       id: t.id,
+      url: t.url,
+      name: t.name,
       sort_order: index
     }));
 
@@ -288,16 +290,14 @@ export const createMapDataSlice: StateCreator<
     }
     
     (window as any)._reorderTimeout = setTimeout(async () => {
-      // Create a single upsert instead of firing N individual requests which can cause rate limiting/lag
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
       
-      // We can't do bulk upsert easily with partial updates via the client so we fall back to Promise.all
-      // but only run it once dragging has stopped for 500ms
       try {
-        await Promise.all(updates.map(u => 
-          supabase.from('custom_tiles').update({ sort_order: u.sort_order }).eq('id', u.id)
-        ));
+        // Use a single upsert operation instead of N individual updates
+        // We include required fields (id, url, name) to satisfy potential constraints, 
+        // while updating the sort_order for all tiles in one network request.
+        await supabase.from('custom_tiles').upsert(updates, { onConflict: 'id' });
       } catch (e) {
         console.error('Failed to sync reorder', e);
       }

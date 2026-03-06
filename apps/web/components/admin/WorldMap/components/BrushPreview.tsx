@@ -25,10 +25,28 @@ export const BrushPreview = React.memo(({
   isSpacePressed, selectedTool, selectedTileId, customTiles, TILE_SIZE, WORLD_SIZE, brushSize, brushMode, selectedSmartType, snapMode
 }: BrushPreviewProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [loadedImage, setLoadedImage] = React.useState<HTMLImageElement | null>(null);
   
   // ⚡️ AAA FIX: Subscribe directly to the fast-updating store
   const cursorCoords = useCursorStore(state => state.cursorCoords);
   const smoothCursorCoords = useCursorStore(state => state.smoothCursorCoords);
+
+  useEffect(() => {
+    if (selectedTool === 'paint' && selectedTileId) {
+      const tile = customTiles.find((t: any) => t.id === selectedTileId);
+      if (tile?.url) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = tile.url;
+        img.onload = () => setLoadedImage(img);
+        img.onerror = () => setLoadedImage(null);
+      } else {
+        setLoadedImage(null);
+      }
+    } else {
+      setLoadedImage(null);
+    }
+  }, [selectedTool, selectedTileId, customTiles]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -65,22 +83,37 @@ export const BrushPreview = React.memo(({
           ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
           ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
         } else if (selectedTool === 'paint') {
-          ctx.fillStyle = 'rgba(34, 197, 94, 0.3)';
           ctx.strokeStyle = 'rgba(34, 197, 94, 0.5)';
           
           if (!tile && selectedSmartType !== 'off') {
+            ctx.fillStyle = 'rgba(34, 197, 94, 0.3)';
             ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
             ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
           } else if (tile) {
             const drawX = x - (displayWidth - TILE_SIZE) / 2;
             const drawY = y - (displayHeight - TILE_SIZE);
-            ctx.fillRect(drawX, drawY, displayWidth, displayHeight);
+
+            if (loadedImage) {
+              // Draw image first
+              if (tile.isSpritesheet || (tile.frameCount && tile.frameCount > 1)) {
+                ctx.drawImage(loadedImage, 0, 0, displayWidth, displayHeight, drawX, drawY, displayWidth, displayHeight);
+              } else {
+                ctx.drawImage(loadedImage, drawX, drawY, displayWidth, displayHeight);
+              }
+              // Then draw green overlay
+              ctx.fillStyle = 'rgba(34, 197, 94, 0.3)';
+              ctx.fillRect(drawX, drawY, displayWidth, displayHeight);
+            } else {
+              // Fallback
+              ctx.fillStyle = 'rgba(34, 197, 94, 0.3)';
+              ctx.fillRect(drawX, drawY, displayWidth, displayHeight);
+            }
             ctx.strokeRect(drawX, drawY, displayWidth, displayHeight);
           }
         }
       }
     }
-  }, [isSpacePressed, selectedTool, selectedTileId, customTiles, brushSize, brushMode, selectedSmartType, TILE_SIZE]);
+  }, [isSpacePressed, selectedTool, selectedTileId, customTiles, brushSize, brushMode, selectedSmartType, TILE_SIZE, loadedImage]);
 
   if (isSpacePressed || (selectedTool !== 'paint' && selectedTool !== 'erase' && selectedTool !== 'collision')) return null;
 
