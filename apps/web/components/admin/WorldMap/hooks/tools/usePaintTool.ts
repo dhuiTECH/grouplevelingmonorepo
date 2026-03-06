@@ -30,8 +30,16 @@ export const usePaintTool = () => {
     const tilesInBrushArea = state.tiles.filter(t => 
        brushAreaKeys.has(`${t.x},${t.y}`) && (t.layer || 0) === layerKey
     );
-    const prevTileMap = new Map(tilesInBrushArea.map(t => [`${t.x},${t.y}`, t]));
-    const keysToRemove = new Set<string>();
+    
+    // Group tiles by position to support multiple tiles per cell in free mode
+    const prevTileMap = new Map<string, Tile[]>();
+    tilesInBrushArea.forEach(t => {
+      const key = `${t.x},${t.y}`;
+      if (!prevTileMap.has(key)) prevTileMap.set(key, []);
+      prevTileMap.get(key)!.push(t);
+    });
+    
+    const tileIdsToRemove = new Set<string>();
 
     for (const {dx, dy} of brushArea) {
       const tx = gx + dx;
@@ -63,14 +71,31 @@ export const usePaintTool = () => {
          if (isShift) elevation = 0;
       }
 
-      const prevTile = prevTileMap.get(`${tx},${ty}`);
-      if (prevTile) {
-        if (state.smartBrushLock && prevTile.isAutoTile) continue;
-        keysToRemove.add(`${tx},${ty}`);
+      const tilesAtPos = prevTileMap.get(`${tx},${ty}`) || [];
+      let tileToRemove: Tile | null = null;
+      
+      if (currentSnapMode === 'free') {
+        // In free mode, only replace if we are VERY close to an existing tile on the same layer
+        tileToRemove = tilesAtPos.find(t => {
+          const dx_off = (t.offsetX || 0) - offsetX;
+          const dy_off = (t.offsetY || 0) - offsetY;
+          return (dx_off * dx_off + dy_off * dy_off) < 64; // 8px radius threshold
+        }) || null;
+      } else {
+        // In grid/half mode, replace the existing tile in this cell on this layer
+        tileToRemove = tilesAtPos[0] || null;
+      }
+
+      if (tileToRemove) {
+        if (state.smartBrushLock && tileToRemove.isAutoTile) {
+          tileToRemove = null; // Locked, don't remove
+        } else {
+          tileIdsToRemove.add(tileToRemove.id);
+        }
       }
 
       if (!isMove || (dx === 0 && dy === 0)) {
-        undoEntries.push({ action: 'paint', x: tx, y: ty, layer: activeTileLayer || 0, previousTile: prevTile || null });
+        undoEntries.push({ action: 'paint', x: tx, y: ty, layer: activeTileLayer || 0, previousTile: tileToRemove });
       }
 
       newTilesToAppend.push({
@@ -99,8 +124,8 @@ export const usePaintTool = () => {
     }
 
     if (newTilesToAppend.length > 0) {
-      const remainingTiles = keysToRemove.size > 0 
-        ? state.tiles.filter(t => !keysToRemove.has(`${t.x},${t.y}`) || (t.layer || 0) !== layerKey)
+      const remainingTiles = tileIdsToRemove.size > 0 
+        ? state.tiles.filter(t => !tileIdsToRemove.has(t.id))
         : state.tiles;
 
       useMapStore.setState({
