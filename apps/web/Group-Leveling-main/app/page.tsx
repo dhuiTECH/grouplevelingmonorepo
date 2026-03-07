@@ -171,7 +171,7 @@ export default function LandingPage() {
               <span className="block mt-1 md:mt-2">Your RPG Adventure!</span>
             </h1>
             <p className="mt-3 md:mt-4 text-sm md:text-base font-semibold text-white/95 max-w-[90%] md:max-w-xl text-center md:text-left drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-relaxed md:ml-1">
-              Lose weight and get fit with Group Leveling: The fitness RPG in your pocket that helps you stay consistent and slay your goals. Join thousands of heroes already leveling up.
+            Not just another boring fitness app. Track calories, crush weight loss goals, and level up your hero. Join thousands of heroes already leveling up.
             </p>
           </motion.div>
 
