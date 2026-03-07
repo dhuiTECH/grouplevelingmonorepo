@@ -134,7 +134,7 @@ export default function LandingPage() {
 
           {/* 3. Gradient overlay for text readability */}
           <div
-            className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-slate-900/90"
+            className="absolute inset-0 bg-gradient-to-b from-slate-900/60 via-transparent to-slate-900/90 md:bg-gradient-to-b md:from-transparent md:via-transparent md:to-slate-900/90"
             style={{ zIndex: 20 }}
           />
         </div>
@@ -166,12 +166,12 @@ export default function LandingPage() {
             transition={{ duration: 0.8 }}
             className="max-w-2xl w-full flex flex-col items-center md:items-start mb-6 md:mb-4"
           >
-            <h1 className="text-2xl md:text-4xl lg:text-5xl font-black uppercase tracking-tight leading-tight system-glow-text">
+            <h1 className="text-2xl md:text-4xl lg:text-5xl font-black uppercase tracking-tight leading-tight system-glow-text drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">
               <span className="block">Your Fitness Journey,</span>
               <span className="block mt-1 md:mt-2">Your RPG Adventure!</span>
             </h1>
-            <p className="mt-3 md:mt-4 text-sm md:text-base font-semibold text-white/95 max-w-[90%] md:max-w-xl text-center md:text-left drop-shadow-md leading-relaxed md:ml-1">
-            Turn your weight loss into a fun mission. Track calories, level up your hero, and transform your body. Join thousands of heroes already leveling up.
+            <p className="mt-3 md:mt-4 text-sm md:text-base font-semibold text-white/95 max-w-[90%] md:max-w-xl text-center md:text-left drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-relaxed md:ml-1">
+              Lose weight and get fit with Group Leveling: The fitness RPG in your pocket that helps you stay consistent and slay your goals. Join thousands of heroes already leveling up.
             </p>
           </motion.div>
 
@@ -299,20 +299,6 @@ export default function LandingPage() {
                     </div>
                   </motion.div>
                 </div>
-
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.8, delay: 0.4 }}
-                  className="relative w-14 h-14 md:w-16 md:h-16"
-                >
-                  <Image
-                    src="/website/grouplevelingrounded.png"
-                    alt="Group Leveling Rounded"
-                    fill
-                    className="object-contain drop-shadow-[0_0_10px_rgba(0,232,255,0.3)]"
-                  />
-                </motion.div>
               </div>
             </div>
           </motion.div>
