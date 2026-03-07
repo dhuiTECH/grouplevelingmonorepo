@@ -53,6 +53,9 @@ export interface GearItem {
   offset_y_female?: number | null;
   scale_female?: number | null;
   rotation_female?: number | null;
+  eraser_mask_url?: string | null;
+  eraser_mask_url_female?: string | null;
+  eraser_mask_targets?: string[] | null;
 }
 
 export interface Skin {

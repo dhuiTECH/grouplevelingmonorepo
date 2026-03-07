@@ -211,7 +211,10 @@ export default function PetsTab() {
     setUploadingWalking(true);
     try {
       const filePath = `encounters/pets/${Date.now()}_walking_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true });
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { 
+        upsert: true,
+        cacheControl: '31536000'
+      });
       if (error) throw error;
       const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
       setAnimConfig(prev => ({ ...prev, walkingUrl: `${data.publicUrl}?t=${Date.now()}` }));

@@ -201,7 +201,10 @@ export default function MobsTab() {
     setUploadingEncounterIcon(true);
     try {
       const filePath = `encounters/monsters/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true });
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { 
+        upsert: true,
+        cacheControl: '31536000'
+      });
       if (error) throw error;
       const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
       setEncounterForm((prev) => ({ ...prev, icon_url: `${data.publicUrl}?t=${Date.now()}` }));
@@ -218,7 +221,10 @@ export default function MobsTab() {
     setUploadingEncounterBg(true);
     try {
       const filePath = `encounters/backgrounds/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true });
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { 
+        upsert: true,
+        cacheControl: '31536000'
+      });
       if (error) throw error;
       const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
       setEncounterForm((prev) => ({ ...prev, background_url: `${data.publicUrl}?t=${Date.now()}` }));
@@ -235,7 +241,10 @@ export default function MobsTab() {
     setUploadingEncounterWalking(true);
     try {
       const filePath = `encounters/monsters/${Date.now()}_walking_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true });
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { 
+        upsert: true,
+        cacheControl: '31536000'
+      });
       if (error) throw error;
       const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
       setEncounterForm((prev) => ({ ...prev, walking_url: `${data.publicUrl}?t=${Date.now()}` }));
@@ -252,7 +261,10 @@ export default function MobsTab() {
     setUploadingEncounterSound(true);
     try {
       const filePath = `encounters/sounds/${Date.now()}_encounter_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true });
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { 
+        upsert: true,
+        cacheControl: '31536000'
+      });
       if (error) throw error;
       const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
       setEncounterForm((prev) => ({ ...prev, sound_encounter_url: `${data.publicUrl}?t=${Date.now()}` }));
@@ -269,7 +281,10 @@ export default function MobsTab() {
     setUploadingDeathSound(true);
     try {
       const filePath = `encounters/sounds/${Date.now()}_death_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true });
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { 
+        upsert: true,
+        cacheControl: '31536000'
+      });
       if (error) throw error;
       const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
       setEncounterForm((prev) => ({ ...prev, sound_death_url: `${data.publicUrl}?t=${Date.now()}` }));
@@ -287,7 +302,10 @@ export default function MobsTab() {
     try {
       const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
       const filePath = `encounters/music/${Date.now()}_battle_${safeName}`;
-      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true });
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { 
+        upsert: true,
+        cacheControl: '31536000'
+      });
       if (error) throw error;
       const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
       setEncounterForm((prev) => ({ ...prev, battle_music_url: `${data.publicUrl}?t=${Date.now()}` }));
@@ -304,7 +322,10 @@ export default function MobsTab() {
     try {
       const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
       const filePath = `battle-presets/${presetId}_${Date.now()}_${safeName}`;
-      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true });
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { 
+        upsert: true,
+        cacheControl: '31536000'
+      });
       if (error) throw error;
       const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
       const publicUrl = `${data.publicUrl}?t=${Date.now()}`;
@@ -502,9 +523,53 @@ export default function MobsTab() {
   };
 
   const deleteEncounter = async (id: string) => {
-    if (confirm('Delete this encounter?')) {
-      await supabase.from('encounter_pool').delete().eq('id', id);
-      loadEncounters();
+    if (confirm('Delete this encounter? This will also remove associated storage assets.')) {
+      try {
+        // 1. Fetch encounter data to get asset URLs
+        const { data: enc, error: fetchError } = await supabase
+          .from('encounter_pool')
+          .select('icon_url, metadata')
+          .eq('id', id)
+          .single();
+
+        if (fetchError) throw fetchError;
+
+        // 2. Delete from DB
+        const { error: deleteError } = await supabase.from('encounter_pool').delete().eq('id', id);
+        if (deleteError) throw deleteError;
+
+        // 3. Cleanup storage assets
+        if (enc) {
+          const BUCKET = 'game-assets';
+          const visuals = enc.metadata?.visuals || {};
+          const sounds = enc.metadata?.sounds || {};
+          
+          const assetsToDelete = [
+            enc.icon_url,
+            visuals.bg_url,
+            visuals.walking_spritesheet?.url,
+            sounds.encounter_url,
+            sounds.death_url,
+            sounds.battle_music_url
+          ].filter(Boolean);
+
+          for (const url of assetsToDelete) {
+            try {
+              const pathPart = url.split(`/${BUCKET}/`)[1]?.split('?')[0];
+              if (pathPart) {
+                console.log(`🗑️ Deleting encounter asset: ${pathPart}`);
+                await supabase.storage.from(BUCKET).remove([pathPart]);
+              }
+            } catch (storageErr) {
+              console.error(`Failed to delete storage asset ${url}:`, storageErr);
+            }
+          }
+        }
+
+        loadEncounters();
+      } catch (e: any) {
+        alert('Failed to delete encounter: ' + e.message);
+      }
     }
   };
 

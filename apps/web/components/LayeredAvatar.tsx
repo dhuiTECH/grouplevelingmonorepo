@@ -112,6 +112,57 @@ export default function LayeredAvatar({
     // Render logic is handled in the map loop above if the item exists in the list.
   }
 
+  // Extract active masks (gender-specific: use eraser_mask_url_female for female when set)
+  const activeMasks: { url: string; targetSlot: string }[] = [];
+  const userGender = (user as any).gender;
+  overlayLayers.forEach((c: any) => {
+    const item = c.shop_items;
+    const maskUrl = (userGender === 'female' && item?.eraser_mask_url_female) ? item.eraser_mask_url_female : item?.eraser_mask_url;
+    if (maskUrl && item?.eraser_mask_targets) {
+      const targets = Array.isArray(item.eraser_mask_targets) 
+        ? item.eraser_mask_targets 
+        : [item.eraser_mask_targets];
+        
+      targets.forEach((target: string) => {
+        if (typeof target === 'string') {
+          activeMasks.push({
+            url: maskUrl,
+            targetSlot: target.trim().toLowerCase()
+          });
+        }
+      });
+    }
+  });
+
+  const applyMasksToLayer = (layerContent: React.ReactNode, currentSlot: string) => {
+    const masksForThisLayer = activeMasks.filter((m: any) => m.targetSlot === currentSlot);
+    
+    if (masksForThisLayer.length === 0) return layerContent;
+
+    return (
+      <div className="absolute inset-0 w-full h-full pointer-events-none">
+        {masksForThisLayer.reduce((children: React.ReactNode, mask: any) => (
+          <div
+            key={mask.url}
+            className="absolute inset-0 w-full h-full"
+            style={{
+              WebkitMaskImage: `url(${mask.url})`,
+              maskImage: `url(${mask.url})`,
+              WebkitMaskSize: 'contain',
+              maskSize: 'contain',
+              WebkitMaskPosition: 'center',
+              maskPosition: 'center',
+              WebkitMaskRepeat: 'no-repeat',
+              maskRepeat: 'no-repeat'
+            }}
+          >
+            {children}
+          </div>
+        ), layerContent)}
+      </div>
+    );
+  };
+
   const ADMIN_CONTAINER_SIZE = 512;
   const ADMIN_ANCHOR_POINT = 128;
   const scaleRatio = size / ADMIN_CONTAINER_SIZE;
@@ -145,75 +196,78 @@ export default function LayeredAvatar({
       {/* Base body + overlays: single wrapper so they breathe in sync (no drift) */}
       <div className={layersWrapperClass}>
         <div className="absolute inset-0 w-full h-full" style={{ zIndex: 5 }}>
-          {useTwoLayerBase ? (
-            <>
-              <div
-                className="absolute inset-0 w-full h-full"
-                style={{
-                  backgroundColor: baseTintHex,
-                  WebkitMaskImage: maskUrl ? `url(${maskUrl})` : undefined,
-                  maskImage: maskUrl ? `url(${maskUrl})` : undefined,
-                  WebkitMaskSize: 'contain',
-                  maskSize: 'contain',
-                  WebkitMaskPosition: 'center',
-                  maskPosition: 'center',
-                  WebkitMaskRepeat: 'no-repeat',
-                  maskRepeat: 'no-repeat'
-                }}
-                aria-hidden
-              />
-              <img
-                src={baseDetailUrl}
-                alt="Hunter Body"
-                className="absolute inset-0 w-full h-full object-cover"
-                onError={(e) => { e.currentTarget.src = '/NoobMan.png'; }}
-              />
-            </>
-          ) : (
-            (() => {
-              const slot = getSlot(equippedShopSkinItem?.shop_items);
-              const isBaseBody = slot === 'base_body';
-              // Only tint if it's a base_body. Unique avatars (avatar slot) should NOT be skin tinted.
-              const tintUrl = isBaseBody ? (avatarBaseUrl || baseBodyLayer) : null;
-              
-              if (tintUrl) {
-                return (
-                  <>
-                    <div
-                      className="absolute inset-0 w-full h-full"
-                      style={{
-                        backgroundColor: baseTintHex,
-                        WebkitMaskImage: `url(${tintUrl})`,
-                        maskImage: `url(${tintUrl})`,
-                        WebkitMaskSize: 'contain',
-                        maskSize: 'contain',
-                        WebkitMaskPosition: 'center',
-                        maskPosition: 'center',
-                        WebkitMaskRepeat: 'no-repeat',
-                        maskRepeat: 'no-repeat'
-                      }}
-                      aria-hidden
-                    />
-                    <img
-                      src={baseBodyLayer}
-                      alt="Hunter Body"
-                      className="absolute inset-0 w-full h-full object-cover"
-                      style={{ mixBlendMode: 'multiply' }}
-                      onError={(e) => { e.currentTarget.src = '/NoobMan.png'; }}
-                    />
-                  </>
-                );
-              }
-              
-              return (
+          {applyMasksToLayer(
+            useTwoLayerBase ? (
+              <>
+                <div
+                  className="absolute inset-0 w-full h-full"
+                  style={{
+                    backgroundColor: baseTintHex,
+                    WebkitMaskImage: maskUrl ? `url(${maskUrl})` : undefined,
+                    maskImage: maskUrl ? `url(${maskUrl})` : undefined,
+                    WebkitMaskSize: 'contain',
+                    maskSize: 'contain',
+                    WebkitMaskPosition: 'center',
+                    maskPosition: 'center',
+                    WebkitMaskRepeat: 'no-repeat',
+                    maskRepeat: 'no-repeat'
+                  }}
+                  aria-hidden
+                />
                 <img
-                  src={baseBodyLayer}
+                  src={baseDetailUrl}
                   alt="Hunter Body"
-                  className="w-full h-full object-cover"
+                  className="absolute inset-0 w-full h-full object-cover"
                   onError={(e) => { e.currentTarget.src = '/NoobMan.png'; }}
                 />
-              );
-            })()
+              </>
+            ) : (
+              (() => {
+                const slot = getSlot(equippedShopSkinItem?.shop_items);
+                const isBaseBody = slot === 'base_body';
+                // Only tint if it's a base_body. Unique avatars (avatar slot) should NOT be skin tinted.
+                const tintUrl = isBaseBody ? (avatarBaseUrl || baseBodyLayer) : null;
+                
+                if (tintUrl) {
+                  return (
+                    <>
+                      <div
+                        className="absolute inset-0 w-full h-full"
+                        style={{
+                          backgroundColor: baseTintHex,
+                          WebkitMaskImage: `url(${tintUrl})`,
+                          maskImage: `url(${tintUrl})`,
+                          WebkitMaskSize: 'contain',
+                          maskSize: 'contain',
+                          WebkitMaskPosition: 'center',
+                          maskPosition: 'center',
+                          WebkitMaskRepeat: 'no-repeat',
+                          maskRepeat: 'no-repeat'
+                        }}
+                        aria-hidden
+                      />
+                      <img
+                        src={baseBodyLayer}
+                        alt="Hunter Body"
+                        className="absolute inset-0 w-full h-full object-cover"
+                        style={{ mixBlendMode: 'multiply' }}
+                        onError={(e) => { e.currentTarget.src = '/NoobMan.png'; }}
+                      />
+                    </>
+                  );
+                }
+                
+                return (
+                  <img
+                    src={baseBodyLayer}
+                    alt="Hunter Body"
+                    className="w-full h-full object-cover"
+                    onError={(e) => { e.currentTarget.src = '/NoobMan.png'; }}
+                  />
+                );
+              })()
+            ),
+            getSlot(equippedShopSkinItem?.shop_items) || 'base_body'
           )}
         </div>
 
@@ -283,14 +337,14 @@ export default function LayeredAvatar({
             mediaClassName = "max-w-none";
           }
 
-          // Handle multiply blend mode for hand grips
-          const isHandGrip = item.slot === 'hand_grip';
+          const currentSlot = getSlot(item);
+          const isHandGrip = currentSlot === 'hand_grip';
           const finalZIndex = (isHandGrip && handGripZIndexOverride !== null && handGripZIndexOverride !== undefined) 
             ? Number(handGripZIndexOverride) 
             : zIndex;
           
           if (isHandGrip && item.image_url) {
-             return (
+             return applyMasksToLayer(
               <div
                 key={cosmetic.id ?? `overlay-${index}-${item?.id ?? index}`}
                 className="absolute pointer-events-none flex items-center justify-center"
@@ -328,11 +382,12 @@ export default function LayeredAvatar({
                       style={{ mixBlendMode: 'multiply' }}
                     />
                  </div>
-              </div>
+              </div>,
+              currentSlot
              );
           }
 
-          return (
+          return applyMasksToLayer(
             <div
               key={cosmetic.id ?? `overlay-${index}-${item?.id ?? index}`}
               className="absolute pointer-events-none flex items-center justify-center"
@@ -358,7 +413,8 @@ export default function LayeredAvatar({
                 animate={true}
                 className={mediaClassName}
               />
-            </div>
+            </div>,
+            currentSlot
           );
         })}
       </div>

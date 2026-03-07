@@ -67,8 +67,36 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id');
     if (!id) throw new Error('ID required');
 
+    // 1. Fetch Collection to get cover image URL before deletion
+    const { data: collectionData, error: fetchError } = await supabaseAdmin
+      .from('gacha_collections')
+      .select('cover_image_url')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !collectionData) {
+      console.warn('⚠️ Could not fetch gacha collection data before delete:', fetchError?.message);
+    }
+
+    // 2. Delete from DB
     const { error } = await supabaseAdmin.from('gacha_collections').delete().eq('id', id);
     if (error) throw error;
+
+    // 3. Cleanup storage assets
+    if (collectionData?.cover_image_url) {
+      const BUCKET = 'game-assets';
+      try {
+        // Extract path from URL: https://.../storage/v1/object/public/game-assets/path/to/file
+        const pathPart = collectionData.cover_image_url.split(`/${BUCKET}/`)[1]?.split('?')[0];
+        if (pathPart) {
+          console.log(`🗑️ Deleting gacha asset from storage: ${pathPart}`);
+          await supabaseAdmin.storage.from(BUCKET).remove([pathPart]);
+        }
+      } catch (storageErr) {
+        console.error(`Failed to delete storage asset ${collectionData.cover_image_url}:`, storageErr);
+      }
+    }
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

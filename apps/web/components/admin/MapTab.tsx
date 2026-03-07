@@ -285,7 +285,10 @@ export default function MapTab({ shopItems }: { shopItems: any[] }) {
     setUploadingSpeech(true);
     try {
       const path = `nodes/speech/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const { error } = await supabase.storage.from('game-assets').upload(path, file, { upsert: true });
+      const { error } = await supabase.storage.from('game-assets').upload(path, file, { 
+        upsert: true,
+        cacheControl: '31536000'
+      });
       if (error) throw error;
       const { data } = supabase.storage.from('game-assets').getPublicUrl(path);
       setNodeFormData(prev => ({ ...prev, speech_sound_url: data.publicUrl }));
@@ -302,7 +305,10 @@ export default function MapTab({ shopItems }: { shopItems: any[] }) {
     setUploadingNodeMusic(true);
     try {
       const path = `music/nodes/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const { error } = await supabase.storage.from('game-assets').upload(path, file, { upsert: true });
+      const { error } = await supabase.storage.from('game-assets').upload(path, file, { 
+        upsert: true,
+        cacheControl: '31536000'
+      });
       if (error) throw error;
       const { data } = supabase.storage.from('game-assets').getPublicUrl(path);
       const trackName = file.name.replace(/\.[^/.]+$/, '');
@@ -371,7 +377,10 @@ export default function MapTab({ shopItems }: { shopItems: any[] }) {
     if (lineIndex == null || !file) return;
     try {
       const path = `nodes/voice-lines/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const { error } = await supabase.storage.from('game-assets').upload(path, file, { upsert: true });
+      const { error } = await supabase.storage.from('game-assets').upload(path, file, { 
+        upsert: true,
+        cacheControl: '31536000'
+      });
       if (error) throw error;
       const { data } = supabase.storage.from('game-assets').getPublicUrl(path);
 

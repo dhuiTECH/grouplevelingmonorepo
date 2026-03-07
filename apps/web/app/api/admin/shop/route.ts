@@ -317,12 +317,49 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Item ID required' }, { status: 400 })
     }
 
+    // 1. Fetch Item to get asset URLs before deletion
+    const { data: itemData, error: fetchError } = await supabaseAdmin
+      .from('shop_items')
+      .select('image_url, thumbnail_url, image_base_url, eraser_mask_url, eraser_mask_url_female')
+      .eq('id', itemId)
+      .single();
+
+    if (fetchError || !itemData) {
+      console.warn('⚠️ Could not fetch shop item data before delete:', fetchError?.message);
+    }
+
+    // 2. Delete from DB
     const { error } = await supabaseAdmin
       .from('shop_items')
       .delete()
       .eq('id', itemId)
 
     if (error) throw error
+
+    // 3. Cleanup storage assets
+    if (itemData) {
+      const BUCKET = 'game-assets';
+      const assetsToDelete = [
+        itemData.image_url, 
+        itemData.thumbnail_url, 
+        itemData.image_base_url,
+        itemData.eraser_mask_url,
+        itemData.eraser_mask_url_female
+      ].filter(Boolean);
+
+      for (const url of assetsToDelete) {
+        try {
+          // Extract path from URL: https://.../storage/v1/object/public/game-assets/path/to/file
+          const pathPart = url.split(`/${BUCKET}/`)[1]?.split('?')[0];
+          if (pathPart) {
+            console.log(`🗑️ Deleting shop asset from storage: ${pathPart}`);
+            await supabaseAdmin.storage.from(BUCKET).remove([pathPart]);
+          }
+        } catch (storageErr) {
+          console.error(`Failed to delete storage asset ${url}:`, storageErr);
+        }
+      }
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

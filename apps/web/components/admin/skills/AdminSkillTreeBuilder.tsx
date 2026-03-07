@@ -239,7 +239,10 @@ export default function AdminSkillTreeBuilder({ selectedClass }: { selectedClass
       setUploading(true);
       const file = e.target.files[0];
       const fileName = `${selectedClass}_${selectedSkill.id}_${Date.now()}.${file.name.split('.').pop()}`;
-      const { error: uploadError } = await supabase.storage.from('skill-icons').upload(fileName, file);
+      const { error: uploadError } = await supabase.storage.from('skill-icons').upload(fileName, file, {
+        upsert: true,
+        cacheControl: '31536000'
+      });
       if (uploadError) throw uploadError;
       const { data: { publicUrl } } = supabase.storage.from('skill-icons').getPublicUrl(fileName);
 

@@ -99,12 +99,39 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Track ID required' }, { status: 400 })
     }
 
+    // 1. Fetch Track to get asset URLs before deletion
+    const { data: trackData, error: fetchError } = await supabaseAdmin
+      .from('game_music')
+      .select('file_url')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !trackData) {
+      console.warn('⚠️ Could not fetch music track data before delete:', fetchError?.message);
+    }
+
+    // 2. Delete from DB
     const { error } = await supabaseAdmin
       .from('game_music')
       .delete()
       .eq('id', id)
 
     if (error) throw error
+
+    // 3. Cleanup storage assets
+    if (trackData?.file_url) {
+      const BUCKET = 'game-assets';
+      try {
+        // Extract path from URL: https://.../storage/v1/object/public/game-assets/path/to/file
+        const pathPart = trackData.file_url.split(`/${BUCKET}/`)[1]?.split('?')[0];
+        if (pathPart) {
+          console.log(`🗑️ Deleting music asset from storage: ${pathPart}`);
+          await supabaseAdmin.storage.from(BUCKET).remove([pathPart]);
+        }
+      } catch (storageErr) {
+        console.error(`Failed to delete storage asset ${trackData.file_url}:`, storageErr);
+      }
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

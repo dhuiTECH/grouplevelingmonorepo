@@ -194,13 +194,48 @@ export const createMapDataSlice: StateCreator<
   },
 
   removeNode: async (id) => {
+    // 1. Fetch node data to get asset URLs before local filter
+    const nodeToRemove = get().nodes.find(n => n.id === id);
+    
     set((state) => ({
       nodes: state.nodes.filter((n) => n.id !== id),
       selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId
     }));
+
     const { error } = await supabase.from('world_map_nodes').delete().eq('id', id);
     if (error) {
       console.error('Failed to delete world_map_node', error);
+      return;
+    }
+
+    // 2. Cleanup storage assets if deletion was successful
+    if (nodeToRemove) {
+      const BUCKET = 'game-assets';
+      const props = nodeToRemove.properties || {};
+      const scene = props.scene || {};
+      const script = (props.dialogue_script || []) as Array<{ image_url?: string; voice_line_url?: string }>;
+      const scriptUrls = script.flatMap((line) => [line.image_url, line.voice_line_url].filter(Boolean));
+
+      const assetsToDelete = [
+        nodeToRemove.iconUrl,
+        props.modal_image_url,
+        scene.scene_background_url,
+        scene.scene_npc_sprite_url,
+        props.speech_sound_url,
+        ...scriptUrls
+      ].filter(Boolean);
+
+      for (const url of assetsToDelete) {
+        try {
+          const pathPart = url.split(`/${BUCKET}/`)[1]?.split('?')[0];
+          if (pathPart) {
+            console.log(`🗑️ Deleting node asset: ${pathPart}`);
+            await supabase.storage.from(BUCKET).remove([pathPart]);
+          }
+        } catch (storageErr) {
+          console.error(`Failed to delete storage asset ${url}:`, storageErr);
+        }
+      }
     }
   },
 

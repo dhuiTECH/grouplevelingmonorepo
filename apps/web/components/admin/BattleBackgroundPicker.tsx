@@ -55,9 +55,12 @@ export function BattleBackgroundPicker({ selectedImageUrl, onSelect }: BattleBac
       setUploading(true);
       const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
 
-      const { data, error } = await supabase.storage
-        .from(BUCKET)
-        .upload(`${FOLDER}/${fileName}`, file);
+        const { data, error } = await supabase.storage
+          .from(BUCKET)
+          .upload(`${FOLDER}/${fileName}`, file, {
+            upsert: true,
+            cacheControl: '31536000'
+          });
 
       if (error) {
         setError(`Failed to upload image: ${error.message}`);

@@ -198,7 +198,10 @@ export const useMapData = () => {
     setUploadingNodeMusic(true);
     try {
       const path = `music/nodes/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const { error } = await supabase.storage.from('game-assets').upload(path, file, { upsert: true });
+      const { error } = await supabase.storage.from('game-assets').upload(path, file, { 
+        upsert: true,
+        cacheControl: '31536000'
+      });
       if (error) throw error;
       const { data } = supabase.storage.from('game-assets').getPublicUrl(path);
       const trackName = file.name.replace(/\.[^/.]+$/, '');

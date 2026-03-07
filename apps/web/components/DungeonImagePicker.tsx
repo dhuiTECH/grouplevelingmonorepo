@@ -60,9 +60,12 @@ export default function DungeonImagePicker({ selectedImageUrl, onSelect }: Dunge
       setUploading(true);
       const fileName = `${Date.now()}-${file.name}`;
 
-      const { data, error } = await supabase.storage
-        .from('Dungeons')
-        .upload(`dungeon-images/${fileName}`, file);
+        const { data, error } = await supabase.storage
+          .from('Dungeons')
+          .upload(`dungeon-images/${fileName}`, file, {
+            upsert: true,
+            cacheControl: '31536000'
+          });
 
       if (error) {
         console.error('Upload error:', error);

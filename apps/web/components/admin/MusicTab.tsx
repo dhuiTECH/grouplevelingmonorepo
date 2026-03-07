@@ -77,7 +77,10 @@ export default function MusicTab() {
       
       const { error: uploadError } = await supabase.storage
         .from('game-assets')
-        .upload(filePath, file, { upsert: true });
+        .upload(filePath, file, { 
+          upsert: true,
+          cacheControl: '31536000' 
+        });
 
       if (uploadError) throw uploadError;
 

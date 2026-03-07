@@ -54,6 +54,9 @@ export interface GearItem {
   scale_female?: number | null;
   rotation_female?: number | null;
   hand_grip_z_index_override?: number | null;
+  eraser_mask_url?: string | null;
+  eraser_mask_url_female?: string | null;
+  eraser_mask_targets?: string[] | null;
 }
 
 export interface Skin {

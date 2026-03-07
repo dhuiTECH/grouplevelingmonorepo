@@ -1,6 +1,7 @@
 "use client";
 
 import AnimatedEquip from './AnimatedEquip';
+import Image from 'next/image';
 
 export const ShopItemMedia = ({ 
   item, 
@@ -73,12 +74,16 @@ export const ShopItemMedia = ({
   // If animated but NOT currently animating (e.g. inventory/thumbnail), OR if explicit thumbnail exists
   if (item.thumbnail_url) {
     return (
-      <img
-        src={item.thumbnail_url}
-        alt={item.name}
-        className={className}
-        onError={(e) => { e.currentTarget.src = '/NoobMan.png'; }}
-      />
+      <div className={`relative ${className || 'w-full h-full'}`}>
+        <Image
+          src={item.thumbnail_url}
+          alt={item.name || ''}
+          fill
+          style={{ objectFit: 'contain' }}
+          unoptimized
+          onError={(e: any) => { e.currentTarget.src = '/NoobMan.png'; }}
+        />
+      </div>
     );
   }
 
@@ -132,14 +137,17 @@ export const ShopItemMedia = ({
         )}
         {/* Detail/Outline Layer */}
         {imageSrc && imageSrc !== silhouetteUrl && (
-          <img
+          <Image
             src={imageSrc}
             alt={item.name}
-            className="absolute inset-0 w-full h-full object-contain z-10"
+            className="absolute inset-0 z-10"
+            fill
+            unoptimized
             style={{ 
+              objectFit: 'contain',
               mixBlendMode: (item.slot === 'hand_grip' || item.slot === 'base_body') ? 'multiply' : 'normal' 
             }}
-            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            onError={(e: any) => { e.currentTarget.style.display = 'none'; }}
           />
         )}
       </div>
@@ -148,11 +156,15 @@ export const ShopItemMedia = ({
 
   // 5. Standard Non-Animated Items
   return (
-    <img
-      src={imageSrc}
-      alt={item.name}
-      className={className}
-      onError={(e) => { e.currentTarget.src = '/NoobMan.png'; }}
-    />
+    <div className={`relative ${className || 'w-full h-full'}`}>
+      <Image
+        src={imageSrc}
+        alt={item.name || ''}
+        fill
+        style={{ objectFit: 'contain' }}
+        unoptimized
+        onError={(e: any) => { e.currentTarget.src = '/NoobMan.png'; }}
+      />
+    </div>
   );
 };

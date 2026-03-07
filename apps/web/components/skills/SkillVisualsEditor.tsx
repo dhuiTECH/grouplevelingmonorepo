@@ -122,7 +122,8 @@ export default function SkillVisualsEditor({ skillId, skillName, onClose }: Prop
 
     const { error } = await supabase.storage.from('game-assets').upload(filePath, file, {
       upsert: true,
-      contentType: file.type
+      contentType: file.type,
+      cacheControl: '31536000'
     });
 
     if (error) {

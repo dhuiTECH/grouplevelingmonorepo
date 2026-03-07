@@ -6,6 +6,7 @@ import { Loader2, CheckCircle } from 'lucide-react';
 import CustomDropdown from './CustomDropdown';
 import AnimatedEquip from '@/components/AnimatedEquip';
 import { supabase } from '@/lib/supabase';
+import { MaskPainter } from './MaskPainter';
 
 interface AddShopItemFormProps {
   onAdd: (item: any) => void;
@@ -43,12 +44,15 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
     class_req: 'All',
     no_restrictions: false,
     grip_type: null as string | null,
-    hand_grip_z_index_override: null as number | null
+    hand_grip_z_index_override: null as number | null,
+    eraser_mask_targets: [] as string[],
+    eraser_mask_url: null as string | null,
+    eraser_mask_url_female: null as string | null
   });
 
   const SKIN_TINT_SLOTS = ['avatar', 'base_body', 'hand_grip', 'face_eyes', 'face_mouth', 'hair'];
 
-  const [handOpacity, setHandOpacity] = useState(0.5);
+  const [handOpacity, setHandOpacity] = useState(1.0);
   const [showHandPreview, setShowHandPreview] = useState(true);
   const [previewGripType, setPreviewGripType] = useState<string | null>(null); // For avatars/base_body to preview hands
 
@@ -87,7 +91,11 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
         class_req: editingItem.class_req || 'All',
         no_restrictions: Boolean(editingItem.no_restrictions ?? false),
         grip_type: editingItem.grip_type ?? null,
-        hand_grip_z_index_override: editingItem.hand_grip_z_index_override ?? null
+        hand_grip_z_index_override: editingItem.hand_grip_z_index_override ?? null,
+        eraser_mask_targets: Array.isArray(editingItem.eraser_mask_targets) ? editingItem.eraser_mask_targets : 
+                             (typeof editingItem.eraser_mask_targets === 'string' && editingItem.eraser_mask_targets !== 'none' ? [editingItem.eraser_mask_targets] : []),
+        eraser_mask_url: editingItem.eraser_mask_url ?? null,
+        eraser_mask_url_female: editingItem.eraser_mask_url_female ?? null
       });
       setOnboardingAvailable(Boolean(editingItem.onboarding_available ?? false));
     } else {
@@ -103,7 +111,10 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
         class_req: 'All',
         no_restrictions: false,
         grip_type: null,
-        hand_grip_z_index_override: null
+        hand_grip_z_index_override: null,
+        eraser_mask_targets: [],
+        eraser_mask_url: null,
+        eraser_mask_url_female: null
       });
       setOnboardingAvailable(false);
     }
@@ -173,6 +184,9 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
   const [effectBuffStatOpen, setEffectBuffStatOpen] = useState(false);
   const [collectionOpen, setCollectionOpen] = useState(false);
   const [gripTypeOpen, setGripTypeOpen] = useState(false);
+  const [showMaskPainter, setShowMaskPainter] = useState(false);
+  const [showMaskPainterForFemale, setShowMaskPainterForFemale] = useState(false);
+  const [eraserMaskTargetOpen, setEraserMaskTargetOpen] = useState(false);
 
   useEffect(() => {
     if (formData.slot !== 'base_body') setSelectedBaseLayerFile(null);
@@ -376,7 +390,7 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Element;
-      if (slotOpen || rarityOpen || classReqOpen || bonusTypeOpenIndex !== null || effectTypeOpen || effectBuffStatOpen || collectionOpen || gripTypeOpen) {
+      if (slotOpen || rarityOpen || classReqOpen || bonusTypeOpenIndex !== null || effectTypeOpen || effectBuffStatOpen || collectionOpen || gripTypeOpen || eraserMaskTargetOpen) {
         if (!target.closest('[data-dropdown]')) {
           setSlotOpen(false);
           setBonusTypeOpenIndex(null);
@@ -386,12 +400,13 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
           setEffectBuffStatOpen(false);
           setCollectionOpen(false);
           setGripTypeOpen(false);
+          setEraserMaskTargetOpen(false);
         }
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [slotOpen, rarityOpen, classReqOpen, bonusTypeOpenIndex, effectTypeOpen, effectBuffStatOpen, collectionOpen, gripTypeOpen]);
+  }, [slotOpen, rarityOpen, classReqOpen, bonusTypeOpenIndex, effectTypeOpen, effectBuffStatOpen, collectionOpen, gripTypeOpen, eraserMaskTargetOpen]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -412,6 +427,77 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
       return g;
     }
     return (g as string) || null;
+  };
+
+  const handleSaveMask = async (base64Png: string) => {
+    setUploading(true);
+    try {
+      // Convert base64 to Blob
+      const response = await fetch(base64Png);
+      const blob = await response.blob();
+      const file = new File([blob], `mask_${Date.now()}.png`, { type: 'image/png' });
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Not authenticated');
+
+      const formDataUpload = new FormData();
+      formDataUpload.append('file', file);
+      
+      const uploadResponse = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: formDataUpload
+      });
+      
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload mask image');
+      }
+      
+      const uploadData = await uploadResponse.json();
+      const maskUrl = uploadData.path || uploadData.url || uploadData.publicUrl;
+      
+      setFormData(prev => ({ ...prev, eraser_mask_url: maskUrl }));
+      setShowMaskPainter(false);
+    } catch (err) {
+      console.error('Error uploading mask:', err);
+      alert('Failed to save mask. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSaveMaskFemale = async (base64Png: string) => {
+    setUploading(true);
+    try {
+      const response = await fetch(base64Png);
+      const blob = await response.blob();
+      const file = new File([blob], `mask_female_${Date.now()}.png`, { type: 'image/png' });
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Not authenticated');
+
+      const formDataUpload = new FormData();
+      formDataUpload.append('file', file);
+
+      const uploadResponse = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: formDataUpload
+      });
+
+      if (!uploadResponse.ok) throw new Error('Failed to upload mask image');
+
+      const uploadData = await uploadResponse.json();
+      const maskUrl = uploadData.path || uploadData.url || uploadData.publicUrl;
+
+      setFormData(prev => ({ ...prev, eraser_mask_url_female: maskUrl }));
+      setShowMaskPainter(false);
+    } catch (err) {
+      console.error('Error uploading female mask:', err);
+      alert('Failed to save female mask. Please try again.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -475,7 +561,10 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
       is_sellable: ['base_body', 'face_eyes', 'face_mouth', 'hair', 'hand_grip'].includes(formData.slot) ? false : isSellable,
       onboarding_available: CREATOR_SLOTS.includes(formData.slot) ? onboardingAvailable : false,
       grip_type: formData.grip_type,
-      hand_grip_z_index_override: formData.hand_grip_z_index_override
+      hand_grip_z_index_override: formData.hand_grip_z_index_override,
+      eraser_mask_targets: formData.eraser_mask_targets,
+      eraser_mask_url: formData.eraser_mask_url,
+      eraser_mask_url_female: formData.eraser_mask_url_female ?? null
     };
 
     if (editingItem && thumbnailCleared) itemData.thumbnail_url = null;
@@ -623,6 +712,15 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
         return '/NoobMan.png';
     }
   };
+
+  const getAvatarImageForGender = (gender: 'male' | 'female') => {
+    if (gender === 'female') return femaleBaseBodyItem?.image_url || '/NoobWoman.png';
+    return maleBaseBodyItem?.image_url || '/NoobMan.png';
+  };
+
+  const currentMaskUrl = (editingGender === 'female' && formData.eraser_mask_url_female)
+    ? formData.eraser_mask_url_female
+    : formData.eraser_mask_url;
 
   const baseAvatarOptions = React.useMemo(() => {
     const opts: { value: string; label: string; icon: string }[] = [
@@ -1189,6 +1287,115 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
                 </div>
               </div>
             )}
+
+            <div className="p-4 border border-blue-900/30 bg-black/40 rounded mt-4 space-y-3">
+              <h3 className="text-blue-500 text-sm font-bold uppercase">Targeted Masking</h3>
+              <p className="text-xs text-gray-400 mb-2">Erase parts of layers underneath when this item is equipped.</p>
+              
+              <div className="space-y-2 bg-gray-900/50 p-3 rounded border border-gray-700">
+                <label className="block text-xs font-black uppercase text-gray-300 mb-2">Target Layers to Mask</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: 'base_body', label: 'Base Body' },
+                    { value: 'avatar', label: 'Unique Avatars' },
+                    { value: 'hair', label: 'Hair' },
+                    { value: 'body', label: 'Shirt / Body' },
+                    { value: 'weapon', label: 'Weapon' },
+                    { value: 'head', label: 'Head / Hat' },
+                    { value: 'eyes', label: 'Eyes (Gear)' },
+                    { value: 'face_eyes', label: 'Eyes (Base)' },
+                    { value: 'face_mouth', label: 'Mouth (Base)' },
+                    { value: 'face', label: 'Face / Makeup' },
+                    { value: 'back', label: 'Back' },
+                    { value: 'hands', label: 'Hands' },
+                    { value: 'feet', label: 'Feet' },
+                    { value: 'accessory', label: 'Accessory' },
+                    { value: 'magic effects', label: 'Magic Effects' },
+                    { value: 'hand_grip', label: 'Hand Grip' },
+                  ].map(target => (
+                    <label key={target.value} className="flex items-center gap-2 cursor-pointer group">
+                      <input 
+                        type="checkbox" 
+                        checked={formData.eraser_mask_targets?.includes(target.value) || false}
+                        onChange={(e) => {
+                          const current = formData.eraser_mask_targets || [];
+                          const newTargets = e.target.checked 
+                            ? [...current, target.value] 
+                            : current.filter(t => t !== target.value);
+                          
+                          setFormData(prev => ({ 
+                            ...prev, 
+                            eraser_mask_targets: newTargets,
+                            // Clear mask URL if no targets are selected anymore
+                            eraser_mask_url: newTargets.length === 0 ? null : prev.eraser_mask_url
+                          }));
+                        }}
+                        className="w-4 h-4 text-blue-600 bg-gray-800 border-gray-600 rounded focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span className="text-sm text-gray-300 group-hover:text-white transition-colors">{target.label}</span>
+                    </label>
+                  ))}
+                </div>
+                {(!formData.eraser_mask_targets || formData.eraser_mask_targets.length === 0) && (
+                  <p className="text-xs text-gray-500 italic mt-2">Select at least one target to enable the mask painter.</p>
+                )}
+              </div>
+
+              {formData.eraser_mask_targets && formData.eraser_mask_targets.length > 0 && (
+                <div className="mt-3 space-y-3">
+                  <div className="flex flex-col gap-2">
+                    <span className="text-xs font-bold text-gray-300">Male</span>
+                    <button
+                      type="button"
+                      onClick={() => { setShowMaskPainterForFemale(false); setShowMaskPainter(true); }}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold w-full transition-colors"
+                    >
+                      {formData.eraser_mask_url ? 'Edit Mask (Male)' : 'Paint Eraser Mask (Male)'}
+                    </button>
+                    {formData.eraser_mask_url && (
+                      <div className="flex items-center justify-between bg-blue-900/20 p-2 rounded border border-blue-500/30">
+                        <div className="flex items-center gap-2">
+                          <img src={formData.eraser_mask_url} className="w-8 h-8 object-contain bg-white/10 rounded" alt="Male mask" />
+                          <span className="text-xs text-blue-300 font-bold">Male mask</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, eraser_mask_url: null }))}
+                          className="text-xs text-red-400 hover:text-red-300 font-bold px-2"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <span className="text-xs font-bold text-gray-300">Female</span>
+                    <button
+                      type="button"
+                      onClick={() => { setShowMaskPainterForFemale(true); setShowMaskPainter(true); }}
+                      className="px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded text-xs font-bold w-full transition-colors"
+                    >
+                      {formData.eraser_mask_url_female ? 'Edit Mask (Female)' : 'Paint Eraser Mask (Female)'}
+                    </button>
+                    {formData.eraser_mask_url_female && (
+                      <div className="flex items-center justify-between bg-pink-900/20 p-2 rounded border border-pink-500/30">
+                        <div className="flex items-center gap-2">
+                          <img src={formData.eraser_mask_url_female} className="w-8 h-8 object-contain bg-white/10 rounded" alt="Female mask" />
+                          <span className="text-xs text-pink-300 font-bold">Female mask</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, eraser_mask_url_female: null }))}
+                          className="text-xs text-red-400 hover:text-red-300 font-bold px-2"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </form>
         </div>
 
@@ -1262,44 +1469,55 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
                     {/* Base Avatar Reference Layer */}
                     {!['avatar', 'base_body'].includes(formData.slot) && (
                       <div className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
-                        {(() => {
-                          const isBaseBodyAvatar = positioning.selectedAvatar === 'male_base_body' || positioning.selectedAvatar === 'female_base_body';
-                          const baseItem = positioning.selectedAvatar === 'male_base_body' ? maleBaseBodyItem : femaleBaseBodyItem;
-                          
-                          if (isBaseBodyAvatar && baseItem) {
-                            return (
-                              <div className="absolute inset-0 w-full h-full">
-                                {/* Silhouette */}
-                                {(baseItem.image_base_url || baseItem.image_url) && (
-                                  <div
-                                    className="absolute inset-0 w-full h-full"
-                                    style={{
-                                      backgroundColor: baseItem.skin_tint_hex || '#FFDBAC',
-                                      WebkitMaskImage: `url(${baseItem.image_base_url || baseItem.image_url})`,
-                                      maskImage: `url(${baseItem.image_base_url || baseItem.image_url})`,
-                                      WebkitMaskSize: 'contain',
-                                      maskSize: 'contain',
-                                      WebkitMaskPosition: 'center',
-                                      maskPosition: 'center',
-                                      WebkitMaskRepeat: 'no-repeat',
-                                      maskRepeat: 'no-repeat'
-                                    }}
-                                  />
-                                )}
-                                {/* Outlines */}
-                                {baseItem.image_url && baseItem.image_url !== baseItem.image_base_url && (
-                                  <img 
-                                    src={baseItem.image_url} 
-                                    alt="Base Avatar Outlines" 
-                                    className="absolute inset-0 w-full h-full object-contain z-10" 
-                                  />
-                                )}
-                              </div>
-                            );
-                          }
-                          
-                          return <img src={getAvatarImage()} alt="Base Avatar" className="absolute inset-0 w-full h-full object-contain" />;
-                        })()}
+                        <div 
+                          className="absolute inset-0 w-full h-full"
+                          style={currentMaskUrl && (formData.eraser_mask_targets?.includes('base_body') || formData.eraser_mask_targets?.includes('avatar')) ? {
+                            WebkitMaskImage: `url(${currentMaskUrl})`,
+                            maskImage: `url(${currentMaskUrl})`,
+                            WebkitMaskSize: 'contain',
+                            WebkitMaskPosition: 'center',
+                            WebkitMaskRepeat: 'no-repeat'
+                          } : {}}
+                        >
+                          {(() => {
+                            const isBaseBodyAvatar = positioning.selectedAvatar === 'male_base_body' || positioning.selectedAvatar === 'female_base_body';
+                            const baseItem = positioning.selectedAvatar === 'male_base_body' ? maleBaseBodyItem : femaleBaseBodyItem;
+                            
+                            if (isBaseBodyAvatar && baseItem) {
+                              return (
+                                <div className="absolute inset-0 w-full h-full">
+                                  {/* Silhouette */}
+                                  {(baseItem.image_base_url || baseItem.image_url) && (
+                                    <div
+                                      className="absolute inset-0 w-full h-full"
+                                      style={{
+                                        backgroundColor: baseItem.skin_tint_hex || '#FFDBAC',
+                                        WebkitMaskImage: `url(${baseItem.image_base_url || baseItem.image_url})`,
+                                        maskImage: `url(${baseItem.image_base_url || baseItem.image_url})`,
+                                        WebkitMaskSize: 'contain',
+                                        maskSize: 'contain',
+                                        WebkitMaskPosition: 'center',
+                                        maskPosition: 'center',
+                                        WebkitMaskRepeat: 'no-repeat',
+                                        maskRepeat: 'no-repeat'
+                                      }}
+                                    />
+                                  )}
+                                  {/* Outlines */}
+                                  {baseItem.image_url && baseItem.image_url !== baseItem.image_base_url && (
+                                    <img 
+                                      src={baseItem.image_url} 
+                                      alt="Base Avatar Outlines" 
+                                      className="absolute inset-0 w-full h-full object-contain z-10" 
+                                    />
+                                  )}
+                                </div>
+                              );
+                            }
+                            
+                            return <img src={getAvatarImage()} alt="Base Avatar" className="absolute inset-0 w-full h-full object-contain" />;
+                          })()}
+                        </div>
                       </div>
                     )}
 
@@ -1380,73 +1598,110 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
                           }
 
                           return (
-                            <div
-                              className="absolute pointer-events-none"
-                              style={{
-                                left: 0,
-                                top: 0,
-                                width: '100%',
-                                height: '100%',
-                                zIndex: hZIndex,
-                                opacity: handOpacity,
-                              }}
-                            >
-                              <div 
-                                className="absolute"
-                                style={{
-                                  left: `${128 + hX}px`,
-                                  top: `${128 + hY}px`,
-                                  width: 512,
-                                  height: 512,
-                                  transform: `translate(-50%, -50%) scale(${hScale}) rotate(${hRot}deg)`,
-                                  transformOrigin: 'center',
-                                }}
+                            <div className="absolute inset-0 w-full h-full" style={{ zIndex: hZIndex }}>
+                              <div
+                                className="absolute inset-0 w-full h-full pointer-events-none"
+                                style={currentMaskUrl && formData.eraser_mask_targets?.includes('hand_grip') ? {
+                                  WebkitMaskImage: `url(${currentMaskUrl})`,
+                                  maskImage: `url(${currentMaskUrl})`,
+                                  WebkitMaskSize: 'contain',
+                                  maskSize: 'contain',
+                                  WebkitMaskPosition: 'center',
+                                  maskPosition: 'center',
+                                  WebkitMaskRepeat: 'no-repeat',
+                                  maskRepeat: 'no-repeat'
+                                } : {}}
                               >
-                                {/* Tinted Background */}
-                                <div
-                                  className="absolute inset-0 w-full h-full"
+                                <div 
+                                  className="absolute"
                                   style={{
-                                    backgroundColor: skinColor,
-                                    WebkitMaskImage: `url(${handItem.image_base_url || handItem.image_url})`,
-                                    maskImage: `url(${handItem.image_base_url || handItem.image_url})`,
-                                    WebkitMaskSize: 'contain',
-                                    maskSize: 'contain',
-                                    WebkitMaskPosition: 'center',
-                                    maskPosition: 'center',
-                                    WebkitMaskRepeat: 'no-repeat',
-                                    maskRepeat: 'no-repeat'
+                                    left: `${128 + hX}px`,
+                                    top: `${128 + hY}px`,
+                                    width: 512,
+                                    height: 512,
+                                    transform: `translate(-50%, -50%) scale(${hScale}) rotate(${hRot}deg)`,
+                                    transformOrigin: 'center',
+                                    opacity: handOpacity,
                                   }}
-                                />
-                                {/* Black Lines (Multiply) */}
-                                <img 
-                                  src={handItem.image_url} 
-                                  alt="Ghost Hand Lines" 
-                                  className="absolute inset-0 w-full h-full object-contain"
-                                  style={{ mixBlendMode: 'multiply' }}
-                                />
+                                >
+                                  {/* Tinted Background */}
+                                  <div
+                                    className="absolute inset-0 w-full h-full"
+                                    style={{
+                                      backgroundColor: skinColor,
+                                      WebkitMaskImage: `url(${handItem.image_base_url || handItem.image_url})`,
+                                      maskImage: `url(${handItem.image_base_url || handItem.image_url})`,
+                                      WebkitMaskSize: 'contain',
+                                      maskSize: 'contain',
+                                      WebkitMaskPosition: 'center',
+                                      maskPosition: 'center',
+                                      WebkitMaskRepeat: 'no-repeat',
+                                      maskRepeat: 'no-repeat'
+                                    }}
+                                  />
+                                  {/* Black Lines (Multiply) */}
+                                  <img 
+                                    src={handItem.image_url} 
+                                    alt="Ghost Hand Lines" 
+                                    className="absolute inset-0 w-full h-full object-contain"
+                                    style={{ mixBlendMode: 'multiply' }}
+                                  />
+                                </div>
                               </div>
                             </div>
                           );
                         })()}
 
                         {previewUrl && (
-                          <div
-                            className="absolute"
-                            style={{
-                              left: `${128 + (editingGender === 'female' ? positioning.offsetXFemale : positioning.offsetX)}px`,
-                              top: `${128 + (editingGender === 'female' ? positioning.offsetYFemale : positioning.offsetY)}px`,
-                              zIndex: positioning.zIndex,
-                              transform: `translate(-50%, -50%) scale(${editingGender === 'female' ? positioning.scaleFemale : positioning.scale}) rotate(${editingGender === 'female' ? positioning.rotationFemale : positioning.rotation}deg)`,
-                              transformOrigin: 'center',
-                              cursor: isDragging ? 'grabbing' : 'grab'
-                            }}
-                            onMouseDown={handleMouseDown}
-                          >
-                            {isAnimated && animConfig.frameWidth > 0 ? (
-                              <AnimatedEquip src={previewUrl} frameWidth={animConfig.frameWidth} frameHeight={animConfig.frameHeight} totalFrames={animConfig.totalFrames} fps={animConfig.fps} />
-                            ) : (
-                              <img src={previewUrl} alt="Item Preview" style={{ width: 'auto', height: 'auto', maxWidth: 'none', maxHeight: 'none', pointerEvents: 'none', userSelect: 'none' }} className="pointer-events-none select-none" />
-                            )}
+                          <div className="absolute inset-0 w-full h-full" style={{ zIndex: positioning.zIndex }}>
+                            {/* 1. Stationary Mask Container: This spans the full 512x512 area so coordinates align */}
+                            <div
+                              className="absolute inset-0 w-full h-full pointer-events-none"
+                              style={
+                                currentMaskUrl && formData.eraser_mask_targets?.includes(formData.slot)
+                                  ? {
+                                      WebkitMaskImage: `url(${currentMaskUrl})`,
+                                      maskImage: `url(${currentMaskUrl})`,
+                                      WebkitMaskSize: 'contain',
+                                      maskSize: 'contain',
+                                      WebkitMaskPosition: 'center',
+                                      maskPosition: 'center',
+                                      WebkitMaskRepeat: 'no-repeat',
+                                      maskRepeat: 'no-repeat',
+                                    }
+                                  : {}
+                              }
+                            >
+                              {/* 2. Draggable Item: This moves around INSIDE the masked area */}
+                              <div
+                                className="absolute pointer-events-auto"
+                                style={{
+                                  left: `${128 + (editingGender === 'female' ? positioning.offsetXFemale : positioning.offsetX)}px`,
+                                  top: `${128 + (editingGender === 'female' ? positioning.offsetYFemale : positioning.offsetY)}px`,
+                                  transform: `translate(-50%, -50%) scale(${editingGender === 'female' ? positioning.scaleFemale : positioning.scale}) rotate(${editingGender === 'female' ? positioning.rotationFemale : positioning.rotation}deg)`,
+                                  transformOrigin: 'center',
+                                  cursor: isDragging ? 'grabbing' : 'grab',
+                                }}
+                                onMouseDown={handleMouseDown}
+                              >
+                                {isAnimated && animConfig.frameWidth > 0 ? (
+                                  <AnimatedEquip 
+                                    src={previewUrl} 
+                                    frameWidth={animConfig.frameWidth} 
+                                    frameHeight={animConfig.frameHeight} 
+                                    totalFrames={animConfig.totalFrames} 
+                                    fps={animConfig.fps} 
+                                  />
+                                ) : (
+                                  <img 
+                                    src={previewUrl} 
+                                    alt="Item Preview" 
+                                    style={{ width: 'auto', height: 'auto', maxWidth: 'none', maxHeight: 'none' }} 
+                                    className="pointer-events-none select-none" 
+                                  />
+                                )}
+                              </div>
+                            </div>
                           </div>
                         )}
                       </>
@@ -1739,6 +1994,70 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
           Cancel
         </button>
       </div>
+
+      {showMaskPainter && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="relative">
+            <button 
+              onClick={() => setShowMaskPainter(false)}
+              className="absolute -top-10 right-0 text-white font-bold bg-red-600 px-3 py-1 rounded hover:bg-red-500"
+            >
+              Close
+            </button>
+            {(() => {
+              // Find secondary reference (e.g. Hand for Weapon, or Weapon for Hand)
+              let secondaryRef = undefined;
+              
+              const activePreviewGrip = formData.slot === 'weapon' ? formData.grip_type : (formData.slot === 'hand_grip' ? formData.grip_type : null);
+              
+              const paintForFemale = showMaskPainterForFemale;
+              const maskGender = paintForFemale ? 'female' : 'male';
+
+              if (activePreviewGrip) {
+                const targetSlot = formData.slot === 'weapon' ? 'hand_grip' : 'weapon';
+
+                const refItem = shopItems.find((i: any) => {
+                  if (i.slot !== targetSlot || i.grip_type !== activePreviewGrip) return false;
+                  const itemGender = Array.isArray(i.gender) ? i.gender : [i.gender];
+                  return itemGender.includes(maskGender) || itemGender.includes('unisex');
+                });
+
+                if (refItem?.image_url) {
+                  const isFemaleRef = maskGender === 'female';
+                  secondaryRef = {
+                    url: refItem.image_url,
+                    offsetX: (isFemaleRef && refItem.offset_x_female !== null && refItem.offset_x_female !== undefined) ? refItem.offset_x_female : (refItem.offset_x || 0),
+                    offsetY: (isFemaleRef && refItem.offset_y_female !== null && refItem.offset_y_female !== undefined) ? refItem.offset_y_female : (refItem.offset_y || 0),
+                    scale: (isFemaleRef && refItem.scale_female !== null && refItem.scale_female !== undefined) ? refItem.scale_female : (refItem.scale || 1),
+                    rotation: (isFemaleRef && refItem.rotation_female !== null && refItem.rotation_female !== undefined) ? refItem.rotation_female : (refItem.rotation || 0),
+                    zIndex: refItem.z_index,
+                    opacity: 1.0,
+                    useFullSize: targetSlot === 'hand_grip',
+                    isAnimated: !!refItem.is_animated,
+                    animConfig: refItem.animation_config ? (typeof refItem.animation_config === 'string' ? JSON.parse(refItem.animation_config) : refItem.animation_config) : undefined
+                  };
+                }
+              }
+
+              return (
+                <MaskPainter
+                  baseReferenceUrl={maskGender === 'female' ? '/NoobWoman.png' : '/NoobMan.png'}
+                  itemUrl={previewUrl || editingItem?.image_url || ''}
+                  offsetX={paintForFemale ? positioning.offsetXFemale : positioning.offsetX}
+                  offsetY={paintForFemale ? positioning.offsetYFemale : positioning.offsetY}
+                  scale={paintForFemale ? positioning.scaleFemale : positioning.scale}
+                  rotation={paintForFemale ? positioning.rotationFemale : positioning.rotation}
+                  useFullSize={['base_body', 'hand_grip'].includes(formData.slot)}
+                  isAnimated={isAnimated}
+                  animConfig={animConfig}
+                  secondaryReference={secondaryRef}
+                  onSaveMask={paintForFemale ? handleSaveMaskFemale : handleSaveMask}
+                />
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 });

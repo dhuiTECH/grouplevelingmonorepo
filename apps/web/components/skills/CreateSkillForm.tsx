@@ -52,7 +52,10 @@ export default function CreateSkillForm({ onClose, onSuccess, skill }: Props) {
         const filePath = `icons/${formData.id}_${Date.now()}.png`;
         const { error: uploadError } = await supabase.storage
           .from('game-assets') // Make sure this bucket exists!
-          .upload(filePath, iconFile);
+          .upload(filePath, iconFile, {
+            upsert: true,
+            cacheControl: '31536000'
+          });
         
         if (uploadError) throw uploadError;
         
