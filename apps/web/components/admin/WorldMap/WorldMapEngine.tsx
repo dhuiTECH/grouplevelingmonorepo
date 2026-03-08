@@ -40,8 +40,10 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
   const transformComponentRef = useRef<ReactZoomPanPinchRef>(null);
   const dropTargetRef = useRef<HTMLDivElement>(null);
   
-  // ⚡️ ATOMIC SELECTORS - No 'tiles' or 'nodes' arrays here! 
-  // The Engine will never re-render when painting or adding nodes!
+  // ⚡️ ATOMIC SELECTORS - No 'tiles' array here! 
+  // The Engine will not re-render when painting tiles, but it DOES subscribe to nodes 
+  // to ensure they show up on the map and in the sidebar correctly!
+  const nodes = useMapStore(state => state.nodes);
   const addNode = useMapStore(state => state.addNode);
   const removeNode = useMapStore(state => state.removeNode);
   const selectNode = useMapStore(state => state.selectNode);
@@ -385,7 +387,7 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
       return () => window.removeEventListener('resize', updateViewportSize);
     };
     init();
-  }, [loadTilesFromSupabase, sidebarWidth, rightSidebarWidth]);
+  }, [loadTilesFromSupabase]);
 
   useEffect(() => {
     // Initialize zoom scale for CSS and seed the pixiTransformRef with the initial position
@@ -501,7 +503,7 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
               foamStripTile={foamStripTile()}
               showDebugNumbers={showDebugNumbers}
               showWalkabilityOverlay={showWalkabilityOverlay}
-              nodes={useMapStore.getState().nodes}
+              nodes={nodes}
               selectedTool={selectedTool}
               isSpacePressed={isSpacePressed}
               brushMode={brushMode}
@@ -570,7 +572,7 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
                   />
                 )}
 
-                {useMapStore.getState().nodes.map(node => (
+                {nodes.map(node => (
                   <div
                     key={node.id}
                     onMouseDown={(e) => handleNodeMouseDown(node.id, e)}
@@ -664,7 +666,7 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
           open={showNodeModal}
           onClose={() => setShowNodeModal(false)}
           mode="edit"
-          coords={{ x: useMapStore.getState().nodes.find(n => n.id === selectedNodeId)?.x || 0, y: useMapStore.getState().nodes.find(n => n.id === selectedNodeId)?.y || 0 }}
+          coords={{ x: nodes.find(n => n.id === selectedNodeId)?.x || 0, y: nodes.find(n => n.id === selectedNodeId)?.y || 0 }}
           nodeData={nodeFormData}
           onChange={setNodeFormData}
           onSave={handleSaveNodeDetails}

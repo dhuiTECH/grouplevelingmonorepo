@@ -25,122 +25,134 @@ export const createMapDataSlice: StateCreator<
 
   loadTilesFromSupabase: async () => {
     set({ isLoadingTiles: true });
-    // Load Global Settings
-    const { data: settingsData } = await supabase.from('world_map_settings').select('*').eq('id', 1).maybeSingle();
-    let initialWaterBaseId = null;
-    let initialFoamStripId = null;
-
-    if (settingsData) {
-      set({
-        autoTileSheetUrl: settingsData.autotile_sheet_url,
-        dirtSheetUrl: settingsData.dirt_sheet_url,
-        waterSheetUrl: settingsData.water_sheet_url,
-      });
-    }
-
-    // Load Chunks
-    const { data: chunksData } = await supabase.from('map_chunks').select('*');
-    if (chunksData) {
-      const allTiles: Tile[] = [];
-      chunksData.forEach((chunk: any) => {
-        const tileData = chunk.tile_data;
-        if (Array.isArray(tileData)) {
-          tileData.forEach((t: any) => {
-            // CRITICAL: Prevent corrupted tiles with NaN/null coordinates from crashing rendering bounds
-            if (typeof t.x !== 'number' || typeof t.y !== 'number' || isNaN(t.x) || isNaN(t.y)) {
-               return;
-            }
-
-            allTiles.push({
-              id: uuidv4(),
-              x: t.x,
-              y: t.y,
-              imageUrl: t.imageUrl,
-              type: t.type,
-              isSpritesheet: t.isSpritesheet,
-              frameCount: t.frameCount,
-              frameWidth: t.frame_width || t.frameWidth,
-              frameHeight: t.frame_height || t.frameHeight,
-              animationSpeed: t.animationSpeed,
-              layer: t.layer || 0,
-              offsetX: t.offsetX || 0,
-              offsetY: t.offsetY || 0,
-              isWalkable: t.isWalkable ?? true,
-              snapToGrid: t.snapToGrid ?? false,
-              isAutoFill: t.isAutoFill ?? true,
-              isAutoTile: t.isAutoTile,
-              bitmask: t.bitmask,
-              elevation: t.elevation,
-              blockCol: t.blockCol ?? t.block_col,
-              blockRow: t.blockRow ?? t.block_row,
-              hasFoam: t.hasFoam,
-              foamBitmask: t.foamBitmask,
-              smartType: t.smartType,
-              rotation: t.rotation || 0,
-              edgeBlocks: t.edgeBlocks,
-            });
-          });
-        }
-      });
-      set({ tiles: allTiles });
-    }
-
-    // Load Custom Tile Library
-    const { data: customTilesData } = await supabase.from('custom_tiles').select('*').order('sort_order', { ascending: true });
-    if (customTilesData) {
-      const parsedTiles: CustomTile[] = customTilesData.map((t: any) => ({
-        id: t.id,
-        url: t.url,
-        name: t.name,
-        type: t.type,
-        isSpritesheet: t.is_spritesheet,
-        frameCount: t.frame_count,
-        frameWidth: t.frame_width,
-        frameHeight: t.frame_height,
-        animationSpeed: t.animation_speed,
-        layer: t.layer || 0,
-        isWalkable: t.is_walkable ?? true,
-        snapToGrid: t.snap_to_grid ?? false,
-        isAutoFill: t.is_autofill ?? true,
-        isAutoTile: t.is_autotile ?? false,
-        smartType: t.smartType,
-        category: t.category,
-        rotation: t.rotation || 0,
-        sort_order: t.sort_order || 0
-      }));
-
-      // Match the loaded URLs from settings back to the custom tile IDs
-      if (settingsData) {
-         const matchingWater = parsedTiles.find((t: CustomTile) => t.url === settingsData.water_base_url && t.category === 'water_base');
-         if (matchingWater) initialWaterBaseId = matchingWater.id;
-
-         const matchingFoam = parsedTiles.find((t: CustomTile) => t.url === settingsData.foam_sheet_url && t.category === 'foam_strip');
-         if (matchingFoam) initialFoamStripId = matchingFoam.id;
+    
+    try {
+      // 1. Load Nodes FIRST (they are small and critical)
+      const { data: nodesData, error: nodesError } = await supabase.from('world_map_nodes').select('*');
+      if (nodesError) {
+        console.error('Error loading map nodes:', nodesError);
+      } else if (nodesData) {
+        set({
+          nodes: nodesData.map((n: any) => ({
+            id: n.id,
+            x: Number(n.global_x ?? n.x ?? 0),
+            y: Number(n.global_y ?? n.y ?? 0),
+            type: n.type,
+            name: n.name,
+            iconUrl: n.icon_url,
+            properties: n.interaction_data || {}
+          }))
+        });
       }
 
-      set({
-        customTiles: parsedTiles,
-        selectedWaterBaseId: initialWaterBaseId,
-        selectedFoamStripId: initialFoamStripId
-      });
-    }
+      // 2. Load Global Settings
+      const { data: settingsData, error: settingsError } = await supabase.from('world_map_settings').select('*').eq('id', 1).maybeSingle();
+      if (settingsError) console.error('Error loading map settings:', settingsError);
+      
+      if (settingsData) {
+        set({
+          autoTileSheetUrl: settingsData.autotile_sheet_url,
+          dirtSheetUrl: settingsData.dirt_sheet_url,
+          waterSheetUrl: settingsData.water_sheet_url,
+        });
+      }
 
-    // Load Nodes with Global Coordinates
-    const { data: nodesData } = await supabase.from('world_map_nodes').select('*');
-    if (nodesData) {
-      set({
-        nodes: nodesData.map((n: any) => ({
-          id: n.id,
-          x: n.global_x ?? n.x,
-          y: n.global_y ?? n.y,
-          type: n.type,
-          name: n.name,
-          iconUrl: n.icon_url,
-          properties: n.interaction_data
-        }))
-      });
+      // 3. Load Custom Tile Library
+      const { data: customTilesData, error: customTilesError } = await supabase.from('custom_tiles').select('*').order('sort_order', { ascending: true });
+      if (customTilesError) {
+        console.error('Error loading custom tiles:', customTilesError);
+      } else if (customTilesData) {
+        const parsedTiles: CustomTile[] = customTilesData.map((t: any) => ({
+          id: t.id,
+          url: t.url,
+          name: t.name,
+          type: t.type,
+          isSpritesheet: t.is_spritesheet,
+          frameCount: t.frame_count,
+          frameWidth: t.frame_width,
+          frameHeight: t.frame_height,
+          animationSpeed: t.animation_speed,
+          layer: t.layer || 0,
+          isWalkable: t.is_walk_able ?? t.is_walkable ?? true,
+          snapToGrid: t.snap_to_grid ?? false,
+          isAutoFill: t.is_autofill ?? true,
+          isAutoTile: t.is_autotile ?? false,
+          smartType: t.smartType,
+          category: t.category,
+          rotation: t.rotation || 0,
+          sort_order: t.sort_order || 0
+        }));
+
+        let initialWaterBaseId = null;
+        let initialFoamStripId = null;
+        
+        if (settingsData) {
+           const matchingWater = parsedTiles.find((t: CustomTile) => t.url === settingsData.water_base_url && t.category === 'water_base');
+           if (matchingWater) initialWaterBaseId = matchingWater.id;
+
+           const matchingFoam = parsedTiles.find((t: CustomTile) => t.url === settingsData.foam_sheet_url && t.category === 'foam_strip');
+           if (matchingFoam) initialFoamStripId = matchingFoam.id;
+        }
+
+        set({
+          customTiles: parsedTiles,
+          selectedWaterBaseId: initialWaterBaseId,
+          selectedFoamStripId: initialFoamStripId
+        });
+      }
+
+      // 4. Load Chunks (can be huge)
+      const { data: chunksData, error: chunksError } = await supabase.from('map_chunks').select('*');
+      if (chunksError) {
+        console.error('Error loading map chunks:', chunksError);
+      } else if (chunksData) {
+        const allTiles: Tile[] = [];
+        chunksData.forEach((chunk: any) => {
+          const tileData = chunk.tile_data;
+          if (Array.isArray(tileData)) {
+            tileData.forEach((t: any) => {
+              if (typeof t.x !== 'number' || typeof t.y !== 'number' || isNaN(t.x) || isNaN(t.y)) {
+                 return;
+              }
+
+              allTiles.push({
+                id: uuidv4(),
+                x: t.x,
+                y: t.y,
+                imageUrl: t.imageUrl,
+                type: t.type,
+                isSpritesheet: t.isSpritesheet,
+                frameCount: t.frameCount,
+                frameWidth: t.frame_width || t.frameWidth,
+                frameHeight: t.frame_height || t.frameHeight,
+                animationSpeed: t.animationSpeed,
+                layer: t.layer || 0,
+                offsetX: t.offsetX || 0,
+                offsetY: t.offsetY || 0,
+                isWalkable: t.isWalkable ?? true,
+                snapToGrid: t.snapToGrid ?? false,
+                isAutoFill: t.isAutoFill ?? true,
+                isAutoTile: t.isAutoTile,
+                bitmask: t.bitmask,
+                elevation: t.elevation,
+                blockCol: t.blockCol ?? t.block_col,
+                blockRow: t.blockRow ?? t.block_row,
+                hasFoam: t.hasFoam,
+                foamBitmask: t.foamBitmask,
+                smartType: t.smartType,
+                rotation: t.rotation || 0,
+                edgeBlocks: t.edgeBlocks,
+              });
+            });
+          }
+        });
+        set({ tiles: allTiles });
+      }
+    } catch (err) {
+      console.error('Critical error in loadTilesFromSupabase:', err);
+    } finally {
+      set({ isLoadingTiles: false });
     }
-    set({ isLoadingTiles: false });
   },
 
   addNode: async (node) => {

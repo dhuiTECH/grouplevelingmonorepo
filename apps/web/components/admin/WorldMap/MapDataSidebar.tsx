@@ -17,11 +17,18 @@ interface MapDataSidebarProps {
 }
 
 export const MapDataSidebar: React.FC<MapDataSidebarProps> = React.memo(({ onEditNode, onGoToNode }) => {
-  const {
-    nodes, selectedNodeId, updateNode, removeNode,
-    setTool, selectedTool, activeNodeType, rightSidebarWidth,
-    nodeSnapToGrid, setNodeSnapToGrid
-  } = useMapStore();
+  const nodes = useMapStore(state => state.nodes);
+  const selectedNodeId = useMapStore(state => state.selectedNodeId);
+  const updateNode = useMapStore(state => state.updateNode);
+  const removeNode = useMapStore(state => state.removeNode);
+  const setTool = useMapStore(state => state.setTool);
+  const selectedTool = useMapStore(state => state.selectedTool);
+  const activeNodeType = useMapStore(state => state.activeNodeType);
+  const rightSidebarWidth = useMapStore(state => state.rightSidebarWidth);
+  const nodeSnapToGrid = useMapStore(state => state.nodeSnapToGrid);
+  const setNodeSnapToGrid = useMapStore(state => state.setNodeSnapToGrid);
+  
+  const isLoadingTiles = useMapStore(state => state.isLoadingTiles);
   
   const selectedNode = nodes.find(n => n.id === selectedNodeId);
 
@@ -35,8 +42,9 @@ export const MapDataSidebar: React.FC<MapDataSidebarProps> = React.memo(({ onEdi
       style={{ width: rightSidebarWidth }}
       className="bg-slate-900 border-l border-slate-800 flex flex-col h-full z-20 shrink-0"
     >
-      <div className="p-4 border-b border-slate-800">
+      <div className="p-4 border-b border-slate-800 flex justify-between items-center">
         <h2 className="text-sm font-bold text-slate-100 uppercase tracking-widest">Map Data</h2>
+        {isLoadingTiles && <div className="animate-spin text-cyan-400" aria-hidden><Settings size={14} /></div>}
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -59,10 +67,10 @@ export const MapDataSidebar: React.FC<MapDataSidebarProps> = React.memo(({ onEdi
 
         {/* Nodes on Map */}
         <div className="p-4 border-b border-slate-800">
-          <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">Nodes on Map</h3>
+          <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">Nodes on Map ({nodes.length})</h3>
           <div className="max-h-64 overflow-y-auto space-y-1 mb-4 custom-scrollbar pr-2">
             {nodes.length === 0 ? (
-              <p className="text-[10px] text-slate-600 italic">No nodes placed yet</p>
+              <p className="text-[10px] text-slate-600 italic">{isLoadingTiles ? 'Loading nodes...' : 'No nodes placed yet'}</p>
             ) : (
               nodes.map(node => (
                 <button
@@ -72,9 +80,9 @@ export const MapDataSidebar: React.FC<MapDataSidebarProps> = React.memo(({ onEdi
                 >
                   <div className="flex items-center gap-2 truncate">
                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: node.type === 'spawn' ? '#3b82f6' : node.type === 'enemy' ? '#ef4444' : node.type === 'npc' ? '#22c55e' : '#a855f7' }} />
-                    <span className="truncate font-bold">{node.name}</span>
+                    <span className="truncate font-bold">{node.name || 'Unnamed Node'}</span>
                   </div>
-                  <span className="text-[8px] opacity-50 font-mono">({node.x},{node.y})</span>
+                  <span className="text-[8px] opacity-50 font-mono">({Math.round(Number(node.x))},{Math.round(Number(node.y))})</span>
                 </button>
               ))
             )}
