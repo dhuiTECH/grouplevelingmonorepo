@@ -25,6 +25,29 @@ export default function LayeredAvatar({
   const [silhouetteBlobUrl, setSilhouetteBlobUrl] = useState<string | null>(null);
   const silhouetteUrl = user.base_body_silhouette_url;
 
+  const getEffectiveGender = (item: any, fallbackGender?: string): 'male' | 'female' => {
+    const fallback = (fallbackGender || 'male').toLowerCase() === 'female' ? 'female' : 'male';
+    if (!item?.gender) return fallback;
+
+    let genders: string[] = [];
+    try {
+      if (typeof item.gender === 'string' && item.gender.startsWith('[')) {
+        genders = JSON.parse(item.gender);
+      } else if (Array.isArray(item.gender)) {
+        genders = item.gender;
+      } else {
+        genders = [item.gender];
+      }
+    } catch {
+      genders = [item.gender];
+    }
+
+    const normalized = genders.map((gender: string) => String(gender).toLowerCase());
+    if (normalized.includes('female') && !normalized.includes('male')) return 'female';
+    if (normalized.includes('male') && !normalized.includes('female')) return 'male';
+    return fallback;
+  };
+
   useEffect(() => {
     if (!silhouetteUrl || typeof silhouetteUrl !== 'string' || !silhouetteUrl.startsWith('http')) {
       setSilhouetteBlobUrl(null);
@@ -70,6 +93,7 @@ export default function LayeredAvatar({
   
   // Use skin tint from Unique Avatar if equipped and has tint, otherwise use profile tint
   const activeSkinTint = equippedShopSkinItem?.shop_items?.skin_tint_hex || (user as any).base_body_tint_hex || '#FFDBAC';
+  const activeVisualGender = getEffectiveGender(equippedShopSkinItem?.shop_items, (user as any).gender);
   
   const baseDetailUrl = user.base_body_url || user.avatar_url || baseBodyLayer;
   
@@ -113,12 +137,11 @@ export default function LayeredAvatar({
     // Render logic is handled in the map loop above if the item exists in the list.
   }
 
-  // Extract active masks (gender-specific: use eraser_mask_url_female for female when set)
+  // Extract active masks based on the active rendered body/avatar gender
   const activeMasks: { url: string; targetSlot: string }[] = [];
-  const userGender = (user as any).gender;
   overlayLayers.forEach((c: any) => {
     const item = c.shop_items;
-    const maskUrl = (userGender === 'female' && item?.eraser_mask_url_female) ? item.eraser_mask_url_female : item?.eraser_mask_url;
+    const maskUrl = (activeVisualGender === 'female' && item?.eraser_mask_url_female) ? item.eraser_mask_url_female : item?.eraser_mask_url;
     if (maskUrl && item?.eraser_mask_targets) {
       const targets = Array.isArray(item.eraser_mask_targets) 
         ? item.eraser_mask_targets 
@@ -281,7 +304,7 @@ export default function LayeredAvatar({
 
         {overlayLayers.map((cosmetic, index) => {
           const item = cosmetic.shop_items;
-          const isFemale = user.gender === 'female';
+          const isFemale = activeVisualGender === 'female';
           
           // Use female-specific positioning if available and character is female
           const itemOffsetX = (isFemale && item.offset_x_female !== null && item.offset_x_female !== undefined) ? item.offset_x_female : (item.offset_x || 0);

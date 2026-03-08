@@ -50,6 +50,7 @@ interface SocialHubProps {
   showNotification: (message: string, type: 'success' | 'error') => void;
   setSelectedAvatar: (user: User | null) => void;
   onFriendsTabFocus?: () => void;
+  isRefreshing?: boolean;
 }
 
 type SocialSubTab = 'rankings' | 'showcase' | 'friends' | 'association' | 'arena';
@@ -66,7 +67,7 @@ const SocialHub: React.FC<SocialHubProps> = (props) => {
             leaderboard={props.leaderboard}
             loadLeaderboard={props.loadLeaderboard}
             setSelectedAvatar={props.setSelectedAvatar}
-            isSocialLoading={props.isSocialLoading}
+            isSocialLoading={props.isRefreshing || props.isSocialLoading}
             onRefresh={props.onRefresh}
           />
         );
@@ -85,7 +86,7 @@ const SocialHub: React.FC<SocialHubProps> = (props) => {
             handleRejectFriendRequest={props.handleRejectFriendRequest}
             handleCancelOutgoingRequest={props.handleCancelOutgoingRequest}
             setSelectedAvatar={props.setSelectedAvatar}
-            isSocialLoading={props.isSocialLoading}
+            isSocialLoading={props.isRefreshing || props.isSocialLoading}
             onRefresh={props.onRefresh}
           />
         );
@@ -108,7 +109,7 @@ const SocialHub: React.FC<SocialHubProps> = (props) => {
             handleApplicantDecision={props.handleApplicantDecision}
             handleCreateAssociation={() => props.handleCreateAssociation(props.associationName, props.selectedEmblem)}
             setSelectedAvatar={props.setSelectedAvatar}
-            isSocialLoading={props.isSocialLoading}
+            isSocialLoading={props.isRefreshing || props.isSocialLoading}
             onRefresh={props.onRefresh}
           />
         );
@@ -124,6 +125,7 @@ const SocialHub: React.FC<SocialHubProps> = (props) => {
             handleShowcaseVote={props.handleShowcaseVote}
             setSelectedAvatar={props.setSelectedAvatar}
             onRefresh={props.onRefresh}
+            isRefreshing={props.isRefreshing}
           />
         );
       case 'arena':

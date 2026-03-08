@@ -19,6 +19,7 @@ interface ShowcasePanelProps {
   handleShowcaseVote: (targetId: string, voteType: 'resonate' | 'interfere') => void;
   setSelectedAvatar: (user: any) => void;
   onRefresh: () => void;
+  isRefreshing?: boolean;
 }
 
 const ShowcasePanel: React.FC<ShowcasePanelProps> = ({
@@ -30,7 +31,8 @@ const ShowcasePanel: React.FC<ShowcasePanelProps> = ({
   loadShowcaseHunters,
   handleShowcaseVote,
   setSelectedAvatar,
-  onRefresh
+  onRefresh,
+  isRefreshing
 }) => {
   const { shopItems } = useGameData();
 
@@ -40,7 +42,7 @@ const ShowcasePanel: React.FC<ShowcasePanelProps> = ({
       showsVerticalScrollIndicator={false}
       refreshControl={
         <RefreshControl 
-          refreshing={isLoading} 
+          refreshing={isRefreshing || isLoading} 
           onRefresh={onRefresh} 
           tintColor="#22d3ee"
         />

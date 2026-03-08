@@ -8,7 +8,8 @@ import {
   rect,
   Circle,
   rrect,
-  FilterMode
+  FilterMode,
+  Mask
 } from '@shopify/react-native-skia';
 import { 
   SharedValue, 
@@ -32,6 +33,29 @@ const hexToRgb = (hex: string) => {
   return [r, g, b];
 };
 
+function getEffectiveGender(item: any, fallbackGender?: string): 'male' | 'female' {
+  const fallback = (fallbackGender || 'male').toLowerCase() === 'female' ? 'female' : 'male';
+  if (!item?.gender) return fallback;
+
+  let genders: string[] = [];
+  try {
+    if (typeof item.gender === 'string' && item.gender.startsWith('[')) {
+      genders = JSON.parse(item.gender);
+    } else if (Array.isArray(item.gender)) {
+      genders = item.gender;
+    } else {
+      genders = [item.gender];
+    }
+  } catch {
+    genders = [item.gender];
+  }
+
+  const normalized = genders.map((gender: string) => String(gender).toLowerCase());
+  if (normalized.includes('female') && !normalized.includes('male')) return 'female';
+  if (normalized.includes('male') && !normalized.includes('female')) return 'male';
+  return fallback;
+}
+
 const ADMIN_CONTAINER_SIZE = 512;
 const ADMIN_ANCHOR_POINT = 128;
 
@@ -45,10 +69,12 @@ interface SkiaLayerProps {
   size: number;
   tintColor?: string;
   opacity?: number;
+  maskUrl?: string;
 }
 
-const SkiaLayer: React.FC<SkiaLayerProps> = ({ uri, centerX, centerY, dbScale, scaleRatio, isBackground, size, tintColor, opacity = 1 }) => {
+const SkiaLayer: React.FC<SkiaLayerProps> = ({ uri, centerX, centerY, dbScale, scaleRatio, isBackground, size, tintColor, opacity = 1, maskUrl }) => {
   const skiaImg = useImage(uri ? uri : null);
+  const maskImg = useImage(maskUrl ? maskUrl : null);
 
   const multiplyMatrix = useMemo(() => {
     if (!tintColor) return null;
@@ -83,7 +109,7 @@ const SkiaLayer: React.FC<SkiaLayerProps> = ({ uri, centerX, centerY, dbScale, s
     finalY = centerY - (finalSize / 2);
   }
 
-  return (
+  const imageLayer = (
     <SkiaImage
       image={skiaImg}
       x={finalX}
@@ -97,6 +123,21 @@ const SkiaLayer: React.FC<SkiaLayerProps> = ({ uri, centerX, centerY, dbScale, s
       {multiplyMatrix && <ColorMatrix matrix={multiplyMatrix} />}
     </SkiaImage>
   );
+
+  if (maskUrl && maskImg) {
+    return (
+      <Mask
+        mode="alpha"
+        mask={
+          <SkiaImage image={maskImg} x={0} y={0} width={size} height={size} fit="contain" />
+        }
+      >
+        {imageLayer}
+      </Mask>
+    );
+  }
+
+  return imageLayer;
 };
 
 // --- ANIMATED COSMETIC LAYER ---
@@ -111,10 +152,13 @@ interface SkiaAnimatedLayerProps {
   frameHeight: number;
   totalFrames?: number;
   fps?: number;
+  maskUrl?: string;
+  size: number; // Needed for global mask
 }
 
-const SkiaAnimatedLayer: React.FC<SkiaAnimatedLayerProps> = ({ uri, x, y, width, height, tintColor, frameWidth, frameHeight, totalFrames = 4, fps = 10 }) => {
+const SkiaAnimatedLayer: React.FC<SkiaAnimatedLayerProps> = ({ uri, x, y, width, height, tintColor, frameWidth, frameHeight, totalFrames = 4, fps = 10, maskUrl, size }) => {
   const skiaImg = useImage(uri ? uri : null);
+  const maskImg = useImage(maskUrl ? maskUrl : null);
   const currentFrame = useSharedValue(0);
   const frameTimer = useSharedValue(0);
 
@@ -171,7 +215,7 @@ const SkiaAnimatedLayer: React.FC<SkiaAnimatedLayerProps> = ({ uri, x, y, width,
   const scaleX = width / frameWidth;
   const scaleY = height / frameHeight;
 
-  return (
+  const animLayer = (
     <Group transform={[{ translateX: x }, { translateY: y }]}>
       <Group clip={clipRect}>
         <SkiaImage
@@ -188,6 +232,21 @@ const SkiaAnimatedLayer: React.FC<SkiaAnimatedLayerProps> = ({ uri, x, y, width,
       </Group>
     </Group>
   );
+
+  if (maskUrl && maskImg) {
+    return (
+      <Mask
+        mode="alpha"
+        mask={
+          <SkiaImage image={maskImg} x={0} y={0} width={size} height={size} fit="contain" />
+        }
+      >
+        {animLayer}
+      </Mask>
+    );
+  }
+
+  return animLayer;
 };
 
 interface SkiaLayeredAvatarProps {
@@ -208,7 +267,6 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
   x,
   y,
 }) => {
-  const isFemale = (user?.gender || 'male').toLowerCase() === 'female';
   const scaleRatio = size / ADMIN_CONTAINER_SIZE;
   const breathScale = useSharedValue(1);
 
@@ -234,11 +292,37 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
 
   // 1. Gather all equipped cosmetics
   const equippedCosmetics = user?.cosmetics?.filter((c: any) => c.equipped) || [];
-  
+
   // 2. Identify the base look (Unique Avatar or Base Body)
   const equippedAvatarItem = equippedCosmetics.find((c: any) => c.shop_items?.slot === 'avatar');
   const equippedBaseBodyItem = equippedCosmetics.find((c: any) => c.shop_items?.slot === 'base_body');
   const activeSkinItem = equippedAvatarItem || equippedBaseBodyItem;
+  const activeVisualGender = getEffectiveGender(activeSkinItem?.shop_items, user?.gender);
+
+  // 1.5. Extract Active Masks using the active rendered body/avatar gender
+  const activeMasks = useMemo(() => {
+    const masks: { url: string; targets: string[] }[] = [];
+    const shouldUseFemaleMask = activeVisualGender === 'female';
+    
+    equippedCosmetics.forEach((c: any) => {
+      const item = c.shop_items;
+      const maskUrl = (shouldUseFemaleMask && item?.eraser_mask_url_female) ? item.eraser_mask_url_female : item?.eraser_mask_url;
+      
+      if (maskUrl && item?.eraser_mask_targets) {
+        const targets = Array.isArray(item.eraser_mask_targets) 
+          ? item.eraser_mask_targets 
+          : [item.eraser_mask_targets];
+          
+        if (targets.length > 0) {
+          masks.push({
+            url: maskUrl,
+            targets: targets.map((t: any) => String(t).toLowerCase().trim()),
+          });
+        }
+      }
+    });
+    return masks;
+  }, [activeVisualGender, equippedCosmetics]);
   
   const baseBodyImage = activeSkinItem?.shop_items?.image_url || user?.base_body_url || user?.avatar_url;
   const activeSkinColor = activeSkinItem?.shop_items?.skin_tint_hex || user?.base_body_tint_hex || "#FFDBAC";
@@ -248,11 +332,16 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
   // 3. Build the sorted layers list (porting LayeredAvatar Internal logic)
   const sortedLayers = useMemo(() => {
     const layers: any[] = [];
+    const isFemale = activeVisualGender === 'female';
     
     // Add Base Body (isBackground = sizing; skipBreathing = false so it still flips with direction)
     if (baseBodyImage) {
       const centerX = size / 2;
       const centerY = size / 2;
+      
+      const activeMask = activeMasks.find(m => m.targets.includes('base_body') || m.targets.includes('avatar'));
+      const maskUrl = activeMask?.url;
+
       layers.push({
         id: 'base-body',
         uri: baseBodyImage,
@@ -267,7 +356,8 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
         isBackground: true,
         skipBreathing: false,
         zIndex: 0,
-        tintColor: useSkiaTint ? activeSkinColor : undefined
+        tintColor: useSkiaTint ? activeSkinColor : undefined,
+        maskUrl
       });
     }
 
@@ -286,7 +376,7 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
       const offsetX = Number(rawX) || 0;
 
       const rawY = (isFemale && item.offset_y_female !== null && item.offset_y_female !== undefined) ? item.offset_y_female : item.offset_y;
-      const offsetY = (Number(rawY) || 0) + (item.slot === 'hand_grip' ? 10 : 0);
+      const offsetY = Number(rawY) || 0;
       
       const isHandGrip = item.slot === 'hand_grip';
       const tintColor = isHandGrip ? activeSkinColor : undefined;
@@ -352,6 +442,10 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
       const isBackgroundSlot = item.slot === 'background';
       const calculatedZIndex = isBackgroundSlot ? -10 : Number(item.z_index || 10);
 
+      // Check active masks
+      const activeMask = activeMasks.find(m => m.targets.includes(item.slot));
+      const maskUrl = activeMask?.url;
+
       layers.push({
         id: cosmetic.id,
         uri: item.image_url,
@@ -371,12 +465,13 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
         frameWidth,
         frameHeight,
         totalFrames,
-        fps
+        fps,
+        maskUrl
       });
     });
 
     return layers.sort((a, b) => a.zIndex - b.zIndex);
-  }, [user, size, isFemale, scaleRatio, activeSkinColor, useSkiaTint, baseBodyImage, equippedCosmetics]);
+  }, [user, size, activeVisualGender, scaleRatio, activeSkinColor, useSkiaTint, baseBodyImage, equippedCosmetics, activeMasks]);
 
   const rootTransform = useDerivedValue(() => {
     const tx = x.value;
@@ -426,6 +521,8 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
               frameHeight={layer.frameHeight}
               totalFrames={layer.totalFrames}
               fps={layer.fps}
+              maskUrl={layer.maskUrl}
+              size={size ?? 48}
             />
           ) : (
             <SkiaLayer
@@ -438,6 +535,7 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
               isBackground={layer.isBackground}
               size={size ?? 48}
               tintColor={layer.tintColor}
+              maskUrl={layer.maskUrl}
             />
           );
 

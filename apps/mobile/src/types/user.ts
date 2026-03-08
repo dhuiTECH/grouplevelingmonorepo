@@ -44,6 +44,10 @@ export interface ShopItem {
   image_base_url?: string;
   skin_tint_hex?: string;
   created_at?: string;
+  hand_grip_z_index_override?: number;
+  eraser_mask_url?: string;
+  eraser_mask_url_female?: string;
+  eraser_mask_targets?: string | string[];
 }
 
 export interface UserCosmetic {

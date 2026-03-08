@@ -31,6 +31,7 @@ export const SocialScreen: React.FC = () => {
   const [selectedAvatar, setSelectedAvatar] = useState<User | null>(null);
   const [associationName, setAssociationName] = useState('');
   const [selectedEmblem, setSelectedEmblem] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -38,9 +39,19 @@ export const SocialScreen: React.FC = () => {
     }, [playTrack])
   );
 
+  const { refreshAllData, fetchSuggestions } = socialData;
+
   const onRefresh = useCallback(async () => {
-    await socialData.refreshAllData();
-  }, [socialData]);
+    setIsRefreshing(true);
+    try {
+      await refreshAllData();
+    } catch (error) {
+      console.error('Refresh failed:', error);
+      showNotification('Failed to sync social hub', 'error');
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refreshAllData, showNotification]);
 
   if (!user) return null;
 
@@ -65,7 +76,8 @@ export const SocialScreen: React.FC = () => {
               user={user}
               {...socialData}
               onRefresh={onRefresh}
-              onFriendsTabFocus={socialData.fetchSuggestions}
+              isRefreshing={isRefreshing}
+              onFriendsTabFocus={fetchSuggestions}
               associationName={associationName}
               setAssociationName={setAssociationName}
               selectedEmblem={selectedEmblem}

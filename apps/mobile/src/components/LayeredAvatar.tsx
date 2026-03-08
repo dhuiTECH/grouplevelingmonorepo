@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Image as RNImage, StyleSheet, TouchableOpacity, ViewStyle, Animated, Easing, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { User } from '@/types/user';
 import { ShopItemMedia } from './ShopItemMedia';
-import { Canvas, Image as SkiaImage, useImage, ColorMatrix } from '@shopify/react-native-skia';
+import { Canvas, Image as SkiaImage, useImage, ColorMatrix, Group, Mask } from '@shopify/react-native-skia';
 
 const FALLBACK_STATIC_SIZE = 512;
 
@@ -50,6 +50,29 @@ const hexToRgb = (hex: string) => {
   const b = parseInt(clean.slice(4, 6), 16) / 255;
   return [r, g, b];
 };
+
+function getEffectiveGender(item: any, fallbackGender?: string): 'male' | 'female' {
+  const fallback = (fallbackGender || 'male').toLowerCase() === 'female' ? 'female' : 'male';
+  if (!item?.gender) return fallback;
+
+  let genders: string[] = [];
+  try {
+    if (typeof item.gender === 'string' && item.gender.startsWith('[')) {
+      genders = JSON.parse(item.gender);
+    } else if (Array.isArray(item.gender)) {
+      genders = item.gender;
+    } else {
+      genders = [item.gender];
+    }
+  } catch {
+    genders = [item.gender];
+  }
+
+  const normalized = genders.map((gender: string) => String(gender).toLowerCase());
+  if (normalized.includes('female') && !normalized.includes('male')) return 'female';
+  if (normalized.includes('male') && !normalized.includes('female')) return 'male';
+  return fallback;
+}
 
 /**
  * A specialized layer that uses Skia to apply a multiply blend mode.
@@ -214,18 +237,22 @@ const StaticOverlayLayer: React.FC<{
 /** Skia layer for base bodies that fills the parent size (no offset math required) */
 const SkiaBaseLayer: React.FC<{
   uri: string;
-  tintColor: string;
+  tintColor?: string;
   size: number;
-}> = ({ uri, tintColor, size }) => {
+  maskUrl?: string;
+}> = ({ uri, tintColor, size, maskUrl }) => {
   const skiaImg = useImage(uri);
-  const [r, g, b] = hexToRgb(tintColor);
-  
-  const multiplyMatrix = [
-    r, 0, 0, 0, 0,
-    0, g, 0, 0, 0,
-    0, 0, b, 0, 0,
-    0, 0, 0, 1, 0,
-  ];
+  const maskImg = useImage(maskUrl ? maskUrl : null);
+  const multiplyMatrix = useMemo(() => {
+    if (!tintColor) return null;
+    const [r, g, b] = hexToRgb(tintColor);
+    return [
+      r, 0, 0, 0, 0,
+      0, g, 0, 0, 0,
+      0, 0, b, 0, 0,
+      0, 0, 0, 1, 0,
+    ];
+  }, [tintColor]);
 
   if (!skiaImg) {
     return (
@@ -238,22 +265,176 @@ const SkiaBaseLayer: React.FC<{
     );
   }
 
+  const imageLayer = (
+    <SkiaImage
+      image={skiaImg}
+      fit="contain"
+      x={0}
+      y={0}
+      width={size}
+      height={size}
+    >
+      {multiplyMatrix && <ColorMatrix matrix={multiplyMatrix} />}
+    </SkiaImage>
+  );
+
+  if (maskUrl && maskImg) {
+    return (
+      <Canvas style={{ width: size, height: size }} pointerEvents="none">
+        <Mask
+          mode="alpha"
+          mask={
+            <SkiaImage image={maskImg} x={0} y={0} width={size} height={size} fit="contain" />
+          }
+        >
+          {imageLayer}
+        </Mask>
+      </Canvas>
+    );
+  }
+
   return (
     <Canvas 
       style={{ width: size, height: size }}
       pointerEvents="none"
     >
+      {imageLayer}
+    </Canvas>
+  );
+};
+
+/** 
+ * A hybrid layer that renders an item onto a full-size Skia canvas, 
+ * then punches a hole in it using a global mask with dstOut blend mode.
+ */
+const MaskedStaticOverlayLayer: React.FC<{
+  item: any;
+  maskUrl: string;
+  leftPercent: number;
+  topPercent: number;
+  zIndex: number;
+  dbScale: number;
+  scaleRatio: number;
+  rotation: number;
+  size: number;
+  tintColor?: string | null;
+}> = ({ item, maskUrl, leftPercent, topPercent, zIndex, dbScale, scaleRatio, rotation, size, tintColor }) => {
+  const [intrinsicSize, setIntrinsicSize] = useState<number | null>(null);
+  const uri = item?.image_url;
+
+  useEffect(() => {
+    if (!uri || typeof uri !== 'string') return;
+    RNImage.getSize(
+      uri,
+      (width, height) => setIntrinsicSize(Math.max(width, height)),
+      () => setIntrinsicSize(FALLBACK_STATIC_SIZE)
+    );
+  }, [uri]);
+
+  const skiaImg = useImage(uri);
+  const maskImg = useImage(maskUrl);
+
+  const baseSize = intrinsicSize ?? FALLBACK_STATIC_SIZE;
+  const finalSize = baseSize * dbScale * scaleRatio;
+  
+  // Calculate coordinates in the full-size canvas
+  const centerX = (leftPercent / 100) * size;
+  const centerY = (topPercent / 100) * size;
+
+  const multiplyMatrix = useMemo(() => {
+    if (!tintColor) return null;
+    const [r, g, b] = hexToRgb(tintColor);
+    return [
+      r, 0, 0, 0, 0,
+      0, g, 0, 0, 0,
+      0, 0, b, 0, 0,
+      0, 0, 0, 1, 0,
+    ];
+  }, [tintColor]);
+
+  if (!skiaImg) {
+    return (
+      <View 
+        style={{ 
+          position: 'absolute', 
+          zIndex, 
+          left: 0, 
+          top: 0, 
+          width: size, 
+          height: size 
+        }} 
+        pointerEvents="none" 
+      />
+    );
+  }
+
+  // Pre-calculate the item drawing logic so we can reuse it
+  const itemContent = (
+    <Group
+      transform={[
+        { translateX: centerX },
+        { translateY: centerY },
+        { rotate: (rotation * Math.PI) / 180 },
+      ]}
+    >
       <SkiaImage
         image={skiaImg}
+        x={-finalSize / 2}
+        y={-finalSize / 2}
+        width={finalSize}
+        height={finalSize}
         fit="contain"
-        x={0}
-        y={0}
-        width={size}
-        height={size}
       >
-        <ColorMatrix matrix={multiplyMatrix} />
+        {multiplyMatrix && <ColorMatrix matrix={multiplyMatrix} />}
       </SkiaImage>
-    </Canvas>
+    </Group>
+  );
+
+  // Fallback: If the mask is still downloading over the network, render the item normally!
+  if (!maskImg) {
+    return (
+      <View 
+        style={{ 
+          position: 'absolute', 
+          zIndex, 
+          left: 0, 
+          top: 0, 
+          width: size, 
+          height: size 
+        }} 
+        pointerEvents="none"
+      >
+        <Canvas style={{ width: size, height: size }}>
+          {itemContent}
+        </Canvas>
+      </View>
+    );
+  }
+
+  // Final: Both images loaded, apply the surgical mask!
+  return (
+    <View style={{ position: 'absolute', zIndex: zIndex, left: 0, top: 0, width: size, height: size }} pointerEvents="none">
+      <Canvas style={{ width: size, height: size }}>
+        <Mask
+          mode="alpha"
+          mask={
+            <SkiaImage image={maskImg} x={0} y={0} width={size} height={size} fit="contain" />
+          }
+        >
+          <Group
+            transform={[
+              { translateX: centerX },
+              { translateY: centerY },
+              { rotate: (rotation * Math.PI) / 180 },
+            ]}
+          >
+            <SkiaImage image={skiaImg} x={-finalSize / 2} y={-finalSize / 2} width={finalSize} height={finalSize} fit="contain">
+               {multiplyMatrix && <ColorMatrix matrix={multiplyMatrix} />}
+            </SkiaImage>
+          </Group>
+        </Mask>
+      </Canvas>
+    </View>
   );
 };
 
@@ -335,6 +516,32 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
   
   // The active "skin" item that provides the base look
   const activeSkinItem = equippedAvatarItem || equippedBaseBodyItem;
+  const activeVisualGender = getEffectiveGender(activeSkinItem?.shop_items, user?.gender);
+
+  // 1.5. Extract Active Masks using the active rendered body/avatar gender
+  const activeMasks = useMemo(() => {
+    const masks: { url: string; targets: string[] }[] = [];
+    const shouldUseFemaleMask = activeVisualGender === 'female';
+    
+    equippedCosmetics.forEach((c: any) => {
+      const item = c.shop_items;
+      const maskUrl = (shouldUseFemaleMask && item?.eraser_mask_url_female) ? item.eraser_mask_url_female : item?.eraser_mask_url;
+      
+      if (maskUrl && item?.eraser_mask_targets) {
+        const targets = Array.isArray(item.eraser_mask_targets) 
+          ? item.eraser_mask_targets 
+          : [item.eraser_mask_targets];
+          
+        if (targets.length > 0) {
+          masks.push({
+            url: maskUrl,
+            targets: targets.map((t: any) => String(t).toLowerCase().trim()),
+          });
+        }
+      }
+    });
+    return masks;
+  }, [activeVisualGender, equippedCosmetics]);
   
   // If we have an active skin item from the shop, use its image
   const baseBodyImage = activeSkinItem?.shop_items?.image_url || user?.base_body_url || user?.avatar_url;
@@ -409,7 +616,7 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
         
         return itemGenders.includes('unisex') || 
                itemGenders.includes('all') || 
-               itemGenders.some(g => activeSkinGenders.includes(g));
+               itemGenders.some((g: string) => activeSkinGenders.includes(g));
       };
 
       // Try to find in user's owned cosmetics OR global shop items
@@ -431,6 +638,9 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
           if (matchingShopItem) {
               handGripCosmetic = {
                   id: `ghost-hand-${gripType}`,
+                  user_id: user.id,
+                  shop_item_id: matchingShopItem.id,
+                  created_at: new Date().toISOString(),
                   equipped: true, // Mark as virtually equipped so it renders
                   shop_items: matchingShopItem
               };
@@ -483,7 +693,7 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
   const scaleRatio = size / ADMIN_CONTAINER_SIZE;
 
   const getItemPositioning = (item: any) => {
-    const isFemale = user?.gender === 'female';
+    const isFemale = activeVisualGender === 'female';
     
     // Check if item has explicit female offsets
     const hasFemaleOffset = isFemale && (
@@ -494,14 +704,10 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
     const offsetX = (isFemale && item.offset_x_female !== null && item.offset_x_female !== undefined) 
       ? item.offset_x_female 
       : (item.offset_x || 0);
-      
-    // Apply a global Y-offset tweak to fix the floating hand issue if it's a hand grip
-    // Hand grips seem to float ~10-15px too high on mobile compared to web
-    const GLOBAL_HAND_Y_TWEAK = getSlot(item) === 'hand_grip' ? 10 : 0;
 
-    const offsetY = ((isFemale && item.offset_y_female !== null && item.offset_y_female !== undefined) 
+    const offsetY = (isFemale && item.offset_y_female !== null && item.offset_y_female !== undefined) 
       ? item.offset_y_female 
-      : (item.offset_y || 0)) + GLOBAL_HAND_Y_TWEAK;
+      : (item.offset_y || 0);
       
     const scale = (isFemale && item.scale_female !== null && item.scale_female !== undefined) 
       ? item.scale_female 
@@ -553,18 +759,28 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
               uri={baseBodyImage} 
               tintColor={activeSkinColor} 
               size={size} 
+              maskUrl={activeMasks.find(m => m.targets.includes('base_body'))?.url}
             />
           </View>
         ) : (
           /* Single base layer when not using Skia tint (e.g. Unique Avatars or fallback) */
           <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]}>
-            <Image
-              source={baseSource}
-              style={styles.fullSize}
-              contentFit="contain"
-              placeholder={require('../../assets/NoobMan.png')}
-              cachePolicy="memory-disk"
-            />
+            {activeMasks.find(m => m.targets.includes('avatar') || m.targets.includes('base_body')) && baseBodyImage ? (
+              <SkiaBaseLayer
+                uri={baseBodyImage}
+                tintColor={useSkiaTint ? activeSkinColor : undefined}
+                size={size}
+                maskUrl={activeMasks.find(m => m.targets.includes('avatar') || m.targets.includes('base_body'))!.url}
+              />
+            ) : (
+              <Image
+                source={baseSource}
+                style={styles.fullSize}
+                contentFit="contain"
+                placeholder={require('../../assets/NoobMan.png')}
+                cachePolicy="memory-disk"
+              />
+            )}
           </View>
         )}
 
@@ -619,6 +835,28 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
             // Safely get image_base_url or image_url as a fallback
             const silhouetteUrl = isHandGrip ? (item.image_base_url || item.image_url) : null;
             
+            // Check for active mask
+            const activeMask = activeMasks.find(m => m.targets.includes(getSlot(item)));
+            const maskUrl = activeMask?.url;
+
+            if (maskUrl) {
+              return (
+                <MaskedStaticOverlayLayer
+                  key={cosmetic.id}
+                  item={item}
+                  maskUrl={maskUrl}
+                  leftPercent={leftPercent}
+                  topPercent={topPercent}
+                  zIndex={zIndex}
+                  dbScale={dbScale}
+                  scaleRatio={scaleRatio}
+                  rotation={rotation}
+                  size={size}
+                  tintColor={tintColor}
+                />
+              );
+            }
+
             if (isAnimated) {
               const finalWidth = frameWidth * dbScale * scaleRatio;
               const finalHeight = frameHeight * dbScale * scaleRatio;
