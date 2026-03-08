@@ -40,7 +40,26 @@ export const createSmartBrushSlice: StateCreator<
 
   setAutoTileSheetUrl: async (url) => {
     set({ autoTileSheetUrl: url });
-    await supabase.from('world_map_settings').upsert({ id: 1, autotile_sheet_url: url }, { onConflict: 'id' });
+    
+    try {
+      console.log("Attempting to save new tilesheet URL to database...", url);
+      
+      const { data, error } = await supabase
+        .from('world_map_settings')
+        .upsert({ id: 1, autotile_sheet_url: url }, { onConflict: 'id' })
+        .select(); // Added .select() to force a response back from the database
+
+      if (error) {
+        console.error("🔥 Supabase Upsert Error:", error.message);
+        console.error("🔥 Error Details:", error.details);
+        console.error("🔥 Error Hint:", error.hint);
+        console.error("🔥 Full Error Object:", error);
+      } else {
+        console.log("✅ Database successfully updated! Response:", data);
+      }
+    } catch (err) {
+      console.error("💥 Critical Network or Execution Error:", err);
+    }
   },
   setDirtSheetUrl: async (url) => {
     set({ dirtSheetUrl: url });

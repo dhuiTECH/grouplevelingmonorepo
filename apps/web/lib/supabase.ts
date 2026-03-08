@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { createServerClient as createSupabaseServerClient } from '@supabase/ssr'
 
 // Use actual environment variables with fallback values to prevent build-time crashes
@@ -6,8 +6,14 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key'
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-key'
 
+// Singleton pattern to prevent "Zombie Clients" during Hot Reloads in Next.js
+const globalForSupabase = globalThis as unknown as {
+  supabase: SupabaseClient | undefined;
+  supabaseAdmin: SupabaseClient | undefined;
+};
+
 // 1. Client-side Client: Used for general data fetching (respects RLS)
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = globalForSupabase.supabase ?? createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
@@ -17,7 +23,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 // 2. Admin Client: STRICTLY for server-side operations (bypasses RLS)
 // This is what you should use in your /api/admin/shop route
-export const supabaseAdmin = createClient(
+export const supabaseAdmin = globalForSupabase.supabaseAdmin ?? createClient(
   supabaseUrl,
   supabaseServiceKey,
   {
@@ -28,6 +34,12 @@ export const supabaseAdmin = createClient(
     }
   }
 );
+
+// In development, save the instances to the global object so hot-reloads reuse them
+if (process.env.NODE_ENV !== 'production') {
+  globalForSupabase.supabase = supabase;
+  globalForSupabase.supabaseAdmin = supabaseAdmin;
+}
 
 // Add a runtime check that throws only when actually used
 const originalFrom = supabaseAdmin.from.bind(supabaseAdmin);

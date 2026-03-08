@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from 'react';
+import AnimatedEquip from '@/components/AnimatedEquip';
 
 interface MaskPainterProps {
   baseReferenceUrl: string; // The thing we are erasing
