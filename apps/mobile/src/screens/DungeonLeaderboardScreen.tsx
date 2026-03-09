@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, ActivityIndicator } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, ActivityIndicator, RefreshControl } from 'react-native';
+import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,16 +12,12 @@ export default function DungeonLeaderboardScreen() {
   const { dungeon } = route.params || {};
   
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [rankings, setRankings] = useState<any[]>([]);
 
-  useEffect(() => {
-    fetchLeaderboard();
-  }, [dungeon]);
-
-  const fetchLeaderboard = async () => {
+  const fetchLeaderboard = useCallback(async () => {
     try {
       setLoading(true);
-      // Query for "best_dungeon_times" view as requested in Step 4
       const { data, error } = await supabase
         .from('best_dungeon_times')
         .select('*')
@@ -35,8 +31,21 @@ export default function DungeonLeaderboardScreen() {
       console.error('Error fetching leaderboard:', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [dungeon?.tier]);
+
+  // Fetch on mount and whenever screen comes back into focus (e.g. after completing a run)
+  useFocusEffect(
+    useCallback(() => {
+      if (dungeon?.tier) fetchLeaderboard();
+    }, [dungeon?.tier, fetchLeaderboard])
+  );
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchLeaderboard();
+  }, [fetchLeaderboard]);
 
   const formatTime = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60);
@@ -97,6 +106,9 @@ export default function DungeonLeaderboardScreen() {
             renderItem={renderRankItem}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#06b6d4" />
+            }
             ListEmptyComponent={
               <View style={styles.centerContainer}>
                 <Text style={styles.emptyText}>NO RECORDS FOUND</Text>

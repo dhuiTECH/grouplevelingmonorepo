@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useRef } from 'react';
 import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
 import { worldMapStyles } from '@/screens/WorldMapScreen.styles';
 
@@ -18,6 +18,8 @@ interface WorldNodesLayerProps {
 }
 
 function WorldNodesLayerInner({ nodes, tileSize, onSelectNode }: WorldNodesLayerProps) {
+  const lastTapTimeRef = useRef(0);
+  
   return (
     // pointerEvents="box-none" ensures the wrapper doesn't block touches to the map
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -40,7 +42,17 @@ function WorldNodesLayerInner({ nodes, tileSize, onSelectNode }: WorldNodesLayer
             pointerEvents="box-none"
           >
             <TouchableOpacity
-              onPress={() => onSelectNode(node)}
+              onPress={() => {
+                const now = Date.now();
+                const DBL_TAP_THRESHOLD = 300; // ms
+
+                if (lastTapTimeRef.current && (now - lastTapTimeRef.current < DBL_TAP_THRESHOLD)) {
+                  onSelectNode(node);
+                  lastTapTimeRef.current = 0; // Reset after double tap
+                } else {
+                  lastTapTimeRef.current = now;
+                }
+              }}
               activeOpacity={1}
               style={{
                 width: tileSize,

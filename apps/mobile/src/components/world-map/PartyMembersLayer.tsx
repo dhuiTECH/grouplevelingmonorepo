@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { MotiView } from 'moti';
 import LayeredAvatar from '@/components/LayeredAvatar';
 import { worldMapStyles } from '@/screens/WorldMapScreen.styles';
@@ -22,7 +22,7 @@ function PartyMembersLayerInner({ members, allShopItems, tileSize }: PartyMember
   if (members.length === 0) return null;
 
   return (
-    <>
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {members.map((member) => {
         const memberLeft = member.world_x * tileSize;
         const memberTop = member.world_y * tileSize;
@@ -51,7 +51,7 @@ function PartyMembersLayerInner({ members, allShopItems, tileSize }: PartyMember
           </MotiView>
         );
       })}
-    </>
+    </View>
   );
 }
 

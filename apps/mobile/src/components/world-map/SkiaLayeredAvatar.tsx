@@ -293,9 +293,12 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
   // 1. Gather all equipped cosmetics
   const equippedCosmetics = user?.cosmetics?.filter((c: any) => c.equipped) || [];
 
+  // Helper to normalize slot names
+  const getSlot = (item: any) => item?.slot?.trim().toLowerCase();
+
   // 2. Identify the base look (Unique Avatar or Base Body)
-  const equippedAvatarItem = equippedCosmetics.find((c: any) => c.shop_items?.slot === 'avatar');
-  const equippedBaseBodyItem = equippedCosmetics.find((c: any) => c.shop_items?.slot === 'base_body');
+  const equippedAvatarItem = equippedCosmetics.find((c: any) => getSlot(c.shop_items) === 'avatar');
+  const equippedBaseBodyItem = equippedCosmetics.find((c: any) => getSlot(c.shop_items) === 'base_body');
   const activeSkinItem = equippedAvatarItem || equippedBaseBodyItem;
   const activeVisualGender = getEffectiveGender(activeSkinItem?.shop_items, user?.gender);
 
@@ -326,8 +329,12 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
   
   const baseBodyImage = activeSkinItem?.shop_items?.image_url || user?.base_body_url || user?.avatar_url;
   const activeSkinColor = activeSkinItem?.shop_items?.skin_tint_hex || user?.base_body_tint_hex || "#FFDBAC";
-  const isBaseBody = activeSkinItem?.shop_items?.slot === 'base_body';
+  const isBaseBody = getSlot(activeSkinItem?.shop_items) === 'base_body';
   const useSkiaTint = !!(isBaseBody && activeSkinColor);
+
+  // 2.5 Find equipped weapon to determine hand grip z-index override
+  const equippedWeapon = equippedCosmetics.find((c: any) => getSlot(c.shop_items) === 'weapon');
+  const handGripZIndexOverride = equippedWeapon?.shop_items?.hand_grip_z_index_override;
 
   // 3. Build the sorted layers list (porting LayeredAvatar Internal logic)
   const sortedLayers = useMemo(() => {
@@ -366,7 +373,8 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
       const item = cosmetic.shop_items;
       
       // ALLOW 'background' slot to pass through!
-      if (!item || item.slot === 'avatar' || item.slot === 'base_body') return;
+      const slot = getSlot(item);
+      if (!item || slot === 'avatar' || slot === 'base_body') return;
 
       // Replace existing offsetX/Y and scale with these safe versions
       const rawScale = (isFemale && item.scale_female !== null && item.scale_female !== undefined) ? item.scale_female : item.scale;
@@ -378,35 +386,36 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
       const rawY = (isFemale && item.offset_y_female !== null && item.offset_y_female !== undefined) ? item.offset_y_female : item.offset_y;
       const offsetY = Number(rawY) || 0;
       
-      const isHandGrip = item.slot === 'hand_grip';
+      const isHandGrip = slot === 'hand_grip';
       const tintColor = isHandGrip ? activeSkinColor : undefined;
 
-      // ANIMATION CONFIG PARSER — support both camelCase and snake_case (Supabase can return either)
+      // MATCHED UI PARSING:
       let isAnimated = false;
-      let frameWidth = 512;
-      let frameHeight = 512;
+      let frameWidth = 96;
+      let frameHeight = 96;
       let totalFrames = 4;
       let fps = 10;
 
       if (item.is_animated && item.animation_config) {
         try {
           let config: any = item.animation_config;
-          // Robust parsing for string vs object and potential double-encoding
-          if (config && typeof config === 'string') {
+          if (typeof config === 'string') {
             const trimmed = config.trim();
             if (trimmed.startsWith('{')) {
               config = JSON.parse(trimmed);
               if (typeof config === 'string' && config.trim().startsWith('{')) {
                 config = JSON.parse(config);
               }
+            } else {
+              config = {};
             }
           }
-
           if (config && typeof config === 'object') {
+            // Check for both camelCase and snake_case properties
             const w = config.frameWidth ?? config.frame_width ?? config.width;
             const h = config.frameHeight ?? config.frame_height ?? config.height;
-            if (w != null) frameWidth = Number(w) || 512;
-            if (h != null) frameHeight = Number(h) || 512;
+            if (w != null) frameWidth = Number(w);
+            if (h != null) frameHeight = Number(h);
             if (w != null || h != null) isAnimated = true;
             
             const total = config.totalFrames ?? config.frame_count ?? config.total_frames ?? config.frames;
@@ -417,7 +426,7 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
               : null);
             if (fpsVal != null) fps = Math.max(1, Number(fpsVal) || 10);
           }
-        } catch (e) { console.warn('Animation parse error for', item.name, e); }
+        } catch (e) { console.warn('Animation config parse error:', e); }
       }
 
       // MATHEMATICALLY PERFECT PORT OF YOUR RN SYSTEM:
@@ -439,11 +448,15 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
       const lx = centerX - (layerWidth / 2);
       const ly = centerY - (layerHeight / 2);
 
-      const isBackgroundSlot = item.slot === 'background';
-      const calculatedZIndex = isBackgroundSlot ? -10 : Number(item.z_index || 10);
+      const isBackgroundSlot = slot === 'background';
+      const calculatedZIndex = isBackgroundSlot 
+        ? -10 
+        : (isHandGrip && handGripZIndexOverride !== null && handGripZIndexOverride !== undefined)
+          ? Number(handGripZIndexOverride)
+          : Number(item.z_index || 10);
 
       // Check active masks
-      const activeMask = activeMasks.find(m => m.targets.includes(item.slot));
+      const activeMask = activeMasks.find(m => m.targets.includes(slot));
       const maskUrl = activeMask?.url;
 
       layers.push({

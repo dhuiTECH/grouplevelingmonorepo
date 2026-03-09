@@ -13,7 +13,7 @@ import { ChestOpeningModal } from '@/components/modals/ChestOpeningModal';
 const { width: WINDOW_WIDTH } = Dimensions.get('window');
 
 const CAVE_OF_SHADOWS_DEMO = {
-  runData: { distance: 10000, duration: 60 * 60 + 33, routeCoordinates: [] },
+  runData: { distance: 11370, duration: 65 * 60 + 33, routeCoordinates: [] },
   dungeon: {
     id: '425dc861-6ce0-4ef3-bde3-79c71ae47f8e', name: 'Cave of Shadows', difficulty: 'E-Rank',
     tier: '5k', target_distance_meters: 5000, xp_reward: 500, coin_reward: 100,
@@ -59,67 +59,103 @@ export default function RunCompleteScreen() {
     const targetMeters = Number(paramDungeon.target_distance_meters) || 5000;
     const distanceMeters = Math.round(Number(paramRunData.distance) || 0);
     const durationSeconds = Math.round(Number(paramRunData.duration) || 0);
-    const completed = distanceMeters >= targetMeters;
+    
+    // Be slightly lenient with distance (allow completion at 99% of target)
+    // This helps with rounding issues or GPS jitter near the finish line
+    const completed = distanceMeters >= (targetMeters * 0.99);
 
     const recordRunAndFetchEvent = async () => {
+      console.log(`[RunComplete] Recording run: user=${user.id} dungeon=${paramDungeon.id} distance=${distanceMeters} duration=${durationSeconds} completed=${completed}`);
+      
       const { error: runError } = await supabase.from('dungeon_runs').insert({
         user_id: user.id, dungeon_id: paramDungeon.id, distance_meters: distanceMeters,
         duration_seconds: durationSeconds, completed,
       });
-      if (runError) console.error('Failed to record dungeon run:', runError);
+      
+      if (runError) {
+        console.error('[RunComplete] Failed to record dungeon run:', runError);
+        // Reset ref so it can retry if the user navigates back/forth or if we add a retry button
+        runRecordedRef.current = false;
+        return;
+      }
+      
+      console.log('[RunComplete] Dungeon run recorded successfully');
 
       if (completed && (paramDungeon.xp_reward || paramDungeon.coin_reward)) {
         const xp = Number(paramDungeon.xp_reward) || 0;
         const coins = Number(paramDungeon.coin_reward) || 0;
-        const { data: profile } = await supabase.from('profiles').select('exp, coins').eq('id', user.id).single();
-        if (profile) {
+        
+        console.log(`[RunComplete] Claiming rewards: xp=${xp} coins=${coins}`);
+        
+        const { data: profile, error: profileFetchError } = await supabase.from('profiles').select('exp, coins').eq('id', user.id).single();
+        
+        if (profileFetchError) {
+          console.error('[RunComplete] Failed to fetch profile for rewards:', profileFetchError);
+        } else if (profile) {
           const newExp = (Number(profile.exp) || 0) + xp;
           const newCoins = (Number(profile.coins) || 0) + coins;
-          await supabase.from('profiles').update({ exp: newExp, coins: newCoins }).eq('id', user.id);
-          setUser?.({ ...user, exp: newExp, coins: newCoins });
+          
+          const { error: profileUpdateError } = await supabase.from('profiles').update({ exp: newExp, coins: newCoins }).eq('id', user.id);
+          
+          if (profileUpdateError) {
+            console.error('[RunComplete] Failed to update profile rewards:', profileUpdateError);
+          } else {
+            setUser?.({ ...user, exp: newExp, coins: newCoins });
+            console.log('[RunComplete] Profile rewards updated successfully');
+          }
         }
-        await supabase.from('activities').insert({
+        
+        const { error: activityError } = await supabase.from('activities').insert({
           hunter_id: user.id, name: paramDungeon.name || 'Dungeon', type: 'dungeon',
           distance: distanceMeters, elapsed_time: durationSeconds, xp_earned: xp, coins_earned: coins, claimed: true,
         });
+        
+        if (activityError) {
+          console.error('[RunComplete] Failed to record activity:', activityError);
+        } else {
+          console.log('[RunComplete] Activity recorded successfully');
+        }
       }
 
-      setIsScanning(true);
-      try {
-        let currentPartySize = 1;
-        if (isInParty && user.current_party_id) {
-          const { count } = await supabase.from('party_members').select('*', { count: 'exact', head: true }).eq('party_id', user.current_party_id);
-          currentPartySize = count || 1;
-        }
-        setPartySize(currentPartySize);
-
-        const lckBonus = (user.lck_stat || 10) / 100;
-        const eventChance = 0.3 + (partySize * 0.05) + lckBonus; 
-        const roll = Math.random();
-
-        if (roll < eventChance) {
-          const typeRoll = Math.random();
-          if (typeRoll < 0.7) {
-            const { data: nodes } = await supabase.from('world_map_nodes').select('*').eq('is_random_event', true);
-            if (nodes && nodes.length > 0) {
-              const node = nodes[Math.floor(Math.random() * nodes.length)];
-              setRngEvent({ type: node.interaction_type === 'BATTLE' ? 'BATTLE' : 'SCENE', data: node });
-              setShowDialogue(true);
-            }
-          } else {
-            const rarityRoll = Math.random();
-            let selectedRarity: 'small' | 'silver' | 'medium' | 'large' = 'small';
-            if (rarityRoll > 0.95) selectedRarity = 'large';
-            else if (rarityRoll > 0.8) selectedRarity = 'medium';
-            else if (rarityRoll > 0.5) selectedRarity = 'silver';
-            setChestType(selectedRarity);
-            setShowChest(true);
+      // RNG event (dialogue/chest) only when mission was completed (distance met)
+      if (completed) {
+        setIsScanning(true);
+        try {
+          let currentPartySize = 1;
+          if (isInParty && user.current_party_id) {
+            const { count } = await supabase.from('party_members').select('*', { count: 'exact', head: true }).eq('party_id', user.current_party_id);
+            currentPartySize = count || 1;
           }
+          setPartySize(currentPartySize);
+
+          const lckBonus = (user.lck_stat || 10) / 100;
+          const eventChance = 0.3 + (partySize * 0.05) + lckBonus;
+          const roll = Math.random();
+
+          if (roll < eventChance) {
+            const typeRoll = Math.random();
+            if (typeRoll < 0.7) {
+              const { data: nodes } = await supabase.from('world_map_nodes').select('*').eq('is_random_event', true);
+              if (nodes && nodes.length > 0) {
+                const node = nodes[Math.floor(Math.random() * nodes.length)];
+                setRngEvent({ type: node.interaction_type === 'BATTLE' ? 'BATTLE' : 'SCENE', data: node });
+                setShowDialogue(true);
+              }
+            } else {
+              const rarityRoll = Math.random();
+              let selectedRarity: 'small' | 'silver' | 'medium' | 'large' = 'small';
+              if (rarityRoll > 0.95) selectedRarity = 'large';
+              else if (rarityRoll > 0.8) selectedRarity = 'medium';
+              else if (rarityRoll > 0.5) selectedRarity = 'silver';
+              setChestType(selectedRarity);
+              setShowChest(true);
+            }
+          }
+        } catch (err) {
+          console.error('Error in RNG logic:', err);
+        } finally {
+          setIsScanning(false);
         }
-      } catch (err) {
-        console.error('Error in RNG logic:', err);
-      } finally {
-        setIsScanning(false);
       }
     };
 

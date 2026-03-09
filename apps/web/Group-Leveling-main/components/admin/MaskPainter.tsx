@@ -6,6 +6,7 @@ import AnimatedEquip from '@/components/AnimatedEquip';
 interface MaskPainterProps {
   baseReferenceUrl: string; // The thing we are erasing
   itemUrl: string;          // The item doing the erasing
+  maskUrl?: string | null;  // Existing mask to re-edit
   offsetX: number;
   offsetY: number;
   scale: number;
@@ -41,6 +42,7 @@ interface MaskPainterProps {
 export const MaskPainter = ({ 
   baseReferenceUrl, 
   itemUrl, 
+  maskUrl,
   offsetX,
   offsetY,
   scale,
@@ -64,6 +66,46 @@ export const MaskPainter = ({
   const [autoMaskOn, setAutoMaskOn] = useState(false);
   const cachedStampDataRef = useRef<ImageData | null>(null);
   const cachedItemUrlRef = useRef<string | null>(null);
+  const hasLoadedMaskRef = useRef(false);
+
+  // Load existing mask
+  useEffect(() => {
+    if (!maskUrl || hasLoadedMaskRef.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      // To get the "holes" (strokes) back from the mask:
+      // The mask is Black where kept, Transparent where erased.
+      // We want the canvas to be Black where the mask is Transparent.
+      
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
+      const tCtx = tempCanvas.getContext('2d');
+      if (!tCtx) return;
+
+      // 1. Draw solid black
+      tCtx.fillStyle = 'black';
+      tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+      // 2. Punch out the mask's opaque areas
+      tCtx.globalCompositeOperation = 'destination-out';
+      tCtx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      // 3. Now tempCanvas has Black where the mask was Transparent.
+      // This is exactly our "strokes" canvas.
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(tempCanvas, 0, 0);
+      hasLoadedMaskRef.current = true;
+    };
+    img.src = maskUrl;
+  }, [maskUrl]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -72,7 +114,7 @@ export const MaskPainter = ({
     if (!ctx) return;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = 'black'; 
+    ctx.strokeStyle = '#00ff00'; // Light green brush for visibility
     ctx.lineWidth = brushSize;
   }, [brushSize]);
 
@@ -147,7 +189,7 @@ export const MaskPainter = ({
   };
 
   const stampFromPixelData = (data: ImageData, mainCtx: CanvasRenderingContext2D) => {
-    mainCtx.fillStyle = 'black';
+    mainCtx.fillStyle = '#00ff00';
     for (let y = 0; y < 256; y++) {
       for (let x = 0; x < 256; x++) {
         const i = (y * 256 + x) * 4;

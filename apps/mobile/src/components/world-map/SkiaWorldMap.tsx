@@ -302,14 +302,18 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   const centerX = Math.floor(width / 2);
   const centerY = Math.floor(height / 2);
 
-  // Snap to integers (Math.round) to eliminate sub-pixel jitter
-  const transform = useDerivedValue(() => [
+  // SKIA TRANSFORM: Snaps to integers to prevent 1px gap bleeding between grid tiles
+  const skiaTransform = useDerivedValue(() => [
     { translateX: Math.round(mapLeft.value + centerX) },
     { translateY: Math.round(mapTop.value + centerY) }
   ]);
 
-  const transformStyle = useAnimatedStyle(() => ({
-    transform: transform.value,
+  // UI TRANSFORM: Uses raw subpixels to prevent native text pixel-snapping (cures text jitter!)
+  const uiTransformStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: mapLeft.value + centerX },
+      { translateY: mapTop.value + centerY }
+    ],
   }));
 
   // Build collision lookup from visibleGrid
@@ -381,7 +385,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     <View style={StyleSheet.absoluteFill}>
       <Canvas style={{ position: 'absolute', width, height, zIndex: 1 }} pointerEvents="none">
         <Fill color="#1a1c0e" />
-        <Group transform={transform}>
+        <Group transform={skiaTransform}>
           {allVisibleTiles.map((e) => (
             <SkiaTile
               key={`tile-${e[0].id || (e[1] + ',' + e[2] + ',' + e[7] + ',' + e[3])}`}
@@ -520,7 +524,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
         style={[
           StyleSheet.absoluteFill, 
           { zIndex: 100 }, 
-          transformStyle
+          uiTransformStyle
         ]} 
         pointerEvents="box-none"
       >

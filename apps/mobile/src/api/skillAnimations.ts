@@ -83,13 +83,10 @@ export async function fetchSkillAnimation(
   }
 
   for (const key of keysToTry) {
-    console.log('[ANIM_FETCH] Trying key:', key);
     const row = await fetchSkillAnimationBySkillId(key);
     if (row) {
-      console.log('[ANIM_FETCH] Found animation for key:', key, 'row:', row);
       return row;
     }
   }
-  console.warn('[ANIM_FETCH] no row found for any key');
   return null;
 }

@@ -109,7 +109,12 @@ const DungeonTrackerScreen = () => {
                <Text style={styles.btnText}>INITIALIZE TRACKING</Text>
              </TouchableOpacity>
            ) : (
-             <TouchableOpacity style={styles.btnStop} onPress={() => {
+             <TouchableOpacity 
+               style={[
+                 styles.btnStop, 
+                 distance < (dungeon?.target_distance_meters || 5000) * 0.99 && styles.btnDisabled
+               ]} 
+               onPress={() => {
                 const report = stopRun();
                 console.log("Run Report:", report);
                 // Navigate to RunComplete with the data
@@ -118,7 +123,9 @@ const DungeonTrackerScreen = () => {
                   dungeon: dungeon 
                 });
              }}>
-               <Text style={styles.btnText}>COMPLETE MISSION</Text>
+               <Text style={styles.btnText}>
+                 {distance >= (dungeon?.target_distance_meters || 5000) * 0.99 ? "COMPLETE MISSION" : "ABANDON MISSION"}
+               </Text>
              </TouchableOpacity>
            )}
         </View>
@@ -242,6 +249,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5,
     shadowRadius: 10,
+  },
+  btnDisabled: {
+    backgroundColor: '#334155',
+    shadowOpacity: 0,
+    opacity: 0.8,
   },
   btnText: {
     color: '#fff',

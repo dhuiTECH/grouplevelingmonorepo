@@ -2012,6 +2012,7 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
               
               const paintForFemale = showMaskPainterForFemale;
               const maskGender = paintForFemale ? 'female' : 'male';
+              const currentMaskUrl = paintForFemale ? formData.eraser_mask_url_female : formData.eraser_mask_url;
 
               if (activePreviewGrip) {
                 const targetSlot = formData.slot === 'weapon' ? 'hand_grip' : 'weapon';
@@ -2043,6 +2044,7 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
                 <MaskPainter
                   baseReferenceUrl={maskGender === 'female' ? '/NoobWoman.png' : '/NoobMan.png'}
                   itemUrl={previewUrl || editingItem?.image_url || ''}
+                  maskUrl={currentMaskUrl}
                   offsetX={paintForFemale ? positioning.offsetXFemale : positioning.offsetX}
                   offsetY={paintForFemale ? positioning.offsetYFemale : positioning.offsetY}
                   scale={paintForFemale ? positioning.scaleFemale : positioning.scale}
