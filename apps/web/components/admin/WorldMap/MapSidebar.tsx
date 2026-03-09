@@ -233,7 +233,8 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
           let layer = 0;
           if (category === 'water_base' || category === 'foam_strip') layer = -1;
           else if (category === 'road') layer = 1;
-          else if (category === 'prop' || category === 'structure' || category === 'mountain' || category === 'big_structure') layer = 2;
+          else if (category === 'prop' || category === 'mountain') layer = 2;
+          else if (category === 'structure' || category === 'big_structure') layer = 3;
 
           const newTile = {
             id: uuidv4(),
