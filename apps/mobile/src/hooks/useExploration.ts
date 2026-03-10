@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import * as Haptics from 'expo-haptics';
+import { useSharedValue } from 'react-native-reanimated';
 
 const MOVE_COST = 100;
 // Keep chunk size the same
@@ -54,16 +55,26 @@ export const useExploration = (
   // Debounced DB write timer — batches rapid tile crossings into fewer Supabase calls
   const dbWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestPos = useRef<{ x: number; y: number; banked: number }>({ x: user?.world_x || 0, y: user?.world_y || 0, banked: user?.steps_banked || 0 });
+  const nodeLookupRef = useRef<Map<string, any>>(new Map());
+  const bankedSteps = useSharedValue(user?.steps_banked || 0);
 
   // Local ref for step limit so we don't trigger setUser on every step (avoids GC stutters)
   const localBankRef = useRef(user?.steps_banked || 0);
 
   useEffect(() => { userRef.current = user; }, [user]);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+  useEffect(() => {
+    const lookup = new Map<string, any>();
+    nodes.forEach((node) => {
+      lookup.set(`${node.x},${node.y}`, node);
+    });
+    nodeLookupRef.current = lookup;
+  }, [nodes]);
 
   // Keep the ref synced if the server or a menu updates the user's steps
   useEffect(() => {
     localBankRef.current = user?.steps_banked || 0;
+    bankedSteps.value = localBankRef.current;
   }, [user?.steps_banked]);
 
   // Separate camera position for visionGrid that only updates when we actually
@@ -342,6 +353,7 @@ export const useExploration = (
       // Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
       localBankRef.current -= MOVE_COST;
+      bankedSteps.value = localBankRef.current;
       latestPos.current = { x: nx, y: ny, banked: localBankRef.current };
 
       // DECOUPLED: No setState on every step. DB + React state sync only when player pauses (500ms debounce).
@@ -362,14 +374,7 @@ export const useExploration = (
         setUser({ ...userForSync, world_x: pos.x, world_y: pos.y, steps_banked: pos.banked });
       }, 500);
 
-      let node: any = null;
-      const currentNodes = nodesRef.current || [];
-      for (let i = 0; i < currentNodes.length; i++) {
-        if (currentNodes[i].x === nx && currentNodes[i].y === ny) {
-          node = currentNodes[i];
-          break;
-        }
-      }
+      const node = nodeLookupRef.current.get(`${nx},${ny}`) ?? null;
       if (node) {
         supabase.from('player_discoveries').upsert({ user_id: u.id, x: nx, y: ny }).then();
         supabase.from('discovered_locations').select('node_id').match({ user_id: u.id, node_id: node.id }).maybeSingle().then(({ data: existing }) => {
@@ -417,5 +422,5 @@ export const useExploration = (
     finally { tileEnterBusy.current = false; }
   }, [currentMapId]); // Stable -- reads user/nodes from refs
 
-  return { onTileEnter, move: () => {}, refreshVision, visionGrid, nodesInVision, loading: false, fastTravel, bankSteps, autoTravelReport, setAutoTravelReport, checkpointAlert, setCheckpointAlert };
+  return { onTileEnter, move: () => {}, refreshVision, visionGrid, nodesInVision, loading: false, fastTravel, bankSteps, autoTravelReport, setAutoTravelReport, checkpointAlert, setCheckpointAlert, bankedSteps };
 };

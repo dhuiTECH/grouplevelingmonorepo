@@ -142,6 +142,7 @@ export const WorldMapScreen = () => {
     bankSteps,
     setCheckpointAlert,
     loading: movingOnMap,
+    bankedSteps,
   } = useExploration(
     setEncounter,
     setInteractionVisible,
@@ -171,7 +172,7 @@ export const WorldMapScreen = () => {
     avatarData 
   } = useMapCharacter(pendingDir, isMoving, user, activePet as any, mapLeft, mapTop);
 
-  useWalkingSound(isMoving);
+  useWalkingSound(activeDirection);
 
   useEffect(() => {
     activeDirection.value = null;
@@ -305,6 +306,7 @@ export const WorldMapScreen = () => {
           activeDirection={activeDirection}
           isRunning={isRunning}
           isMoving={isMoving}
+          bankedSteps={bankedSteps}
           mapLeft={mapLeft}
           mapTop={mapTop}
           onTileEnter={onTileEnter}
@@ -316,6 +318,7 @@ export const WorldMapScreen = () => {
           petScaleX={petScaleX}
           petZIndex={petZIndex}
           avatarData={avatarData}
+          allShopItems={allShopItems}
         >
           <WorldNodesLayer
             nodes={nodesInVision ?? []}

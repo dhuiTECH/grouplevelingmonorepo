@@ -80,6 +80,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
   const structureInputRef = useRef<HTMLInputElement>(null);
   const mountainInputRef = useRef<HTMLInputElement>(null);
   const bigStructureInputRef = useRef<HTMLInputElement>(null);
+  const poiInputRef = useRef<HTMLInputElement>(null);
   const autoTileInputRef = useRef<HTMLInputElement>(null);
   const dirtInputRef = useRef<HTMLInputElement>(null);
   const waterInputRef = useRef<HTMLInputElement>(null);
@@ -128,7 +129,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
     }, 500); // 500ms debounce for DB sync
   };
 
-  const [activeTab, setActiveTab] = React.useState<'water' | 'ground' | 'road' | 'prop' | 'structure' | 'mountain' | 'big_structure'>('ground');
+  const [activeTab, setActiveTab] = React.useState<'water' | 'ground' | 'road' | 'prop' | 'structure' | 'mountain' | 'big_structure' | 'poi'>('ground');
 
   const filteredTiles = React.useMemo(() => {
     return customTiles.filter(t => {
@@ -138,6 +139,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
       if (activeTab === 'structure') return t.category === 'structure';
       if (activeTab === 'mountain') return t.category === 'mountain';
       if (activeTab === 'big_structure') return t.category === 'big_structure';
+      if (activeTab === 'poi') return t.category === 'poi';
       return t.category === 'prop' || (!t.category && (t.layer || 0) >= 2);
     });
   }, [customTiles, activeTab]);
@@ -212,7 +214,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
     if (waterInputRef.current) waterInputRef.current.value = '';
   };
 
-  const processFiles = async (files: FileList | File[], category: 'tile' | 'prop' | 'road' | 'water_base' | 'foam_strip' | 'structure' | 'mountain' | 'big_structure' = 'tile') => {
+  const processFiles = async (files: FileList | File[], category: 'tile' | 'prop' | 'road' | 'water_base' | 'foam_strip' | 'structure' | 'mountain' | 'big_structure' | 'poi' = 'tile') => {
     setUploadingTiles(true);
     const fileArray = Array.from(files);
     
@@ -234,7 +236,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
           if (category === 'water_base' || category === 'foam_strip') layer = -1;
           else if (category === 'road') layer = 1;
           else if (category === 'prop' || category === 'mountain') layer = 2;
-          else if (category === 'structure' || category === 'big_structure') layer = 3;
+          else if (category === 'structure' || category === 'big_structure' || category === 'poi') layer = 3;
 
           const newTile = {
             id: uuidv4(),
@@ -266,7 +268,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
     setUploadingTiles(false);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, category: 'tile' | 'prop' | 'road' | 'water_base' | 'foam_strip' | 'structure' | 'mountain' | 'big_structure' = 'tile') => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, category: 'tile' | 'prop' | 'road' | 'water_base' | 'foam_strip' | 'structure' | 'mountain' | 'big_structure' | 'poi' = 'tile') => {
     if (e.target.files && e.target.files.length > 0) {
       processFiles(e.target.files, category);
     }
@@ -276,6 +278,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
     if (structureInputRef.current) structureInputRef.current.value = '';
     if (mountainInputRef.current) mountainInputRef.current.value = '';
     if (bigStructureInputRef.current) bigStructureInputRef.current.value = '';
+    if (poiInputRef.current) poiInputRef.current.value = '';
     if (waterBaseUploadRef.current) waterBaseUploadRef.current.value = '';
     if (foamStripUploadRef.current) foamStripUploadRef.current.value = '';
   };
@@ -311,13 +314,14 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      let category: 'tile' | 'road' | 'prop' | 'water_base' | 'structure' | 'mountain' | 'big_structure' = 'tile';
+      let category: 'tile' | 'road' | 'prop' | 'water_base' | 'structure' | 'mountain' | 'big_structure' | 'poi' = 'tile';
       if (activeTab === 'road') category = 'road';
       else if (activeTab === 'prop') category = 'prop';
       else if (activeTab === 'water') category = 'water_base';
       else if (activeTab === 'structure') category = 'structure';
       else if (activeTab === 'mountain') category = 'mountain';
       else if (activeTab === 'big_structure') category = 'big_structure';
+      else if (activeTab === 'poi') category = 'poi';
       processFiles(e.dataTransfer.files, category);
     }
   };
@@ -374,6 +378,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
                   else if (activeTab === 'structure') structureInputRef.current?.click();
                   else if (activeTab === 'mountain') mountainInputRef.current?.click();
                   else if (activeTab === 'big_structure') bigStructureInputRef.current?.click();
+                  else if (activeTab === 'poi') poiInputRef.current?.click();
                   else propInputRef.current?.click();
                 }} 
                 disabled={uploadingTiles}
@@ -387,11 +392,12 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
               <input type="file" ref={structureInputRef} className="hidden" accept="image/png" multiple onChange={(e) => handleFileUpload(e, 'structure')} />
               <input type="file" ref={mountainInputRef} className="hidden" accept="image/png" multiple onChange={(e) => handleFileUpload(e, 'mountain')} />
               <input type="file" ref={bigStructureInputRef} className="hidden" accept="image/png" multiple onChange={(e) => handleFileUpload(e, 'big_structure')} />
+              <input type="file" ref={poiInputRef} className="hidden" accept="image/png" multiple onChange={(e) => handleFileUpload(e, 'poi')} />
             </div>
           </div>
           
           <div className="flex bg-slate-950 rounded border border-slate-800 p-1 mb-3 overflow-x-auto custom-scrollbar no-scrollbar">
-            {['water', 'ground', 'road', 'prop', 'structure', 'big_structure', 'mountain'].map((tab) => (
+            {['water', 'ground', 'road', 'poi', 'prop', 'structure', 'big_structure', 'mountain'].map((tab) => (
               <button 
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
@@ -552,7 +558,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
               <div className="flex flex-col gap-1">
                 <label className="text-[9px] text-slate-500 uppercase font-bold">Category</label>
                 <select value={currentlyEditedTile.category || 'tile'} onChange={(e) => updateCustomTile(currentlyEditedTile.id, { category: e.target.value as any })} className="bg-slate-950 border border-slate-700 text-[10px] text-slate-300 rounded px-1 py-1">
-                  <option value="tile">Ground</option><option value="road">Road</option><option value="prop">Prop</option><option value="water_base">Water</option><option value="foam_strip">Foam</option><option value="structure">Structure</option><option value="mountain">Mountain</option><option value="big_structure">Big Structure</option>
+                  <option value="tile">Ground</option><option value="road">Road</option><option value="prop">Prop</option><option value="poi">POI</option><option value="water_base">Water</option><option value="foam_strip">Foam</option><option value="structure">Structure</option><option value="mountain">Mountain</option><option value="big_structure">Big Structure</option>
                 </select>
               </div>
               <div className="flex flex-col gap-1">
@@ -741,7 +747,7 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
             {Array.from(new Set([-1, 0, 1, 2, ...customTiles.map(t => t.layer || 0)])).sort((a, b) => a - b).map(layerId => (
               <div key={layerId} className="flex items-center justify-between p-2 rounded bg-slate-900/50 border border-slate-800/50">
                 <span className="text-[10px] font-bold text-slate-300 uppercase tracking-tight">
-                  {layerId < 0 ? `Water (${layerId})` : layerId === 0 ? 'Ground (0)' : layerId === 1 ? 'Road (1)' : `Prop (${layerId})`}
+                  {layerId < 0 ? `Water (${layerId})` : layerId === 0 ? 'Ground (0)' : layerId === 1 ? 'Road (1)' : layerId === 3 ? 'POI/Struct (3)' : `Prop (${layerId})`}
                 </span>
                 <div className="flex gap-1">
                   <button onClick={() => setLayerVisibility(layerId, !!layerSettings[layerId]?.hidden)} className={`p-1 rounded ${!layerSettings[layerId]?.hidden ? 'text-cyan-400' : 'text-slate-600'}`}>

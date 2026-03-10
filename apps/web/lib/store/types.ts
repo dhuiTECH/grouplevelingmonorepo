@@ -57,7 +57,7 @@ export interface CustomTile {
   isAutoFill?: boolean;
   isAutoTile?: boolean;
   smartType?: string;
-  category?: 'water_base' | 'foam_strip' | 'tile' | 'prop' | 'road' | 'structure' | 'mountain' | 'big_structure';
+  category?: 'water_base' | 'foam_strip' | 'tile' | 'prop' | 'road' | 'structure' | 'mountain' | 'big_structure' | 'poi';
   rotation?: number; // Default rotation
   sort_order?: number;
 }

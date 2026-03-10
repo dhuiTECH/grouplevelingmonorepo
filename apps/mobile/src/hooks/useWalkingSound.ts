@@ -3,48 +3,65 @@ import { Audio } from 'expo-av';
 import { getAudioMuted } from '@/utils/audio';
 import { SharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
 
-export function useWalkingSound(isMoving: SharedValue<boolean>) {
+export function useWalkingSound(activeDirection: SharedValue<'UP' | 'DOWN' | 'LEFT' | 'RIGHT' | null>) {
   const soundRef = useRef<Audio.Sound | null>(null);
 
-  // Define the actual audio logic separately
-  const toggleSound = async (active: boolean) => {
+  // Instant execution without status checking lag
+  const handleAudioState = async (isPressing: boolean) => {
+    if (!soundRef.current) return;
+    
     try {
-      if (active && !getAudioMuted()) {
-        if (!soundRef.current) {
-          const { sound } = await Audio.Sound.createAsync(
-            require('../../assets/sounds/walkingsound.mp3'),
-            { shouldPlay: true, isLooping: true, volume: 0.7 }
-          );
-          soundRef.current = sound;
-        } else {
-          const status = await soundRef.current.getStatusAsync();
-          if (status.isLoaded && !status.isPlaying) await soundRef.current.playAsync();
-        }
-      } else if (soundRef.current) {
-        const status = await soundRef.current.getStatusAsync();
-        if (status.isLoaded && status.isPlaying) await soundRef.current.stopAsync();
+      if (isPressing && !getAudioMuted()) {
+        await soundRef.current.playAsync();
+      } else {
+        await soundRef.current.pauseAsync();
       }
-    } catch (e) {
-      console.warn('[WorldMap] walking sound error:', e);
+    } catch (e: any) {
+      // Ignore normal interruption warnings
+      if (!e?.message?.includes('interrupted')) {
+        console.warn('[WorldMap] walking sound error:', e);
+      }
     }
   };
 
-  // Reanimated listens to the UI thread shared value directly! No React re-renders.
   useAnimatedReaction(
-    () => isMoving.value,
-    (moving, prev) => {
-      // If the value changes, trigger the JS function to play/stop sound
-      if (moving !== prev) runOnJS(toggleSound)(moving);
+    () => activeDirection.value !== null,
+    (isPressing, prev) => {
+      // Only fire JS if the exact state of "pressing" vs "not pressing" changes
+      if (isPressing !== prev) {
+        runOnJS(handleAudioState)(isPressing);
+      }
     }
   );
 
-  // Cleanup on unmount
+  // Pre-load and Cleanup
   useEffect(() => {
+    let mounted = true;
+
+    async function preload() {
+      try {
+        const { sound } = await Audio.Sound.createAsync(
+          require('../../assets/sounds/walkingsound.mp3'),
+          { shouldPlay: false, isLooping: true, volume: 0.3 }
+        );
+        if (mounted) {
+          soundRef.current = sound;
+        } else {
+          await sound.unloadAsync();
+        }
+      } catch (e) {
+        console.warn('[WorldMap] Failed to pre-load walking sound:', e);
+      }
+    }
+
+    preload();
+
     return () => {
+      mounted = false;
       if (soundRef.current) {
-        soundRef.current.stopAsync().catch(() => {});
-        soundRef.current.unloadAsync().catch(() => {});
+        const s = soundRef.current;
         soundRef.current = null;
+        s.stopAsync().then(() => s.unloadAsync()).catch(() => {});
       }
     };
   }, []);

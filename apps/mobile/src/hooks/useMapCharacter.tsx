@@ -86,11 +86,10 @@ export function useMapCharacter(
     const playerWorldX = -mapLeft.value;
     const playerWorldY = -mapTop.value;
 
-    // ✨ THE FIX: Shift the leash anchor to match your visual sprites!
-    // The midpoint between your old -32 and 108 slots is exactly +38.
-    const VISUAL_ANCHOR_X = playerWorldX + 38;
-    const VISUAL_ANCHOR_Y = playerWorldY + 25; 
-
+    // ✨ THE FIX: Shift the leash anchor to match the avatar's NEW centered position!
+    // Since the avatar is centered on the tile, we want the pet to trail near the tile center.
+    const VISUAL_ANCHOR_X = playerWorldX + 0;
+    const VISUAL_ANCHOR_Y = playerWorldY + 5; // Anchor adjusted to match visual offset
     if (!hasInitPet.value) {
       // Spawn pet safely behind player on load
       petWorldX.value = VISUAL_ANCHOR_X - 70;
@@ -132,11 +131,13 @@ export function useMapCharacter(
   });
 
   const playerBaseX = useDerivedValue(() => {
-    return Math.round(mapLeft.value) + Math.floor(width / 2) - mapLeft.value;
+    const AVATAR_RADIUS = 36;
+    return Math.floor(width / 2) - AVATAR_RADIUS;
   });
 
   const playerBaseY = useDerivedValue(() => {
-    return Math.round(mapTop.value) + Math.floor(height / 2) - mapTop.value;
+    const AVATAR_RADIUS = 36;
+    return Math.floor(height / 2) - AVATAR_RADIUS;
   });
 
   const [avatarKey, setAvatarKey] = useState(0);

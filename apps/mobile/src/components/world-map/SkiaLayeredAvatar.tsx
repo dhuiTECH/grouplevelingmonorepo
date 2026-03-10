@@ -70,9 +70,10 @@ interface SkiaLayerProps {
   tintColor?: string;
   opacity?: number;
   maskUrl?: string;
+  rotation?: number;
 }
 
-const SkiaLayer: React.FC<SkiaLayerProps> = ({ uri, centerX, centerY, dbScale, scaleRatio, isBackground, size, tintColor, opacity = 1, maskUrl }) => {
+const SkiaLayer: React.FC<SkiaLayerProps> = ({ uri, centerX, centerY, dbScale, scaleRatio, isBackground, size, tintColor, opacity = 1, maskUrl, rotation = 0 }) => {
   const skiaImg = useImage(uri ? uri : null);
   const maskImg = useImage(maskUrl ? maskUrl : null);
 
@@ -110,18 +111,23 @@ const SkiaLayer: React.FC<SkiaLayerProps> = ({ uri, centerX, centerY, dbScale, s
   }
 
   const imageLayer = (
-    <SkiaImage
-      image={skiaImg}
-      x={finalX}
-      y={finalY}
-      width={finalSize}
-      height={finalSize}
-      opacity={opacity}
-      fit="contain"
-      sampling={{ filter: FilterMode.Nearest }}
+    <Group 
+      transform={rotation ? [{ rotate: (rotation * Math.PI) / 180 }] : []}
+      origin={rotation ? { x: centerX, y: centerY } : undefined}
     >
-      {multiplyMatrix && <ColorMatrix matrix={multiplyMatrix} />}
-    </SkiaImage>
+      <SkiaImage
+        image={skiaImg}
+        x={finalX}
+        y={finalY}
+        width={finalSize}
+        height={finalSize}
+        opacity={opacity}
+        fit="contain"
+        sampling={{ filter: FilterMode.Nearest }}
+      >
+        {multiplyMatrix && <ColorMatrix matrix={multiplyMatrix} />}
+      </SkiaImage>
+    </Group>
   );
 
   if (maskUrl && maskImg) {
@@ -147,6 +153,8 @@ interface SkiaAnimatedLayerProps {
   y: number;
   width: number;
   height: number;
+  centerX: number;
+  centerY: number;
   tintColor?: string;
   frameWidth: number;
   frameHeight: number;
@@ -154,9 +162,10 @@ interface SkiaAnimatedLayerProps {
   fps?: number;
   maskUrl?: string;
   size: number; // Needed for global mask
+  rotation?: number;
 }
 
-const SkiaAnimatedLayer: React.FC<SkiaAnimatedLayerProps> = ({ uri, x, y, width, height, tintColor, frameWidth, frameHeight, totalFrames = 4, fps = 10, maskUrl, size }) => {
+const SkiaAnimatedLayer: React.FC<SkiaAnimatedLayerProps> = ({ uri, x, y, width, height, centerX, centerY, tintColor, frameWidth, frameHeight, totalFrames = 4, fps = 10, maskUrl, size, rotation = 0 }) => {
   const skiaImg = useImage(uri ? uri : null);
   const maskImg = useImage(maskUrl ? maskUrl : null);
   const currentFrame = useSharedValue(0);
@@ -216,19 +225,24 @@ const SkiaAnimatedLayer: React.FC<SkiaAnimatedLayerProps> = ({ uri, x, y, width,
   const scaleY = height / frameHeight;
 
   const animLayer = (
-    <Group transform={[{ translateX: x }, { translateY: y }]}>
-      <Group clip={clipRect}>
-        <SkiaImage
-          image={skiaImg}
-          x={0}
-          y={0}
-          width={imgW * scaleX}
-          height={imgH * scaleY}
-          transform={imageTransform}
-          sampling={{ filter: FilterMode.Nearest }}
-        >
-          {multiplyMatrix && <ColorMatrix matrix={multiplyMatrix} />}
-        </SkiaImage>
+    <Group 
+      transform={rotation ? [{ rotate: (rotation * Math.PI) / 180 }] : []}
+      origin={{ x: centerX, y: centerY }}
+    >
+      <Group transform={[{ translateX: x }, { translateY: y }]}>
+        <Group clip={clipRect}>
+          <SkiaImage
+            image={skiaImg}
+            x={0}
+            y={0}
+            width={imgW * scaleX}
+            height={imgH * scaleY}
+            transform={imageTransform}
+            sampling={{ filter: FilterMode.Nearest }}
+          >
+            {multiplyMatrix && <ColorMatrix matrix={multiplyMatrix} />}
+          </SkiaImage>
+        </Group>
       </Group>
     </Group>
   );
@@ -257,6 +271,7 @@ interface SkiaLayeredAvatarProps {
   /** Pass SharedValues so we never read .value in render (avoids JS re-renders every frame). */
   x: SharedValue<number>;
   y: SharedValue<number>;
+  allShopItems?: any[];
 }
 
 export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
@@ -266,6 +281,7 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
   activeDirection,
   x,
   y,
+  allShopItems = [],
 }) => {
   const scaleRatio = size / ADMIN_CONTAINER_SIZE;
   const breathScale = useSharedValue(1);
@@ -336,6 +352,96 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
   const equippedWeapon = equippedCosmetics.find((c: any) => getSlot(c.shop_items) === 'weapon');
   const handGripZIndexOverride = equippedWeapon?.shop_items?.hand_grip_z_index_override;
 
+  // 2.6 Hand Grip Auto-Detection Logic (ported from LayeredAvatar/index.tsx)
+  let handGripCosmetic = null;
+  if (equippedWeapon?.shop_items?.grip_type) {
+    const gripType = equippedWeapon.shop_items.grip_type;
+    
+    // Get the gender of the ACTIVE skin item
+    const getGenderArray = (item: any) => {
+      if (!item?.gender) return [(user?.gender || 'male').toLowerCase()];
+      
+      let gendersArray = [];
+      try {
+        if (typeof item.gender === 'string' && item.gender.startsWith('[')) {
+          gendersArray = JSON.parse(item.gender);
+        } else if (Array.isArray(item.gender)) {
+          gendersArray = item.gender;
+        } else {
+          gendersArray = [item.gender];
+        }
+      } catch(e) {
+        gendersArray = [item.gender];
+      }
+      
+      return gendersArray.map((g: string) => g?.toLowerCase());
+    };
+    
+    const activeSkinGenders = getGenderArray(activeSkinItem?.shop_items);
+
+    // Helper function to check gender match for hand grip
+    const isGenderMatch = (item: any) => {
+      if (!item.gender) return true;
+      
+      let itemGendersArray = [];
+      try {
+        if (typeof item.gender === 'string' && item.gender.startsWith('[')) {
+          itemGendersArray = JSON.parse(item.gender);
+        } else if (Array.isArray(item.gender)) {
+          itemGendersArray = item.gender;
+        } else {
+          itemGendersArray = [item.gender];
+        }
+      } catch(e) {
+        itemGendersArray = [item.gender];
+      }
+      
+      const itemGenders = itemGendersArray.map((g: string) => g?.toLowerCase());
+      
+      return itemGenders.includes('unisex') || 
+             itemGenders.includes('all') || 
+             itemGenders.some((g: string) => activeSkinGenders.includes(g));
+    };
+
+    // Try to find in user's owned cosmetics OR global shop items
+    const matchingOwned = user?.cosmetics?.find((c: any) => {
+        const item = c.shop_items;
+        return getSlot(item) === 'hand_grip' && 
+               item.grip_type?.toLowerCase() === gripType.toLowerCase() &&
+               isGenderMatch(item);
+    });
+
+    if (matchingOwned) {
+        handGripCosmetic = matchingOwned;
+    } else if (allShopItems && allShopItems.length > 0) {
+        const matchingShopItem = allShopItems?.find((item: any) => {
+            return getSlot(item) === 'hand_grip' && 
+                   item.grip_type?.toLowerCase() === gripType.toLowerCase() &&
+                   isGenderMatch(item);
+        });
+        if (matchingShopItem) {
+            handGripCosmetic = {
+                id: `ghost-hand-${gripType}`,
+                user_id: user.id,
+                shop_item_id: matchingShopItem.id,
+                created_at: new Date().toISOString(),
+                equipped: true, // Mark as virtually equipped so it renders
+                shop_items: matchingShopItem
+            };
+        }
+    }
+  }
+
+  // Combine explicitly equipped cosmetics with our ghost hand grip (if any)
+  const finalEquippedCosmetics = [...equippedCosmetics];
+  
+  if (handGripCosmetic && !finalEquippedCosmetics.find(c => c.id === handGripCosmetic.id)) {
+    finalEquippedCosmetics.push({
+      ...handGripCosmetic,
+      equipped: true,
+    });
+  }
+
   // 3. Build the sorted layers list (porting LayeredAvatar Internal logic)
   const sortedLayers = useMemo(() => {
     const layers: any[] = [];
@@ -369,7 +475,7 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
     }
 
     // Add Overlay Cosmetics
-    equippedCosmetics.forEach((cosmetic: any) => {
+    finalEquippedCosmetics.forEach((cosmetic: any) => {
       const item = cosmetic.shop_items;
       
       // ALLOW 'background' slot to pass through!
@@ -385,6 +491,9 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
 
       const rawY = (isFemale && item.offset_y_female !== null && item.offset_y_female !== undefined) ? item.offset_y_female : item.offset_y;
       const offsetY = Number(rawY) || 0;
+      
+      const rawRotation = (isFemale && item.rotation_female !== null && item.rotation_female !== undefined) ? item.rotation_female : item.rotation;
+      const rotation = Number(rawRotation) || 0;
       
       const isHandGrip = slot === 'hand_grip';
       const tintColor = isHandGrip ? activeSkinColor : undefined;
@@ -479,12 +588,13 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
         frameHeight,
         totalFrames,
         fps,
-        maskUrl
+        maskUrl,
+        rotation
       });
     });
 
     return layers.sort((a, b) => a.zIndex - b.zIndex);
-  }, [user, size, activeVisualGender, scaleRatio, activeSkinColor, useSkiaTint, baseBodyImage, equippedCosmetics, activeMasks]);
+  }, [user, size, activeVisualGender, scaleRatio, activeSkinColor, useSkiaTint, baseBodyImage, finalEquippedCosmetics, activeMasks]);
 
   const rootTransform = useDerivedValue(() => {
     const tx = x.value;
@@ -536,6 +646,9 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
               fps={layer.fps}
               maskUrl={layer.maskUrl}
               size={size ?? 48}
+              rotation={layer.rotation}
+              centerX={layer.centerX}
+              centerY={layer.centerY}
             />
           ) : (
             <SkiaLayer
@@ -549,6 +662,7 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
               size={size ?? 48}
               tintColor={layer.tintColor}
               maskUrl={layer.maskUrl}
+              rotation={layer.rotation}
             />
           );
 

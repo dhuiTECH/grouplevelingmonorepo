@@ -8,37 +8,62 @@ import { FootprintsIcon } from './MapIcons';
 const PANEL_WIDTH = 180;
 const PANEL_HEIGHT = 58;
 
-function TechPanelBackground() {
+interface TechPanelBackgroundProps {
+  width: number;
+  height: number;
+  color?: string;
+  fillOpacity?: number;
+}
+
+function TechPanelBackground({ 
+  width, 
+  height, 
+  color = '#00E5FF',
+  fillOpacity = 0.25
+}: TechPanelBackgroundProps) {
+  // Calculate corner cut size based on height to maintain proportion
+  const corner = Math.min(28, height * 0.4); 
+  
+  // Create paths dynamically based on width and height
+  const mainPath = `M 0 ${corner} L ${corner} 0 L ${width} 0 L ${width} ${height - corner} L ${width - corner} ${height} L 0 ${height} Z`;
+  const topLeftGlow = `M 0 ${corner + 17} L 0 ${corner} L ${corner} 0 L ${corner + 17} 0`;
+  const bottomRightGlow = `M ${width} ${height - corner - 17} L ${width} ${height - corner} L ${width - corner} ${height} L ${width - corner - 17} ${height}`;
+  
+  // Inner frame needs a bit of padding
+  const p = 10; // padding
+  const innerCorner = Math.max(0, corner - p + 4); // adjusted corner for inner frame
+  const innerPath = `M ${p} ${p + innerCorner} L ${p + innerCorner} ${p} L ${width - p} ${p} L ${width - p} ${height - p - innerCorner} L ${width - p - innerCorner} ${height - p} L ${p} ${height - p} Z`;
+
   return (
     <Svg
-      width={PANEL_WIDTH}
-      height={PANEL_HEIGHT}
-      viewBox="0 0 340 110"
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
       style={StyleSheet.absoluteFill}
-      preserveAspectRatio="xMidYMid meet"
+      preserveAspectRatio="none"
     >
-      {/* Full-panel glow (soft cyan halo) */}
+      {/* Full-panel glow (soft halo) */}
       <Path
-        d="M 0 28 L 28 0 L 340 0 L 340 82 L 312 110 L 0 110 Z"
+        d={mainPath}
         fill="none"
-        stroke="#00E5FF"
+        stroke={color}
         strokeWidth={16}
         strokeOpacity={0.12}
         strokeLinejoin="miter"
       />
       {/* Outer metallic silver border + translucent liquid glass fill */}
       <Path
-        d="M 0 28 L 28 0 L 340 0 L 340 82 L 312 110 L 0 110 Z"
-        fill="rgba(0,10,20,0.25)"
+        d={mainPath}
+        fill={`rgba(0,10,20,${fillOpacity})`}
         stroke="#b0b8c0"
         strokeWidth={2}
         strokeLinejoin="miter"
       />
       {/* Top-left glow: thick low-opacity stroke */}
       <Path
-        d="M 0 45 L 0 28 L 28 0 L 45 0"
+        d={topLeftGlow}
         fill="none"
-        stroke="#00E5FF"
+        stroke={color}
         strokeWidth={12}
         strokeOpacity={0.25}
         strokeLinecap="round"
@@ -46,18 +71,18 @@ function TechPanelBackground() {
       />
       {/* Top-left glow: standard stroke */}
       <Path
-        d="M 0 45 L 0 28 L 28 0 L 45 0"
+        d={topLeftGlow}
         fill="none"
-        stroke="#00E5FF"
+        stroke={color}
         strokeWidth={2}
         strokeLinecap="round"
         strokeLinejoin="miter"
       />
       {/* Bottom-right glow: thick low-opacity stroke */}
       <Path
-        d="M 340 65 L 340 82 L 312 110 L 295 110"
+        d={bottomRightGlow}
         fill="none"
-        stroke="#00E5FF"
+        stroke={color}
         strokeWidth={12}
         strokeOpacity={0.25}
         strokeLinecap="round"
@@ -65,18 +90,18 @@ function TechPanelBackground() {
       />
       {/* Bottom-right glow: standard stroke */}
       <Path
-        d="M 340 65 L 340 82 L 312 110 L 295 110"
+        d={bottomRightGlow}
         fill="none"
-        stroke="#00E5FF"
+        stroke={color}
         strokeWidth={2}
         strokeLinecap="round"
         strokeLinejoin="miter"
       />
-      {/* Inner cyan frame */}
+      {/* Inner frame */}
       <Path
-        d="M 10 34 L 34 10 L 330 10 L 330 76 L 306 100 L 10 100 Z"
+        d={innerPath}
         fill="none"
-        stroke="#00E5FF"
+        stroke={color}
         strokeWidth={1.5}
         strokeLinejoin="miter"
       />
@@ -120,9 +145,11 @@ export const MapHUD: React.FC<MapHUDProps> = ({
     <>
       <Animated.View style={[styles.hudTop, { transform: [{ translateY: floatAnim }] }]}>
         <View style={styles.topPill}>
-          <TechPanelBackground />
+          <TechPanelBackground width={PANEL_WIDTH} height={PANEL_HEIGHT} color="#00E5FF" />
           <View style={styles.topPillContent}>
-            <FootprintsIcon />
+            <View style={{ transform: [{ translateX: 6 }] }}>
+              <FootprintsIcon />
+            </View>
             <GlowingStepCounter steps={steps} />
           </View>
         </View>
@@ -141,18 +168,33 @@ export const MapHUD: React.FC<MapHUDProps> = ({
       </Animated.View>
 
       {/* WORLD button */}
-      <TouchableOpacity style={styles.floatingMapBtn} onPress={onPressWorld}>
-        <Ionicons name="compass" size={24} color="#22d3ee" />
-        <Text style={styles.mapBtnText}>WORLD</Text>
+      <TouchableOpacity style={[styles.floatingMapBtn, styles.worldBtn]} onPress={onPressWorld}>
+        <View style={StyleSheet.absoluteFill}>
+          <TechPanelBackground width={60} height={60} color="#22d3ee" fillOpacity={0.6} />
+        </View>
+        <Ionicons 
+          name="compass" 
+          size={16} 
+          color="#22d3ee" 
+          style={{ transform: [{ translateX: 2 }] }} 
+        />
+        <View style={{ transform: [{ translateX: -5 }] }}>
+          <Text style={styles.mapBtnText}>WORLD</Text>
+        </View>
       </TouchableOpacity>
 
       {/* BATTLE button */}
       <TouchableOpacity
-        style={[styles.floatingMapBtn, { top: 120, borderColor: '#ef4444' }]}
+        style={[styles.floatingMapBtn, styles.battleBtn]}
         onPress={onPressBattle}
       >
-        <Ionicons name="skull" size={24} color="#ef4444" />
-        <Text style={[styles.mapBtnText, { color: '#ef4444' }]}>BATTLE</Text>
+        <View style={StyleSheet.absoluteFill}>
+          <TechPanelBackground width={60} height={60} color="#ef4444" fillOpacity={0.6} />
+        </View>
+        <Ionicons name="skull" size={16} color="#ef4444" />
+        <View style={{ transform: [{ translateX: -3 }] }}>
+          <Text style={[styles.mapBtnText, { color: '#ef4444' }]}>BATTLE</Text>
+        </View>
       </TouchableOpacity>
     </>
   );
@@ -221,25 +263,36 @@ const styles = StyleSheet.create({
   floatingMapBtn: {
     position: 'absolute',
     top: 60,
-    right: 20,
-    backgroundColor: 'rgba(2, 6, 23, 0.9)',
-    padding: 10,
-    borderRadius: 12,
+    width: 60,
+    height: 60,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#22d3ee',
+    justifyContent: 'center',
     zIndex: 40,
+    backgroundColor: 'transparent',
+    overflow: 'visible',
+  },
+  worldBtn: {
+    right: 20,
     shadowColor: '#22d3ee',
     shadowOpacity: 0.5,
     shadowRadius: 10,
     elevation: 5,
   },
+  battleBtn: {
+    right: 20,
+    top: 130,
+    shadowColor: '#ef4444',
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 5,
+  },
   mapBtnText: {
-    color: '#fff',
-    fontSize: 8,
+    color: '#22d3ee',
+    fontSize: 6,
     fontWeight: '900',
-    marginTop: 2,
-    letterSpacing: 1,
+    marginTop: 0,
+    letterSpacing: 0.5,
+    zIndex: 2,
   },
 });
 

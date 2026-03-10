@@ -34,6 +34,7 @@ interface SkiaWorldMapProps {
   activeDirection: SharedValue<'UP' | 'DOWN' | 'LEFT' | 'RIGHT' | null>;
   isRunning: SharedValue<boolean>;
   isMoving: SharedValue<boolean>;
+  bankedSteps: SharedValue<number>;
   mapLeft: SharedValue<number>;
   mapTop: SharedValue<number>;
   onTileEnter?: (x: number, y: number) => void;
@@ -45,6 +46,7 @@ interface SkiaWorldMapProps {
   petScaleX: SharedValue<number>;
   petZIndex: SharedValue<number>;
   avatarData: any;
+  allShopItems?: any[];
 }
 
 const { width, height } = Dimensions.get('window');
@@ -54,6 +56,7 @@ const { width, height } = Dimensions.get('window');
 const WALK_DURATION = 267;
 // At 60fps, 48px / 6px per frame = 8 frames. 8 * 16.67ms = 133.3ms
 const RUN_DURATION = 134;
+const MOVE_COST = 100;
 
 const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   visionGrid,
@@ -69,6 +72,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   activeDirection,
   isRunning,
   isMoving,
+  bankedSteps,
   mapLeft,
   mapTop,
   onTileEnter,
@@ -80,8 +84,11 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   petScaleX,
   petZIndex,
   avatarData,
+  allShopItems,
 }) => {
   const { tileLibrary } = useTileLibrary();
+  const petBehindOpacity = useDerivedValue(() => (petZIndex.value < 100 ? 1 : 0));
+  const petInFrontOpacity = useDerivedValue(() => (petZIndex.value >= 100 ? 1 : 0));
 
   const visibleGrid = useMemo(() => {
     if (!visionGrid || visionGrid.length === 0) return [];
@@ -226,6 +233,10 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       return;
     }
 
+    if (bankedSteps.value < MOVE_COST) {
+      return;
+    }
+
     let nx = currentTileX.value;
     let ny = currentTileY.value;
 
@@ -266,20 +277,16 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     const duration = isRunning.value ? RUN_DURATION : WALK_DURATION;
 
     if (nx !== currentTileX.value) {
-      mapLeft.value = withTiming(targetPixelX, { duration, easing: Easing.linear }, (finished) => {
-        if (finished) {
-          currentTileX.value = nx;
-          checkTileEnter(nx, ny);
-          isMoving.value = false;
-        }
+      mapLeft.value = withTiming(targetPixelX, { duration, easing: Easing.linear }, () => {
+        currentTileX.value = nx;
+        checkTileEnter(nx, ny);
+        isMoving.value = false;
       });
     } else if (ny !== currentTileY.value) {
-      mapTop.value = withTiming(targetPixelY, { duration, easing: Easing.linear }, (finished) => {
-        if (finished) {
-          currentTileY.value = ny;
-          checkTileEnter(nx, ny);
-          isMoving.value = false;
-        }
+      mapTop.value = withTiming(targetPixelY, { duration, easing: Easing.linear }, () => {
+        currentTileY.value = ny;
+        checkTileEnter(nx, ny);
+        isMoving.value = false;
       });
     }
   };
@@ -302,17 +309,19 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   const centerX = Math.floor(width / 2);
   const centerY = Math.floor(height / 2);
 
-  // SKIA TRANSFORM: Snaps to integers to prevent 1px gap bleeding between grid tiles
+  const cameraTranslateX = useDerivedValue(() => Math.round(mapLeft.value + centerX));
+  const cameraTranslateY = useDerivedValue(() => Math.round(mapTop.value + centerY));
+
+  // Keep Skia tiles and the React Native map-following overlay on the same pixel grid.
   const skiaTransform = useDerivedValue(() => [
-    { translateX: Math.round(mapLeft.value + centerX) },
-    { translateY: Math.round(mapTop.value + centerY) }
+    { translateX: cameraTranslateX.value },
+    { translateY: cameraTranslateY.value }
   ]);
 
-  // UI TRANSFORM: Uses raw subpixels to prevent native text pixel-snapping (cures text jitter!)
   const uiTransformStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: mapLeft.value + centerX },
-      { translateY: mapTop.value + centerY }
+      { translateX: cameraTranslateX.value },
+      { translateY: cameraTranslateY.value }
     ],
   }));
 
@@ -380,6 +389,37 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   const allVisibleTiles = sortedTiles;
 
   const spritesheet = activePet?.pet_details?.metadata?.visuals?.walking_spritesheet;
+
+  const playerAvatar = avatarData ? (
+    <SkiaLayeredAvatar
+      user={avatarData}
+      size={72}
+      isMoving={isMoving}
+      activeDirection={activeDirection}
+      x={playerBaseX}
+      y={playerBaseY}
+      allShopItems={allShopItems}
+    />
+  ) : null;
+
+  const petSprite = spritesheet ? (
+    <SkiaPetSprite
+      imageUrl={spritesheet.url}
+      isMoving={isMoving}
+      activeDirection={activeDirection}
+      flipX={false}
+      scale={0.15 * (tileSize / 48)}
+      totalFrames={spritesheet.frame_count ?? 1}
+      totalTimeMs={spritesheet.duration_ms ?? 1000}
+      frameWidth={spritesheet.frame_width ?? 64}
+      frameHeight={spritesheet.frame_height ?? 64}
+      idleIndex={spritesheet.idle_frame ?? 0}
+      x={width / 2} // RAW CENTER POINT
+            y={(height / 2) + 5} // Adjusted slightly down from -15 to be more natural
+      trailX={petOffsetX}
+      trailY={petOffsetY}
+    />
+  ) : null;
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -488,36 +528,16 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
           })}
         </Group>
 
-        {/* NATIVE SKIA PLAYER & PET RENDERING */}
-        {avatarData && (
-          <SkiaLayeredAvatar
-            user={avatarData}
-            size={72}
-            isMoving={isMoving}
-            activeDirection={activeDirection}
-            x={playerBaseX}
-            y={playerBaseY}
-          />
-        )}
-        
-        {spritesheet && (
-          <SkiaPetSprite
-            imageUrl={spritesheet.url}
-            isMoving={isMoving}
-            activeDirection={activeDirection}
-            flipX={false}
-            scale={0.15 * (tileSize / 48)}
-            totalFrames={spritesheet.frame_count ?? 1}
-            totalTimeMs={spritesheet.duration_ms ?? 1000}
-            frameWidth={spritesheet.frame_width ?? 64}
-            frameHeight={spritesheet.frame_height ?? 64}
-            idleIndex={spritesheet.idle_frame ?? 0}
-            x={width / 2} // RAW CENTER POINT
-            y={(height / 2) + 26} // Increased from +20 to lower base position
-            trailX={petOffsetX}
-            trailY={petOffsetY}
-          />
-        )}
+        {/* NATIVE SKIA PLAYER & PET RENDERING - Depth Sorted without JS Bridge */}
+        <Group opacity={petBehindOpacity}>
+          {petSprite}
+        </Group>
+
+        {playerAvatar}
+
+        <Group opacity={petInFrontOpacity}>
+          {petSprite}
+        </Group>
       </Canvas>
 
       <Reanimated.View 
