@@ -1,20 +1,21 @@
-import { useMapStore } from '@/lib/store/mapStore';
+import { useMapStore, UndoEntry } from '@/lib/store/mapStore';
 import { supabase } from '@/lib/supabase';
 
 export const useMapClipboard = () => {
   const { undoStack, setUndoStack, addTileSimple, removeTileById, removeNode, addNode, batchAddTiles, tiles } = useMapStore();
 
-  const handleUndo = async () => {
-    if (undoStack.length === 0) return;
-    
-    const lastAction = undoStack[undoStack.length - 1];
-    setUndoStack(prev => prev.slice(0, -1));
-
-    const { action, x, y, layer, previousTile, nodeData, previousFullTiles } = lastAction;
-
-    // Ensure x and y are numbers for actions that require them
+  const processUndoEntry = async (entry: UndoEntry) => {
+    const { action, x, y, layer, previousTile, nodeData, previousFullTiles, addedTileId, subActions } = entry;
     const safeX = x ?? 0;
     const safeY = y ?? 0;
+
+    if (action === 'batch' && subActions) {
+      // Process sub-actions in reverse order
+      for (let i = subActions.length - 1; i >= 0; i--) {
+        await processUndoEntry(subActions[i]);
+      }
+      return;
+    }
 
     if (action === 'autofill' && previousFullTiles) {
       useMapStore.setState({ tiles: previousFullTiles });
@@ -27,22 +28,22 @@ export const useMapClipboard = () => {
         }
       }
 
-        for (const coord of chunkCoords) {
-          const [cx, cy] = coord.split(',').map(Number);
-          const chunkTiles = previousFullTiles.filter((t: any) => Math.floor(t.x / 16) === cx && Math.floor(t.y / 16) === cy);
-          
-          supabase.from('map_chunks').upsert({
-            chunk_x: cx,
-            chunk_y: cy,
-            tile_data: chunkTiles.map((t: any) => {
-              const { id, ...rest } = t;
-              return rest;
-            }),
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'chunk_x,chunk_y' }).then(({ error }) => {
-            if (error) console.error("Error reverting chunk during undo", error);
-          });
-        }
+      for (const coord of chunkCoords) {
+        const [cx, cy] = coord.split(',').map(Number);
+        const chunkTiles = previousFullTiles.filter((t: any) => Math.floor(t.x / 16) === cx && Math.floor(t.y / 16) === cy);
+        
+        supabase.from('map_chunks').upsert({
+          chunk_x: cx,
+          chunk_y: cy,
+          tile_data: chunkTiles.map((t: any) => {
+            const { id, ...rest } = t;
+            return rest;
+          }),
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'chunk_x,chunk_y' }).then(({ error }) => {
+          if (error) console.error("Error reverting chunk during undo", error);
+        });
+      }
       
       alert("Autofill undone and synced to database.");
       return;
@@ -71,12 +72,17 @@ export const useMapClipboard = () => {
         const chunkX = Math.floor(safeX / 16); 
         const chunkY = Math.floor(safeY / 16);
         useMapStore.setState((state) => ({
-          tiles: state.tiles.filter(t => !(t.x === safeX && t.y === safeY && (t.layer || 0) === layer))
+          tiles: state.tiles.filter(t => {
+            if (addedTileId) return t.id !== addedTileId;
+            return !(t.x === safeX && t.y === safeY && (t.layer || 0) === layer);
+          })
         }));
         
         const { data: existingChunk } = await supabase.from('map_chunks').select('tile_data').eq('chunk_x', chunkX).eq('chunk_y', chunkY).maybeSingle();
         if (existingChunk?.tile_data) {
-          const newTileData = existingChunk.tile_data.filter((t: any) => !(t.x === safeX && t.y === safeY && (t.layer || 0) === layer));
+          const newTileData = existingChunk.tile_data.filter((t: any) => {
+            return !(t.x === safeX && t.y === safeY && (t.layer || 0) === layer);
+          });
           await supabase.from('map_chunks').upsert({ chunk_x: chunkX, chunk_y: chunkY, tile_data: newTileData, updated_at: new Date().toISOString() }, { onConflict: 'chunk_x,chunk_y' });
         }
       }
@@ -101,8 +107,13 @@ export const useMapClipboard = () => {
         );
       }
     } else if (action === 'node_add') {
-      const n = useMapStore.getState().nodes.find(node => node.x === safeX && node.y === safeY);
-      if (n) await removeNode(n.id);
+      const { addedNodeId } = entry;
+      if (addedNodeId) {
+        await removeNode(addedNodeId);
+      } else {
+        const n = useMapStore.getState().nodes.find(node => node.x === safeX && node.y === safeY);
+        if (n) await removeNode(n.id);
+      }
     } else if (action === 'erase_node') {
       if (nodeData) {
         await addNode({
@@ -115,6 +126,15 @@ export const useMapClipboard = () => {
         });
       }
     }
+  };
+
+  const handleUndo = async () => {
+    if (undoStack.length === 0) return;
+    
+    const lastAction = undoStack[undoStack.length - 1];
+    setUndoStack(prev => prev.slice(0, -1));
+
+    await processUndoEntry(lastAction);
   };
 
   const handleCopySelection = () => {

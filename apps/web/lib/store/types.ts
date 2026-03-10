@@ -153,10 +153,23 @@ export interface SmartBrushSlice {
   foamStripTile: () => CustomTile | undefined;
 }
 
+export interface UndoEntry {
+  action: string;
+  x?: number;
+  y?: number;
+  layer?: number;
+  previousTile?: Tile | null;
+  nodeData?: MapNode;
+  previousFullTiles?: Tile[];
+  addedTileId?: string;
+  addedNodeId?: string;
+  subActions?: UndoEntry[];
+}
+
 export interface HistorySlice {
-  undoStack: { action: string; x?: number; y?: number; layer?: number; previousTile?: Tile | null; nodeData?: MapNode; previousFullTiles?: Tile[] }[];
-  setUndoStack: (updater: (prev: { action: string; x?: number; y?: number; layer?: number; previousTile?: Tile | null; nodeData?: MapNode; previousFullTiles?: Tile[] }[]) => { action: string; x?: number; y?: number; layer?: number; previousTile?: Tile | null; nodeData?: MapNode; previousFullTiles?: Tile[] }[]) => void;
-  pushUndo: (action: { action: string; x?: number; y?: number; layer?: number; previousTile?: Tile | null; nodeData?: MapNode; previousFullTiles?: Tile[] }) => void;
+  undoStack: UndoEntry[];
+  setUndoStack: (updater: (prev: UndoEntry[]) => UndoEntry[]) => void;
+  pushUndo: (action: UndoEntry) => void;
 }
 
 export interface MapDataSlice {
@@ -169,7 +182,7 @@ export interface MapDataSlice {
   setNodes: (nodes: MapNode[]) => void;
   setCustomTiles: (tiles: CustomTile[]) => void;
   loadTilesFromSupabase: () => Promise<void>;
-  addNode: (node: Omit<MapNode, 'id'>) => Promise<void>;
+  addNode: (node: Omit<MapNode, 'id'>) => Promise<string>;
   updateNode: (id: string, updates: Partial<MapNode>) => Promise<void>;
   removeNode: (id: string) => Promise<void>;
   addCustomTile: (tile: CustomTile) => Promise<void>;
@@ -187,6 +200,7 @@ export interface MapDataSlice {
   replaceCustomTileAsset: (id: string, newUrl: string) => Promise<void>;
   updateTileAndNeighbors: (x: number, y: number, layer: number, isRemoving?: boolean, smartType?: string, blockCol?: number, blockRow?: number) => Promise<void>;
   batchUpdateTileAndNeighbors: (updates: { x: number, y: number, layer: number, isRemoving?: boolean, smartType?: string, blockCol?: number, blockRow?: number }[]) => Promise<void>;
+  paintTiles: (newTiles: Tile[], tileIdsToRemove: string[], undoEntry: any, touchedChunks: string[], autoTileQueue: any[], nodeIdsToRemove?: string[]) => Promise<void>;
   forceSyncAllChunks: () => Promise<void>;
   syncChunks: (chunkKeys: string[]) => void;
   exportMap: () => string;

@@ -545,8 +545,6 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
     });
 
     // Deterministic draw order without Pixi sortableChildren:
-    // - lower layers first
-    // - for props/structures (layer > 0), sort by "feet" (y + offsetY) so nearer overlaps correctly
     return visible.sort((a, b) => {
       const layerA = a.layer || 0;
       const layerB = b.layer || 0;

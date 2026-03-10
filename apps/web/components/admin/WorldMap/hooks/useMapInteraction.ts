@@ -468,8 +468,7 @@ export const useMapInteraction = (
     const exists = nodes.find(n => Math.abs(n.x - nodeX) < tolerance && Math.abs(n.y - nodeY) < tolerance);
 
     if (!exists) {
-      setUndoStack((prev: any[]) => [...prev, { action: 'node_add', x: nodeX, y: nodeY }]);
-      await addNode({ 
+      const newNodeId = await addNode({ 
         x: nodeX, 
         y: nodeY, 
         type: nodeType, 
@@ -477,6 +476,7 @@ export const useMapInteraction = (
         iconUrl: '',
         properties: { can_travel_to: false }
       });
+      setUndoStack((prev: any[]) => [...prev, { action: 'node_add', x: nodeX, y: nodeY, addedNodeId: newNodeId }]);
     }
   };
 

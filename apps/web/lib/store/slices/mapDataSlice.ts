@@ -176,6 +176,7 @@ export const createMapDataSlice: StateCreator<
     if (error) {
       console.error('Failed to persist world_map_node on insert', error);
     }
+    return newId;
   },
 
   updateNode: async (id, updates) => {
@@ -384,8 +385,8 @@ export const createMapDataSlice: StateCreator<
           .filter(({ t }) => t.x === x && t.y === y && (t.layer || 0) === (layer || 0));
         const match = atCell.find(({ t }) =>
           t.snapToGrid === false &&
-          Math.abs((t.offsetX || 0) - (offsetX || 0)) < 8 &&
-          Math.abs((t.offsetY || 0) - (offsetY || 0)) < 8
+          Math.abs((t.offsetX || 0) - (offsetX || 0)) < 2 &&
+          Math.abs((t.offsetY || 0) - (offsetY || 0)) < 2
         );
         if (match) existingIdx = match.i;
       }
@@ -782,6 +783,92 @@ export const createMapDataSlice: StateCreator<
       return { tiles: newTiles };
     });
 
+    touchedChunks.forEach(key => {
+      const [cx, cy] = key.split(',').map(Number);
+      triggerChunkSync(cx, cy, get);
+    });
+  },
+
+  paintTiles: async (newTiles, tileIdsToRemove, undoEntry, touchedChunks, autoTileQueue, nodeIdsToRemove = []) => {
+    // Perform EVERYTHING in one single 'set' call to avoid double renders and lag
+    set((state) => {
+      let currentTiles = [...state.tiles];
+      
+      // 1. Remove tiles
+      if (tileIdsToRemove.length > 0) {
+        const toRemove = new Set(tileIdsToRemove);
+        currentTiles = currentTiles.filter(t => !toRemove.has(t.id));
+      }
+      
+      // 2. Add new tiles
+      currentTiles = [...currentTiles, ...newTiles];
+      
+      // 3. Handle AutoTile Bitmasking (Calculated against the NEW combined state)
+      if (autoTileQueue.length > 0) {
+        const tileIndexMap = new Map<string, number>();
+        currentTiles.forEach((t, i) => tileIndexMap.set(`${t.x},${t.y},${t.layer || 0}`, i));
+
+        const getTileSig = (tx: number, ty: number, layer: number) => {
+          const idx = tileIndexMap.get(`${tx},${ty},${layer}`);
+          const t = idx !== undefined ? currentTiles[idx] : null;
+          return t && t.smartType ? `${t.smartType}-${t.blockCol || 0}-${t.blockRow || 0}` : null;
+        };
+
+        const updateSingleTile = (tx: number, ty: number, layer: number, smartType?: string, blockCol?: number, blockRow?: number) => {
+          const tileIndex = tileIndexMap.get(`${tx},${ty},${layer}`) ?? -1;
+          if (tileIndex === -1) return;
+          const tile = currentTiles[tileIndex];
+          
+          if (!tile.isAutoTile) return;
+          if (smartType !== undefined && tile.smartType !== smartType) return;
+          if (blockCol !== undefined && tile.blockCol !== blockCol) return;
+          if (blockRow !== undefined && tile.blockRow !== blockRow) return;
+
+          const mySig = `${tile.smartType}-${tile.blockCol}-${tile.blockRow}`;
+          const grid: Record<string, string> = {};
+
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const neighborSig = getTileSig(tx + dx, ty + dy, layer);
+              if (neighborSig) grid[`${tx+dx},${ty+dy}`] = neighborSig;
+            }
+          }
+
+          const newMask = calculateBitmask(tx, ty, grid, mySig);
+          if (tile.bitmask !== newMask) {
+            currentTiles[tileIndex] = { ...tile, bitmask: newMask };
+          }
+        };
+
+        for (const update of autoTileQueue) {
+          const { x, y, layer, isRemoving, smartType, blockCol, blockRow } = update;
+          const area = [
+            {tx: x, ty: y},
+            {tx: x, ty: y-1}, {tx: x+1, ty: y-1}, {tx: x+1, ty: y}, {tx: x+1, ty: y+1},
+            {tx: x, ty: y+1}, {tx: x-1, ty: y+1}, {tx: x-1, ty: y}, {tx: x-1, ty: y-1}
+          ];
+          for (const pos of area) {
+            if (isRemoving && pos.tx === x && pos.ty === y) continue;
+            updateSingleTile(pos.tx, pos.ty, layer, smartType, blockCol, blockRow);
+          }
+        }
+      }
+      
+      // 4. Handle Node Removal
+      let currentNodes = state.nodes;
+      if (nodeIdsToRemove.length > 0) {
+        const nodesToRemoveSet = new Set(nodeIdsToRemove);
+        currentNodes = currentNodes.filter(n => !nodesToRemoveSet.has(n.id));
+      }
+
+      return { 
+        tiles: currentTiles,
+        nodes: currentNodes,
+        undoStack: undoEntry ? [...state.undoStack, undoEntry] : state.undoStack
+      };
+    });
+
+    // Sync affected chunks to Supabase
     touchedChunks.forEach(key => {
       const [cx, cy] = key.split(',').map(Number);
       triggerChunkSync(cx, cy, get);
