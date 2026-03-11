@@ -25,7 +25,7 @@ export default function AnimatedEquip({
   const [containerWidth, setContainerWidth] = useState(0);
 
   const onLayout = useCallback((e: LayoutChangeEvent) => {
-    const w = Math.round(e.nativeEvent.layout.width);
+    const w = e.nativeEvent.layout.width;
     setContainerWidth((prev) => (prev === w ? prev : w));
   }, []);
 
@@ -85,7 +85,7 @@ export default function AnimatedEquip({
           <Image
             source={{ uri: src }}
             style={{ width: stripWidth, height: '100%' }}
-            contentFit="cover"
+            contentFit="fill"
             cachePolicy="memory-disk"
           />
         </Animated.View>

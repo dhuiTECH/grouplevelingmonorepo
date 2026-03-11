@@ -23,7 +23,7 @@ import { useAudio } from '@/contexts/AudioContext';
 // Import existing icons
 import { LockIcon } from '@/components/icons/LockIcon';
 import { XIcon } from '@/components/icons/XIcon';
-import { Edit2 } from 'lucide-react-native';
+import { Edit2, Shield } from 'lucide-react-native';
 
 // Custom components and types
 import { User, ShopItem, UserCosmetic } from '@/types/user';
@@ -66,6 +66,7 @@ export const InventoryScreen: React.FC = () => {
   const [inventorySortAZ, setInventorySortAZ] = useState(false);
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<{ item: ShopItem; cosmeticItem: UserCosmetic } | null>(null);
   const [showStatusWindow, setShowStatusWindow] = useState(false);
+  const [showEquipmentModal, setShowEquipmentModal] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [showBackgroundModal, setShowBackgroundModal] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState<User | null>(null);
@@ -710,6 +711,15 @@ export const InventoryScreen: React.FC = () => {
                 <TouchableOpacity
                   onPress={() => {
                     playHunterSound('click');
+                    setShowEquipmentModal(true);
+                  }}
+                  style={styles.avatarButton}
+                >
+                  <Shield size={20} color="#06b6d4" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    playHunterSound('click');
                     setShowAvatarModal(true);
                   }}
                   style={styles.avatarButton}
@@ -792,179 +802,6 @@ export const InventoryScreen: React.FC = () => {
               </View>
             )}
           </MotiView>
-
-        {/* Equipped Items Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionHeader, { color: RANK_COLORS['C'] }]}>
-            ⚔️ EQUIPPED ITEMS
-          </Text>
-          <View style={styles.equippedGrid}>
-            {['weapon', 'body', 'back', 'hands', 'feet'].map(slot => {
-              const equippedItem = (equippedItems || []).find((cosmetic: UserCosmetic) => cosmetic.shop_items?.slot === slot);
-              const rarity = equippedItem?.shop_items?.rarity?.toLowerCase() || 'common';
-              const rarityColor = RANK_COLORS[rarity.charAt(0).toUpperCase()] || '#9ca3af';
-              
-              return (
-                <TouchableOpacity 
-                  key={slot}
-                  style={[
-                    styles.equippedSlot,
-                    equippedItem 
-                      ? { borderColor: rarityColor, backgroundColor: 'rgba(15, 23, 42, 0.8)', shadowColor: rarityColor, shadowOpacity: 0.15, shadowRadius: 10 } 
-                      : styles.emptySlot,
-                  ]}
-                  onPress={() => equippedItem && setSelectedInventoryItem({ item: equippedItem.shop_items, cosmeticItem: equippedItem })}
-                >
-                  {equippedItem ? (
-                    <View style={styles.equippedItemContent}>
-                      <View 
-                        style={[
-                          styles.radiatingEnergy,
-                          { 
-                            backgroundColor: 
-                            rarity === 'uncommon' ? 'rgba(34, 197, 94, 0.15)' :
-                            rarity === 'rare' ? 'rgba(59, 130, 246, 0.25)' :
-                            rarity === 'epic' ? 'rgba(168, 85, 247, 0.35)' :
-                            rarity === 'legendary' ? 'rgba(255, 255, 0, 0.35)' :
-                            rarity === 'monarch' ? 'rgba(255, 215, 0, 0.6)' :
-                            'transparent'
-                          }
-                        ]}
-                      />
-                      
-                      <View style={styles.equippedItemMediaContainer}>
-                        <ShopItemMedia item={equippedItem.shop_items} style={styles.equippedItemMedia} />
-                      </View>
-                    </View>
-                  ) : (
-                    <LockIcon size={16} color="#6b7280" />
-                  )}
-                  <Text style={styles.slotLabel}>
-                    {slot === 'weapon' ? 'weapon' :
-                     slot === 'body' ? 'armor' :
-                     slot === 'feet' ? 'feet' :
-                     slot === 'hands' ? 'hands' :
-                     slot === 'back' ? 'back' :
-                     slot}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Equipped Accessories Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionHeader, { color: RANK_COLORS['B'] }]}>
-            💍 EQUIPPED ACCESSORIES
-          </Text>
-          <View style={styles.equippedGrid}>
-            {['magic effects', 'eyes', 'head', 'face', 'accessory'].map((slot, index) => {
-              if (slot === 'accessory') {
-                const allAccessories = (equippedItems || []).filter((cosmetic: UserCosmetic) => {
-                  const itemSlot = cosmetic.shop_items?.slot;
-                  return ['accessory', 'jewelry', 'charms', 'scarves', 'earrings'].includes(itemSlot || '');
-                });
-
-                return (
-                  <View key="multi-accessory" style={styles.multiAccessorySlot}>
-                    <View style={styles.multiAccessoryGrid}>
-                      {Array.from({ length: 6 }, (_, accessoryIndex) => {
-                        const equippedAccessory = allAccessories[accessoryIndex];
-                        const rarity = equippedAccessory?.shop_items?.rarity?.toLowerCase() || 'common';
-                        
-                        return (
-                          <TouchableOpacity 
-                            key={accessoryIndex}
-                            style={[
-                              styles.miniAccessorySlot,
-                              equippedAccessory ? { borderColor: RANK_COLORS[rarity.charAt(0).toUpperCase()], shadowColor: RANK_COLORS[rarity.charAt(0).toUpperCase()], shadowOpacity: 0.2 } : {},
-                            ]}
-                            onPress={() => equippedAccessory && setSelectedInventoryItem({ item: equippedAccessory.shop_items, cosmeticItem: equippedAccessory })}
-                          >
-                            {equippedAccessory ? (
-                              <View style={styles.equippedItemContent}>
-                                <View 
-                                  style={[
-                                    styles.radiatingEnergyMicro,
-                                    { 
-                                      backgroundColor: 
-                                      rarity === 'uncommon' ? 'rgba(34, 197, 94, 0.2)' :
-                                      rarity === 'rare' ? 'rgba(59, 130, 246, 0.3)' :
-                                      rarity === 'epic' ? 'rgba(168, 85, 247, 0.4)' :
-                                      rarity === 'legendary' ? 'rgba(255, 255, 0, 0.4)' :
-                                      rarity === 'monarch' ? 'rgba(255, 215, 0, 0.7)' :
-                                      'transparent'
-                                    }
-                                  ]}
-                                />
-                                <View style={styles.miniAccessoryMediaContainer}>
-                                  <ShopItemMedia item={equippedAccessory.shop_items} style={styles.miniAccessoryMedia} />
-                                </View>
-                              </View>
-                            ) : (
-                              <LockIcon size={6} color="#4b5563" />
-                            )}
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                    <Text style={styles.slotLabel}>Multi-Accessory</Text>
-                  </View>
-                );
-              }
-
-              const equippedItem = (equippedItems || []).find((cosmetic: UserCosmetic) => cosmetic.shop_items?.slot === slot);
-              const rarity = equippedItem?.shop_items?.rarity?.toLowerCase() || 'common';
-              const rarityColor = RANK_COLORS[rarity.charAt(0).toUpperCase()] || '#9ca3af';
-
-              return (
-                <TouchableOpacity 
-                  key={slot}
-                  style={[
-                    styles.equippedSlot,
-                    equippedItem 
-                      ? { borderColor: rarityColor, backgroundColor: 'rgba(15, 23, 42, 0.8)', shadowColor: rarityColor, shadowOpacity: 0.2 } 
-                      : styles.emptySlot,
-                  ]}
-                  onPress={() => equippedItem && setSelectedInventoryItem({ item: equippedItem.shop_items, cosmeticItem: equippedItem })}
-                >
-                  {equippedItem ? (
-                    <View style={styles.equippedItemContent}>
-                      <View 
-                        style={[
-                          styles.radiatingEnergy,
-                          { 
-                            backgroundColor: 
-                            rarity === 'uncommon' ? 'rgba(34, 197, 94, 0.15)' :
-                            rarity === 'rare' ? 'rgba(59, 130, 246, 0.25)' :
-                            rarity === 'epic' ? 'rgba(168, 85, 247, 0.35)' :
-                            rarity === 'legendary' ? 'rgba(255, 255, 0, 0.35)' :
-                            rarity === 'monarch' ? 'rgba(255, 215, 0, 0.6)' :
-                            'transparent'
-                          }
-                        ]}
-                      />
-                      
-                      <View style={styles.equippedItemMediaContainer}>
-                        <ShopItemMedia item={equippedItem.shop_items} style={styles.equippedItemMedia} />
-                      </View>
-                    </View>
-                  ) : (
-                    <LockIcon size={16} color="#6b7280" />
-                  )}
-                  <Text style={styles.slotLabel}>
-                    {slot === 'magic effects' ? 'aura' :
-                     slot === 'eyes' ? 'eyes' :
-                     slot === 'head' ? 'Head' :
-                     slot === 'face' ? 'face' :
-                     slot}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
 
         {/* Combat Loadout Section */}
         <SkillLoadout />
@@ -1275,6 +1112,203 @@ export const InventoryScreen: React.FC = () => {
                   </View>
                 </ScrollView>
               )}
+              {renderItemDetailModal(true)}
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {showEquipmentModal && (
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={showEquipmentModal}
+          onRequestClose={() => setShowEquipmentModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.customizationModalContent}>
+              <TouchableOpacity onPress={() => setShowEquipmentModal(false)} style={styles.closeModalButtonAbsolute}>
+                <XIcon size={24} color="#9ca3af" />
+              </TouchableOpacity>
+              <View style={styles.customizationModalHeaderContainer}>
+                <Text style={styles.customizationModalHeader}>Equipped Gear</Text>
+              </View>
+              <Text style={styles.customizationModalSubHeader}>View your active equipment and accessories</Text>
+
+              <ScrollView contentContainerStyle={styles.customizationGridContainer} showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
+                {/* Equipped Items Section */}
+                <View style={[styles.section, { marginHorizontal: 0 }]}>
+                  <Text style={[styles.sectionHeader, { color: RANK_COLORS['C'] }]}>
+                    ⚔️ EQUIPPED ITEMS
+                  </Text>
+                  <View style={styles.equippedGrid}>
+                    {['weapon', 'body', 'back', 'hands', 'feet'].map(slot => {
+                      const equippedItem = (equippedItems || []).find((cosmetic: UserCosmetic) => cosmetic.shop_items?.slot === slot);
+                      const rarity = equippedItem?.shop_items?.rarity?.toLowerCase() || 'common';
+                      const rarityColor = RANK_COLORS[rarity.charAt(0).toUpperCase()] || '#9ca3af';
+                      
+                      return (
+                        <TouchableOpacity 
+                          key={slot}
+                          style={[
+                            styles.equippedSlot,
+                            equippedItem 
+                              ? { borderColor: rarityColor, backgroundColor: 'rgba(15, 23, 42, 0.8)', shadowColor: rarityColor, shadowOpacity: 0.15, shadowRadius: 10 } 
+                              : styles.emptySlot,
+                          ]}
+                          onPress={() => equippedItem && setSelectedInventoryItem({ item: equippedItem.shop_items, cosmeticItem: equippedItem })}
+                        >
+                          {equippedItem ? (
+                            <View style={styles.equippedItemContent}>
+                              <View 
+                                style={[
+                                  styles.radiatingEnergy,
+                                  { 
+                                    backgroundColor: 
+                                    rarity === 'uncommon' ? 'rgba(34, 197, 94, 0.15)' :
+                                    rarity === 'rare' ? 'rgba(59, 130, 246, 0.25)' :
+                                    rarity === 'epic' ? 'rgba(168, 85, 247, 0.35)' :
+                                    rarity === 'legendary' ? 'rgba(255, 255, 0, 0.35)' :
+                                    rarity === 'monarch' ? 'rgba(255, 215, 0, 0.6)' :
+                                    'transparent'
+                                  }
+                                ]}
+                              />
+                              
+                              <View style={styles.equippedItemMediaContainer}>
+                                <ShopItemMedia item={equippedItem.shop_items} style={styles.equippedItemMedia} />
+                              </View>
+                            </View>
+                          ) : (
+                            <LockIcon size={16} color="#6b7280" />
+                          )}
+                          <Text style={styles.slotLabel}>
+                            {slot === 'weapon' ? 'weapon' :
+                             slot === 'body' ? 'armor' :
+                             slot === 'feet' ? 'feet' :
+                             slot === 'hands' ? 'hands' :
+                             slot === 'back' ? 'back' :
+                             slot}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Equipped Accessories Section */}
+                <View style={[styles.section, { marginHorizontal: 0 }]}>
+                  <Text style={[styles.sectionHeader, { color: RANK_COLORS['B'] }]}>
+                    💍 EQUIPPED ACCESSORIES
+                  </Text>
+                  <View style={styles.equippedGrid}>
+                    {['magic effects', 'eyes', 'head', 'face', 'accessory'].map((slot, index) => {
+                      if (slot === 'accessory') {
+                        const allAccessories = (equippedItems || []).filter((cosmetic: UserCosmetic) => {
+                          const itemSlot = cosmetic.shop_items?.slot;
+                          return ['accessory', 'jewelry', 'charms', 'scarves', 'earrings'].includes(itemSlot || '');
+                        });
+
+                        return (
+                          <View key="multi-accessory" style={styles.multiAccessorySlot}>
+                            <View style={styles.multiAccessoryGrid}>
+                              {Array.from({ length: 6 }, (_, accessoryIndex) => {
+                                const equippedAccessory = allAccessories[accessoryIndex];
+                                const rarity = equippedAccessory?.shop_items?.rarity?.toLowerCase() || 'common';
+                                
+                                return (
+                                  <TouchableOpacity 
+                                    key={accessoryIndex}
+                                    style={[
+                                      styles.miniAccessorySlot,
+                                      equippedAccessory ? { borderColor: RANK_COLORS[rarity.charAt(0).toUpperCase()], shadowColor: RANK_COLORS[rarity.charAt(0).toUpperCase()], shadowOpacity: 0.2 } : {},
+                                    ]}
+                                    onPress={() => equippedAccessory && setSelectedInventoryItem({ item: equippedAccessory.shop_items, cosmeticItem: equippedAccessory })}
+                                  >
+                                    {equippedAccessory ? (
+                                      <View style={styles.equippedItemContent}>
+                                        <View 
+                                          style={[
+                                            styles.radiatingEnergyMicro,
+                                            { 
+                                              backgroundColor: 
+                                              rarity === 'uncommon' ? 'rgba(34, 197, 94, 0.2)' :
+                                              rarity === 'rare' ? 'rgba(59, 130, 246, 0.3)' :
+                                              rarity === 'epic' ? 'rgba(168, 85, 247, 0.4)' :
+                                              rarity === 'legendary' ? 'rgba(255, 255, 0, 0.4)' :
+                                              rarity === 'monarch' ? 'rgba(255, 215, 0, 0.7)' :
+                                              'transparent'
+                                            }
+                                          ]}
+                                        />
+                                        <View style={styles.miniAccessoryMediaContainer}>
+                                          <ShopItemMedia item={equippedAccessory.shop_items} style={styles.miniAccessoryMedia} />
+                                        </View>
+                                      </View>
+                                    ) : (
+                                      <LockIcon size={6} color="#4b5563" />
+                                    )}
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+                            <Text style={styles.slotLabel}>Multi-Accessory</Text>
+                          </View>
+                        );
+                      }
+
+                      const equippedItem = (equippedItems || []).find((cosmetic: UserCosmetic) => cosmetic.shop_items?.slot === slot);
+                      const rarity = equippedItem?.shop_items?.rarity?.toLowerCase() || 'common';
+                      const rarityColor = RANK_COLORS[rarity.charAt(0).toUpperCase()] || '#9ca3af';
+
+                      return (
+                        <TouchableOpacity 
+                          key={slot}
+                          style={[
+                            styles.equippedSlot,
+                            equippedItem 
+                              ? { borderColor: rarityColor, backgroundColor: 'rgba(15, 23, 42, 0.8)', shadowColor: rarityColor, shadowOpacity: 0.2 } 
+                              : styles.emptySlot,
+                          ]}
+                          onPress={() => equippedItem && setSelectedInventoryItem({ item: equippedItem.shop_items, cosmeticItem: equippedItem })}
+                        >
+                          {equippedItem ? (
+                            <View style={styles.equippedItemContent}>
+                              <View 
+                                style={[
+                                  styles.radiatingEnergy,
+                                  { 
+                                    backgroundColor: 
+                                    rarity === 'uncommon' ? 'rgba(34, 197, 94, 0.15)' :
+                                    rarity === 'rare' ? 'rgba(59, 130, 246, 0.25)' :
+                                    rarity === 'epic' ? 'rgba(168, 85, 247, 0.35)' :
+                                    rarity === 'legendary' ? 'rgba(255, 255, 0, 0.35)' :
+                                    rarity === 'monarch' ? 'rgba(255, 215, 0, 0.6)' :
+                                    'transparent'
+                                  }
+                                ]}
+                              />
+                              
+                              <View style={styles.equippedItemMediaContainer}>
+                                <ShopItemMedia item={equippedItem.shop_items} style={styles.equippedItemMedia} />
+                              </View>
+                            </View>
+                          ) : (
+                            <LockIcon size={16} color="#6b7280" />
+                          )}
+                          <Text style={styles.slotLabel}>
+                            {slot === 'magic effects' ? 'aura' :
+                             slot === 'eyes' ? 'eyes' :
+                             slot === 'head' ? 'Head' :
+                             slot === 'face' ? 'face' :
+                             slot}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              </ScrollView>
               {renderItemDetailModal(true)}
             </View>
           </View>
