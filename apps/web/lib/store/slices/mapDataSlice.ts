@@ -558,6 +558,8 @@ export const createMapDataSlice: StateCreator<
     if (!oldTile) return;
 
     const oldUrl = oldTile.url;
+    // Calculate the base URL once outside the loop to strip cache-busting parameters
+    const baseOldUrl = oldUrl.split('?')[0];
 
     // 1. Update Custom Tile Library
     set((state) => ({
@@ -570,7 +572,12 @@ export const createMapDataSlice: StateCreator<
     const touchedChunks = new Set<string>();
     set((state) => {
       const newTiles = state.tiles.map(t => {
-        if (t.imageUrl === oldUrl) {
+        if (!t.imageUrl) return t;
+        
+        // Strip cache-busting parameters for comparison
+        const baseTileUrl = t.imageUrl.split('?')[0];
+        
+        if (baseTileUrl === baseOldUrl) {
           touchedChunks.add(`${Math.floor(t.x / CHUNK_SIZE)},${Math.floor(t.y / CHUNK_SIZE)}`);
           return { ...t, imageUrl: newUrl };
         }
