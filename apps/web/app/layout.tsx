@@ -25,9 +25,9 @@ const rajdhani = Rajdhani({
 });
 
 export const metadata: Metadata = {
-  title: 'Group Leveling | Level Up Through Fitness App',
-  description: 'Awaken your inner hunter. Track runs, conquer dungeons, level up, and climb the elite rankings in this immersive fitness RPG app.',
-  keywords: ['fitness', 'running', 'RPG', 'gamification', 'hunter', 'leveling', 'dungeons', 'fitness tracker', 'workout game'],
+  title: 'Gamified Fitness RPG & Workout Tracker | Group Leveling',
+  description: 'Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hero, and join guilds in the ultimate fitness game.',
+  keywords: ['gamified fitness', 'workout RPG', 'fitness game', 'run tracker RPG', 'weight loss game', 'fitness motivation', 'step tracker game'],
   authors: [{ name: 'Group Leveling' }],
   creator: 'Group Leveling',
   publisher: 'Group Leveling',
@@ -36,13 +36,13 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
-  metadataBase: new URL('https://groupleveling.app'),
+  metadataBase: new URL('https://www.groupleveling.app'),
   alternates: {
     canonical: '/',
   },
   openGraph: {
-    title: 'Hunter System | Level Up Through Fitness',
-    description: 'Awaken your inner hunter. Track runs, conquer dungeons, level up, and climb the elite rankings in this immersive fitness RPG system.',
+    title: 'Gamified Fitness RPG & Workout Tracker | Group Leveling',
+    description: 'Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hero, and join guilds in the ultimate fitness game.',
     url: '/',
     siteName: 'Hunter System',
     images: [

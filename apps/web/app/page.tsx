@@ -166,10 +166,12 @@ export default function LandingPage() {
             transition={{ duration: 0.8 }}
             className="max-w-2xl w-full flex flex-col items-center md:items-start mb-6 md:mb-4"
           >
-            <h1 className="text-2xl md:text-4xl lg:text-5xl font-black uppercase tracking-tight leading-tight system-glow-text drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">
+            {/* Visually hidden H1 for SEO bots to understand the page niche */}
+            <h1 className="sr-only">Group Leveling: The Ultimate Gamified Fitness RPG & Workout Tracker</h1>
+            <h2 className="text-2xl md:text-4xl lg:text-5xl font-black uppercase tracking-tight leading-tight system-glow-text drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">
               <span className="block">Your Fitness Journey,</span>
               <span className="block mt-1 md:mt-2">Your RPG Adventure!</span>
-            </h1>
+            </h2>
             <p className="mt-3 md:mt-4 text-sm md:text-base font-semibold text-white/95 max-w-[90%] md:max-w-xl text-center md:text-left drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-relaxed md:ml-1">
             Not just another boring fitness app. Track calories, crush weight loss goals, and level up your hero. Join thousands of heroes already leveling up.
             </p>
