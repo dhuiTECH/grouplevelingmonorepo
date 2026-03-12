@@ -1,50 +1,50 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, StyleSheet, AppState, AppStateStatus } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import * as Haptics from 'expo-haptics';
-import { Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import { View, StyleSheet, AppState, AppStateStatus } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import * as Haptics from "expo-haptics";
+import { Alert } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import Reanimated, {
   useAnimatedRef,
   useSharedValue,
   useDerivedValue,
   useAnimatedReaction,
   runOnJS,
-} from 'react-native-reanimated';
-import { makeImageFromView } from '@shopify/react-native-skia';
+} from "react-native-reanimated";
+import { makeImageFromView } from "@shopify/react-native-skia";
 
-import { useAuth } from '@/contexts/AuthContext';
-import { useAudio } from '@/contexts/AudioContext';
-import { useExploration } from '@/hooks/useExploration';
-import { useStepTracker } from '@/hooks/useStepTracker';
-import { useTutorial } from '@/context/TutorialContext';
-import { supabase } from '@/lib/supabase';
-import { TravelMenu } from '@/components/modals/TravelMenu';
-import { InteractionModal } from '@/components/modals/InteractionModal';
-import { LevelUpModal } from '@/components/modals/LevelUpModal';
-import { RaidCombatModal } from '@/components/modals/RaidCombatModal';
-import { usePets } from '@/hooks/usePets';
-import { useActivePet } from '@/contexts/ActivePetContext';
-import { useTransition } from '@/context/TransitionContext';
+import { useAuth } from "@/contexts/AuthContext";
+import { useAudio } from "@/contexts/AudioContext";
+import { useExploration } from "@/hooks/useExploration";
+import { useStepTracker } from "@/hooks/useStepTracker";
+import { useTutorial } from "@/context/TutorialContext";
+import { supabase } from "@/lib/supabase";
+import { TravelMenu } from "@/components/modals/TravelMenu";
+import { InteractionModal } from "@/components/modals/InteractionModal";
+import { LevelUpModal } from "@/components/modals/LevelUpModal";
+import { RaidCombatModal } from "@/components/modals/RaidCombatModal";
+import { usePets } from "@/hooks/usePets";
+import { useActivePet } from "@/contexts/ActivePetContext";
+import { useTransition } from "@/context/TransitionContext";
 
-import { SkiaWorldMap } from '../components/world-map/SkiaWorldMap';
-import { DPad } from '../components/world-map/DPad';
-import { MapHUD } from '@/components/world-map/MapHUD';
-import { OfflineStepsModal } from '@/components/world-map/OfflineStepsModal';
-import { MapNewsOverlay } from '@/components/world-map/MapNewsOverlay';
-import { MapLoadingOverlay } from '@/components/world-map/MapLoadingOverlay';
-import { NavigationTargetArrow } from '@/components/world-map/NavigationTargetArrow';
-import { WorldNodesLayer } from '@/components/world-map/WorldNodesLayer';
-import { PartyMembersLayer } from '@/components/world-map/PartyMembersLayer';
+import { SkiaWorldMap } from "../components/world-map/SkiaWorldMap";
+import { DPad } from "../components/world-map/DPad";
+import { MapHUD } from "@/components/world-map/MapHUD";
+import { OfflineStepsModal } from "@/components/world-map/OfflineStepsModal";
+import { MapNewsOverlay } from "@/components/world-map/MapNewsOverlay";
+import { MapLoadingOverlay } from "@/components/world-map/MapLoadingOverlay";
+import { NavigationTargetArrow } from "@/components/world-map/NavigationTargetArrow";
+import { WorldNodesLayer } from "@/components/world-map/WorldNodesLayer";
+import { PartyMembersLayer } from "@/components/world-map/PartyMembersLayer";
 
-import { usePartyPresence } from '@/hooks/usePartyPresence';
-import { useMapUIAnimations } from '@/hooks/useMapUIAnimations';
-import { useMapData } from '@/hooks/useMapData';
-import { useWalkingSound } from '@/hooks/useWalkingSound';
-import { useSystemNews } from '@/hooks/useSystemNews';
-import { useMapCharacter } from '@/hooks/useMapCharacter';
+import { usePartyPresence } from "@/hooks/usePartyPresence";
+import { useMapUIAnimations } from "@/hooks/useMapUIAnimations";
+import { useMapData } from "@/hooks/useMapData";
+import { useWalkingSound } from "@/hooks/useWalkingSound";
+import { useSystemNews } from "@/hooks/useSystemNews";
+import { useMapCharacter } from "@/hooks/useMapCharacter";
 
-import { worldMapStyles } from './WorldMapScreen.styles';
+import { worldMapStyles } from "./WorldMapScreen.styles";
 
 const TILE_SIZE = 48;
 
@@ -54,10 +54,14 @@ export const WorldMapScreen = () => {
   const { playTrack } = useAudio();
   const { pets } = usePets();
   const { activePetId } = useActivePet();
-  const activePet = pets.find((p) => p.id === activePetId) ?? (pets.length > 0 ? pets[0] : null);
+  const activePet =
+    pets.find((p) => p.id === activePetId) ??
+    (pets.length > 0 ? pets[0] : null);
 
   // Source of truth: which direction is currently being held
-  const activeDirection = useSharedValue<'UP' | 'DOWN' | 'LEFT' | 'RIGHT' | null>(null);
+  const activeDirection = useSharedValue<
+    "UP" | "DOWN" | "LEFT" | "RIGHT" | null
+  >(null);
 
   const isRunning = useSharedValue(false);
   const isMoving = useSharedValue(false);
@@ -67,19 +71,23 @@ export const WorldMapScreen = () => {
   const pendingDir = useSharedValue(0);
 
   // Camera position — snapped to exact tile multiples. Hoisted here to sync with Avatar/Pet.
-  const mapLeft = useSharedValue(-(user?.world_x || 0) * TILE_SIZE - (TILE_SIZE / 2));
-  const mapTop = useSharedValue(-(user?.world_y || 0) * TILE_SIZE - (TILE_SIZE / 2));
+  const mapLeft = useSharedValue(
+    -(user?.world_x || 0) * TILE_SIZE - TILE_SIZE / 2,
+  );
+  const mapTop = useSharedValue(
+    -(user?.world_y || 0) * TILE_SIZE - TILE_SIZE / 2,
+  );
 
   useAnimatedReaction(
     () => activeDirection.value,
     (dir) => {
       let next = 0;
-      if (dir === 'UP') next = 1;
-      else if (dir === 'DOWN') next = 2;
-      else if (dir === 'LEFT') next = 3;
-      else if (dir === 'RIGHT') next = 4;
+      if (dir === "UP") next = 1;
+      else if (dir === "DOWN") next = 2;
+      else if (dir === "LEFT") next = 3;
+      else if (dir === "RIGHT") next = 4;
       if (pendingDir.value !== next) pendingDir.value = next;
-    }
+    },
   );
 
   // Hold for 2 seconds to enter run mode (no JS D-Pad callbacks; we observe activeDirection)
@@ -104,7 +112,7 @@ export const WorldMapScreen = () => {
     (dir, prevDir) => {
       if (dir && !prevDir) runOnJS(startHoldRunTimer)();
       if (!dir && prevDir) runOnJS(clearHoldRunTimer)();
-    }
+    },
   );
 
   useEffect(() => {
@@ -136,41 +144,86 @@ export const WorldMapScreen = () => {
   const {
     onTileEnter,
     refreshVision,
+    flushPendingVision,
     visionGrid,
     nodesInVision,
     fastTravel,
     bankSteps,
     setCheckpointAlert,
     loading: movingOnMap,
-    bankedSteps,
+
+    latestPos,
   } = useExploration(
     setEncounter,
     setInteractionVisible,
     setActiveRaid,
     setRaidModalVisible,
-    activeMapId
+    activeMapId,
   );
+
+  // Stable ref wrapper so useAnimatedReaction always calls the latest closure
+  // without needing to be re-registered every time `user` changes.
+  const applyPendingSyncRef = useRef<() => void>(() => {});
+  applyPendingSyncRef.current = () => {
+    const pos = latestPos.current;
+    if (!pos || !user) return;
+    setUser({
+      ...user,
+      world_x: pos.x,
+      world_y: pos.y,
+      steps_banked: pos.banked,
+    });
+  };
+
+  // When movement stops: sync position to React AND flush deferred map/vision updates.
+  // No server calls or setState during movement — all batched here.
+  const callOnMovementStop = useCallback(() => {
+    applyPendingSyncRef.current();
+    flushPendingVision();
+  }, [flushPendingVision]);
+
+  // Sync React state (setUser + vision) only when the player fully stops moving.
+  useAnimatedReaction(
+    () => isMoving.value,
+    (moving, wasMoving) => {
+      if (wasMoving && !moving) {
+        runOnJS(callOnMovementStop)();
+      }
+    },
+  ); // callOnMovementStop = applyPendingSync + flushPendingVision
 
   useEffect(() => {
     if (activeMapId && user != null) {
-      refreshVision(user.world_x ?? 0, user.world_y ?? 0, true);
+      refreshVision(
+        user.world_x ?? 0,
+        user.world_y ?? 0,
+        true,
+        flushPendingVision,
+      );
     }
-  }, [activeMapId, user?.id]);
+  }, [activeMapId, user?.id, refreshVision, flushPendingVision]);
 
   const { partyMembersOnline } = usePartyPresence();
   const viewRef = useAnimatedRef<View>();
   const { startTransition } = useTransition();
   const { floatAnim, pulseAnim, spin } = useMapUIAnimations();
-  const { 
-    playerBaseX, 
-    playerBaseY, 
-    facingScaleX, 
-    petOffsetX, 
-    petOffsetY, 
-    petScaleX, 
-    petZIndex, 
-    avatarData 
-  } = useMapCharacter(pendingDir, isMoving, user, activePet as any, mapLeft, mapTop);
+  const {
+    playerBaseX,
+    playerBaseY,
+    facingScaleX,
+    petOffsetX,
+    petOffsetY,
+    petScaleX,
+    petZIndex,
+    avatarData,
+  } = useMapCharacter(
+    pendingDir,
+    isMoving,
+    user,
+    activePet as any,
+    mapLeft,
+    mapTop,
+  );
 
   useWalkingSound(activeDirection);
 
@@ -180,20 +233,23 @@ export const WorldMapScreen = () => {
 
   // Safety Reset: Force stop movement if app goes background/inactive
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'background' || nextAppState === 'inactive') {
-        activeDirection.value = null;
-        isMoving.value = false;
-      }
-    });
+    const subscription = AppState.addEventListener(
+      "change",
+      (nextAppState: AppStateStatus) => {
+        if (nextAppState === "background" || nextAppState === "inactive") {
+          activeDirection.value = null;
+          isMoving.value = false;
+        }
+      },
+    );
     return () => subscription.remove();
   }, [activeDirection, isMoving]);
 
   useFocusEffect(
     useCallback(() => {
-      playTrack('Beginning Map');
+      playTrack("Beginning Map");
       refreshProfile();
-    }, [playTrack, refreshProfile])
+    }, [playTrack, refreshProfile]),
   );
 
   const handleUnstuck = useCallback(async () => {
@@ -204,14 +260,14 @@ export const WorldMapScreen = () => {
       const now = new Date().toISOString();
       setUser({ ...user, world_x: safeX, world_y: safeY, last_sync_time: now });
       await supabase
-        .from('profiles')
+        .from("profiles")
         .update({ world_x: safeX, world_y: safeY, last_sync_time: now })
-        .eq('id', user.id);
-      await refreshVision(safeX, safeY, true);
+        .eq("id", user.id);
+      await refreshVision(safeX, safeY, true, flushPendingVision);
     } catch (e) {
-      console.warn('[WorldMap] Unstuck failed:', e);
+      console.warn("[WorldMap] Unstuck failed:", e);
     }
-  }, [user, setUser, refreshVision]);
+  }, [user, setUser, refreshVision, flushPendingVision]);
 
   const handleCloseInteraction = useCallback(() => {
     setActiveInteraction(null);
@@ -222,7 +278,8 @@ export const WorldMapScreen = () => {
 
   const { pendingSteps, setPendingSteps } = useStepTracker();
   const { step } = useTutorial();
-  const { systemNews, setSystemNews, navigationTarget, handleNewsTap } = useSystemNews();
+  const { systemNews, setSystemNews, navigationTarget, handleNewsTap } =
+    useSystemNews();
 
   const handleTravelSuccess = useCallback(
     (newX: number, newY: number, cost: number) => {
@@ -233,47 +290,55 @@ export const WorldMapScreen = () => {
         world_y: newY,
         steps_banked: (user.steps_banked || 0) - cost,
       });
-      refreshVision(newX, newY, true);
+      refreshVision(newX, newY, true, flushPendingVision);
     },
-    [user, setUser, refreshVision]
+    [user, setUser, refreshVision, flushPendingVision],
   );
 
   const handleSystemChoice = useCallback(
-    async (choice: 'AUTO' | 'MANUAL') => {
+    async (choice: "AUTO" | "MANUAL") => {
       const steps = pendingSteps;
       setPendingSteps(0);
-      if (choice === 'AUTO') await fastTravel(steps);
+      if (choice === "AUTO") await fastTravel(steps);
       else await bankSteps(steps);
     },
-    [pendingSteps, setPendingSteps, fastTravel, bankSteps]
+    [pendingSteps, setPendingSteps, fastTravel, bankSteps],
   );
 
   const startTestBattle = useCallback(async () => {
     try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const { data, error } = await supabase.from('encounter_pool').select('id').limit(10);
+      const { data, error } = await supabase
+        .from("encounter_pool")
+        .select("id")
+        .limit(10);
       if (error) throw error;
       if (data?.length) {
         const randomId = data[Math.floor(Math.random() * data.length)].id;
         const snapshot = await makeImageFromView(viewRef);
         const partyPreview = [];
-        if (user) partyPreview.push({ type: 'player' as const, user, allShopItems });
-        if (activePet?.pet_details) partyPreview.push({ type: 'pet' as const, petDetails: activePet.pet_details });
+        if (user)
+          partyPreview.push({ type: "player" as const, user, allShopItems });
+        if (activePet?.pet_details)
+          partyPreview.push({
+            type: "pet" as const,
+            petDetails: activePet.pet_details,
+          });
         if (snapshot) {
           startTransition(
             snapshot,
-            () => navigation.navigate('Battle', { encounterId: randomId }),
-            partyPreview.length > 0 ? partyPreview : undefined
+            () => navigation.navigate("Battle", { encounterId: randomId }),
+            partyPreview.length > 0 ? partyPreview : undefined,
           );
         } else {
-          navigation.navigate('Battle', { encounterId: randomId });
+          navigation.navigate("Battle", { encounterId: randomId });
         }
       } else {
-        Alert.alert('System Error', 'No encounters found in pool.');
+        Alert.alert("System Error", "No encounters found in pool.");
       }
     } catch (err) {
-      console.error('Error starting test battle:', err);
-      Alert.alert('System Error', 'Failed to initialize test combat.');
+      console.error("Error starting test battle:", err);
+      Alert.alert("System Error", "Failed to initialize test combat.");
     }
   }, [user, activePet, allShopItems, startTransition, navigation]);
 
@@ -284,14 +349,26 @@ export const WorldMapScreen = () => {
     }
   }, [user?.level]);
 
-  const partyMembers = user?.current_party_id ? Array.from(partyMembersOnline.values()) : [];
+  const partyMembers = user?.current_party_id
+    ? Array.from(partyMembersOnline.values())
+    : [];
 
   return (
     <View style={worldMapStyles.container}>
-      <Reanimated.View ref={viewRef} style={StyleSheet.absoluteFill} collapsable={false}>
-        <MapLoadingOverlay loading={loadingMap} error={mapError} onRetry={loadData} />
+      <Reanimated.View
+        ref={viewRef}
+        style={StyleSheet.absoluteFill}
+        collapsable={false}
+      >
+        <MapLoadingOverlay
+          loading={loadingMap}
+          error={mapError}
+          onRetry={loadData}
+        />
 
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1a1c0e' }]} />
+        <View
+          style={[StyleSheet.absoluteFill, { backgroundColor: "#1a1c0e" }]}
+        />
 
         <SkiaWorldMap
           visionGrid={visionGrid}
@@ -333,7 +410,7 @@ export const WorldMapScreen = () => {
         </SkiaWorldMap>
 
         <MapHUD
-          onPressTemple={() => navigation.navigate('Temple')}
+          onPressTemple={() => navigation.navigate("Temple")}
           onPressWorld={() => setTravelMenuVisible(true)}
           onPressBattle={startTestBattle}
           floatAnim={floatAnim}
@@ -352,13 +429,13 @@ export const WorldMapScreen = () => {
         />
 
         <OfflineStepsModal
-          visible={pendingSteps > 0 && step !== 'NAV_MAP'}
+          visible={pendingSteps > 0 && step !== "NAV_MAP"}
           pendingSteps={pendingSteps}
           floatAnim={floatAnim}
           pulseAnim={pulseAnim}
           spin={spin}
-          onAuto={() => handleSystemChoice('AUTO')}
-          onManual={() => handleSystemChoice('MANUAL')}
+          onAuto={() => handleSystemChoice("AUTO")}
+          onManual={() => handleSystemChoice("MANUAL")}
         />
 
         <InteractionModal

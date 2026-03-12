@@ -1,6 +1,17 @@
-import React, { useMemo, useEffect, useRef } from 'react';
-import { Dimensions, View, StyleSheet } from 'react-native';
-import { Canvas, Group, Fill, Rect as SkiaRect, useClock, Skia, Picture, FilterMode, Circle, Image as SkiaImage } from '@shopify/react-native-skia';
+import React, { useMemo, useEffect, useRef } from "react";
+import { Dimensions, View, StyleSheet } from "react-native";
+import {
+  Canvas,
+  Group,
+  Fill,
+  Rect as SkiaRect,
+  useClock,
+  Skia,
+  Picture,
+  FilterMode,
+  Circle,
+  Image as SkiaImage,
+} from "@shopify/react-native-skia";
 import Reanimated, {
   useSharedValue,
   useDerivedValue,
@@ -12,13 +23,13 @@ import Reanimated, {
   SharedValue,
   cancelAnimation,
   useAnimatedReaction,
-} from 'react-native-reanimated';
-import { useSkiaAssets } from './useSkiaAssets';
-import { SkiaTile } from './SkiaTile';
-import { useTileLibrary } from '../../contexts/TileContext';
-import { SkiaLayeredAvatar } from './SkiaLayeredAvatar';
-import { SkiaPetSprite } from './SkiaPetSprite';
-import { getPixiTextureCoords, getLiquidTextureCoords } from './mapUtils';
+} from "react-native-reanimated";
+import { useSkiaAssets } from "./useSkiaAssets";
+import { SkiaTile } from "./SkiaTile";
+import { useTileLibrary } from "../../contexts/TileContext";
+import { SkiaLayeredAvatar } from "./SkiaLayeredAvatar";
+import { SkiaPetSprite } from "./SkiaPetSprite";
+import { getPixiTextureCoords, getLiquidTextureCoords } from "./mapUtils";
 
 interface SkiaWorldMapProps {
   visionGrid: any[];
@@ -31,7 +42,7 @@ interface SkiaWorldMapProps {
   showWalkabilityOverlay?: boolean;
   children?: React.ReactNode;
   pendingDir: SharedValue<number>;
-  activeDirection: SharedValue<'UP' | 'DOWN' | 'LEFT' | 'RIGHT' | null>;
+  activeDirection: SharedValue<"UP" | "DOWN" | "LEFT" | "RIGHT" | null>;
   isRunning: SharedValue<boolean>;
   isMoving: SharedValue<boolean>;
   bankedSteps: SharedValue<number>;
@@ -49,7 +60,7 @@ interface SkiaWorldMapProps {
   allShopItems?: any[];
 }
 
-const { width, height } = Dimensions.get('window');
+const { width, height } = Dimensions.get("window");
 
 // Frame-based movement: fixed px per frame (3 = walk, 6 = run). Durations in ms for reference only.
 // At 60fps, 48px / 3px per frame = 16 frames. 16 * 16.67ms = 266.7ms
@@ -87,12 +98,16 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   allShopItems,
 }) => {
   const { tileLibrary } = useTileLibrary();
-  const petBehindOpacity = useDerivedValue(() => (petZIndex.value < 100 ? 1 : 0));
-  const petInFrontOpacity = useDerivedValue(() => (petZIndex.value >= 100 ? 1 : 0));
+  const petBehindOpacity = useDerivedValue(() =>
+    petZIndex.value < 100 ? 1 : 0,
+  );
+  const petInFrontOpacity = useDerivedValue(() =>
+    petZIndex.value >= 100 ? 1 : 0,
+  );
 
   const visibleGrid = useMemo(() => {
     if (!visionGrid || visionGrid.length === 0) return [];
-    
+
     // Viewport Culling logic
     const BUFFER_X = 8;
     const BUFFER_Y_TOP = 8;
@@ -104,7 +119,10 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     const halfScreenY = Math.ceil(screenTilesY / 2);
 
     // Calculate grid center to proxy player viewport
-    let minG = Infinity, maxG = -Infinity, minGY = Infinity, maxGY = -Infinity;
+    let minG = Infinity,
+      maxG = -Infinity,
+      minGY = Infinity,
+      maxGY = -Infinity;
     for (let i = 0; i < visionGrid.length; i++) {
       const c = visionGrid[i];
       if (c.x < minG) minG = c.x;
@@ -120,21 +138,25 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     const minY = centerY - halfScreenY - BUFFER_Y_TOP;
     const maxY = centerY + halfScreenY + BUFFER_Y_BOTTOM;
 
-    return visionGrid.filter(cell => 
-      cell.x >= minX && cell.x <= maxX && cell.y >= minY && cell.y <= maxY
+    return visionGrid.filter(
+      (cell) =>
+        cell.x >= minX && cell.x <= maxX && cell.y >= minY && cell.y <= maxY,
     );
   }, [visionGrid, tileSize]);
 
   // Extract URLs to load - optimized to avoid unnecessary Set operations
   const urlsToLoad = useMemo(() => {
     const urls = new Set<string>();
-    if (mapSettings?.cleanAutotileSheetUrl) urls.add(mapSettings.cleanAutotileSheetUrl);
+    if (mapSettings?.cleanAutotileSheetUrl)
+      urls.add(mapSettings.cleanAutotileSheetUrl);
     if (mapSettings?.cleanDirtSheetUrl) urls.add(mapSettings.cleanDirtSheetUrl);
-    if (mapSettings?.cleanWaterSheetUrl) urls.add(mapSettings.cleanWaterSheetUrl);
+    if (mapSettings?.cleanWaterSheetUrl)
+      urls.add(mapSettings.cleanWaterSheetUrl);
     if (mapSettings?.cleanFoamSheetUrl) urls.add(mapSettings.cleanFoamSheetUrl);
 
-    const walkSheet = activePet?.pet_details?.metadata?.visuals?.walking_spritesheet;
-    if (walkSheet?.url) urls.add(walkSheet.url.split('?')[0]);
+    const walkSheet =
+      activePet?.pet_details?.metadata?.visuals?.walking_spritesheet;
+    if (walkSheet?.url) urls.add(walkSheet.url.split("?")[0]);
 
     if (visibleGrid) {
       for (let i = 0; i < visibleGrid.length; i++) {
@@ -151,7 +173,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     if (nodesInVision) {
       for (let i = 0; i < nodesInVision.length; i++) {
         const url = nodesInVision[i].icon_url;
-        if (url) urls.add(url.split('?')[0]);
+        if (url) urls.add(url.split("?")[0]);
       }
     }
     return Array.from(urls);
@@ -168,7 +190,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     foamOpacity.value = withRepeat(
       withTiming(0.9, { duration: 1000, easing: Easing.inOut(Easing.sin) }),
       -1,
-      true
+      true,
     );
   }, []);
 
@@ -184,20 +206,19 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   useEffect(() => {
     const ux = spawnX;
     const uy = spawnY;
-    
+
     // Check distance against the CURRENT VISUAL TARGET, not the last DB sync.
     // This prevents "teleporting" (rubber-banding) the camera when the DB syncs a few steps later.
     const dx = Math.abs(ux - targetX.value);
     const dy = Math.abs(uy - targetY.value);
 
-    // If the DB says we're >= 5 tiles away from where the camera thinks we are,
-    // it's a genuine teleport (e.g. Unstuck, Fast Travel, initial load).
-    if (dx >= 5 || dy >= 5) {
-      isMoving.value = false;
+    // Only hard-reset on large teleports (10+ tiles) and only when not mid-move.
+    // Raised from 5→10 so normal stop-sync writes never trigger a camera reset.
+    if ((dx >= 10 || dy >= 10) && !isMoving.value) {
       cancelAnimation(mapLeft);
       cancelAnimation(mapTop);
-      mapLeft.value = -ux * tileSize - (tileSize / 2);
-      mapTop.value = -uy * tileSize - (tileSize / 2);
+      mapLeft.value = -ux * tileSize - tileSize / 2;
+      mapTop.value = -uy * tileSize - tileSize / 2;
       currentTileX.value = ux;
       currentTileY.value = uy;
       targetX.value = ux;
@@ -208,16 +229,21 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   }, [spawnX, spawnY, tileSize]);
 
   // Collision data
-  const collisionDataRef = useSharedValue<{[key: string]: {isWalkable: boolean; edgeBlocks: number}}>({});
+  const collisionDataRef = useSharedValue<{
+    [key: string]: { isWalkable: boolean; edgeBlocks: number };
+  }>({});
 
-  const handleTileEnter = React.useCallback((tx: number, ty: number) => {
-    if (onTileEnter) {
-      onTileEnter(tx, ty);
-    }
-  }, [onTileEnter]);
+  const handleTileEnter = React.useCallback(
+    (tx: number, ty: number) => {
+      if (onTileEnter) {
+        onTileEnter(tx, ty);
+      }
+    },
+    [onTileEnter],
+  );
 
   const checkTileEnter = (tx: number, ty: number) => {
-    'worklet';
+    "worklet";
     if (tx !== lastEnteredTileX.value || ty !== lastEnteredTileY.value) {
       lastEnteredTileX.value = tx;
       lastEnteredTileY.value = ty;
@@ -226,7 +252,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   };
 
   const moveNext = () => {
-    'worklet';
+    "worklet";
     const dirStr = activeDirection.value;
     if (!dirStr) {
       return;
@@ -239,14 +265,14 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     let nx = currentTileX.value;
     let ny = currentTileY.value;
 
-    if (dirStr === 'UP') ny -= 1;
-    else if (dirStr === 'DOWN') ny += 1;
-    else if (dirStr === 'LEFT') nx -= 1;
-    else if (dirStr === 'RIGHT') nx += 1;
+    if (dirStr === "UP") ny -= 1;
+    else if (dirStr === "DOWN") ny += 1;
+    else if (dirStr === "LEFT") nx -= 1;
+    else if (dirStr === "RIGHT") nx += 1;
 
     const collisionData = collisionDataRef.value;
     const targetCol = collisionData[`${nx},${ny}`];
-    
+
     // 1. Check Full Block
     if (targetCol && !targetCol.isWalkable) {
       return;
@@ -258,10 +284,10 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     const destEdgeBlocks = targetCol?.edgeBlocks ?? 0;
 
     const blockedByEdge =
-      (dirStr === 'UP'    && ((currentEdgeBlocks & 1) || (destEdgeBlocks & 4))) ||
-      (dirStr === 'DOWN'  && ((currentEdgeBlocks & 4) || (destEdgeBlocks & 1))) ||
-      (dirStr === 'RIGHT' && ((currentEdgeBlocks & 2) || (destEdgeBlocks & 8))) ||
-      (dirStr === 'LEFT'  && ((currentEdgeBlocks & 8) || (destEdgeBlocks & 2)));
+      (dirStr === "UP" && (currentEdgeBlocks & 1 || destEdgeBlocks & 4)) ||
+      (dirStr === "DOWN" && (currentEdgeBlocks & 4 || destEdgeBlocks & 1)) ||
+      (dirStr === "RIGHT" && (currentEdgeBlocks & 2 || destEdgeBlocks & 8)) ||
+      (dirStr === "LEFT" && (currentEdgeBlocks & 8 || destEdgeBlocks & 2));
 
     if (blockedByEdge) {
       return;
@@ -271,37 +297,47 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     targetY.value = ny;
     isMoving.value = true;
 
-    const targetPixelX = -nx * tileSize - (tileSize / 2);
-    const targetPixelY = -ny * tileSize - (tileSize / 2);
+    const targetPixelX = -nx * tileSize - tileSize / 2;
+    const targetPixelY = -ny * tileSize - tileSize / 2;
     const duration = isRunning.value ? RUN_DURATION : WALK_DURATION;
 
     if (nx !== currentTileX.value) {
-      mapLeft.value = withTiming(targetPixelX, { duration, easing: Easing.linear }, () => {
-        currentTileX.value = nx;
-        checkTileEnter(nx, ny);
-        isMoving.value = false;
-      });
+      cancelAnimation(mapLeft);
+      mapLeft.value = withTiming(
+        targetPixelX,
+        { duration, easing: Easing.linear },
+        () => {
+          currentTileX.value = nx; // always commit, even if interrupted
+          checkTileEnter(nx, ny);
+          isMoving.value = false; // always reset
+        },
+      );
     } else if (ny !== currentTileY.value) {
-      mapTop.value = withTiming(targetPixelY, { duration, easing: Easing.linear }, () => {
-        currentTileY.value = ny;
-        checkTileEnter(nx, ny);
-        isMoving.value = false;
-      });
+      cancelAnimation(mapTop);
+      mapTop.value = withTiming(
+        targetPixelY,
+        { duration, easing: Easing.linear },
+        () => {
+          currentTileY.value = ny; // always commit, even if interrupted
+          checkTileEnter(nx, ny);
+          isMoving.value = false; // always reset
+        },
+      );
     }
   };
 
   useAnimatedReaction(
     () => ({
       dir: activeDirection.value,
-      moving: isMoving.value
+      moving: isMoving.value,
     }),
     (state, prevState) => {
-      if (state.dir !== null && state.moving === false) {
-        if (prevState?.moving === true || prevState?.dir !== state.dir) {
-          moveNext();
-        }
+      if (state.moving) return; // hard gate — never interrupt in-flight animation
+      if (state.dir === null) return;
+      if (prevState?.moving === true || prevState?.dir !== state.dir) {
+        moveNext();
       }
-    }
+    },
   );
 
   // Pre-calculate centered offsets to prevent half-pixel blurring on odd-resolution screens (e.g., iPhone 15 width is 393)
@@ -309,7 +345,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   const centerY = Math.floor(height / 2);
 
   // You can increase MAP_SCALE (e.g., to 1.25 or 1.5) to zoom in the map
-  const MAP_SCALE = 1.25; 
+  const MAP_SCALE = 1.25;
 
   // We calculate the exact scaled pixels, then round them to integers.
   // This completely eliminates sub-pixel shimmering and camera jitter!
@@ -322,7 +358,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       { translateY: centerY },
       { translateX: roundedMapLeft },
       { translateY: roundedMapTop },
-      { scale: MAP_SCALE }
+      { scale: MAP_SCALE },
     ];
   });
 
@@ -334,24 +370,30 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       transform: [
         { translateX: roundedMapLeft + MAP_SCALE * centerX },
         { translateY: roundedMapTop + MAP_SCALE * centerY },
-        { scale: MAP_SCALE }
-      ]
+        { scale: MAP_SCALE },
+      ],
     };
   });
 
   // Build collision lookup from visibleGrid
   const collisionMap = useMemo(() => {
     const map = new Map<string, { isWalkable: boolean; edgeBlocks: number }>();
-    (visibleGrid || []).forEach(cell => {
+    (visibleGrid || []).forEach((cell) => {
       if (!cell) return;
       const key = `${cell.x},${cell.y}`;
-      const hasBlockedTile = cell.tiles?.some((t: any) => 
-        t.isWalkable === false || t.is_walk_able === false || t.is_walkable === false
+      const hasBlockedTile = cell.tiles?.some(
+        (t: any) =>
+          t.isWalkable === false ||
+          t.is_walk_able === false ||
+          t.is_walkable === false,
       );
-      const edgeBlocks = cell.tiles?.reduce((acc: number, t: any) => {
-        const bits = Number(t.edgeBlocks ?? t.edge_blocks ?? t.edge_mask ?? t.edgeMask ?? 0);
-        return acc | bits;
-      }, 0) || 0;
+      const edgeBlocks =
+        cell.tiles?.reduce((acc: number, t: any) => {
+          const bits = Number(
+            t.edgeBlocks ?? t.edge_blocks ?? t.edge_mask ?? t.edgeMask ?? 0,
+          );
+          return acc | bits;
+        }, 0) || 0;
       map.set(key, { isWalkable: !hasBlockedTile, edgeBlocks });
     });
     return map;
@@ -359,7 +401,9 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
   // Sync collision data to shared value for UI-thread access
   useEffect(() => {
-    const collisionObj: {[key: string]: {isWalkable: boolean; edgeBlocks: number}} = {};
+    const collisionObj: {
+      [key: string]: { isWalkable: boolean; edgeBlocks: number };
+    } = {};
     collisionMap.forEach((value, key) => {
       collisionObj[key] = value;
     });
@@ -384,12 +428,22 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
           // Compute Z-Index logic to match PixiMapCanvas
           const tileLayer = t.layer || 0;
-          
+
           // Z-Index calculation: (layer * 100000) + (y + offsetY/TILE_SIZE)
           // This ensures higher layers are always on top, and same-layer tiles are Y-sorted.
-          const zIndex = (tileLayer * 100000) + (cell.y + (t.offsetY || 0) / tileSize);
+          const zIndex =
+            tileLayer * 100000 + (cell.y + (t.offsetY || 0) / tileSize);
 
-          all.push([t, cell.x, cell.y, j, cleanUrl, dictData, zIndex, tileLayer]);
+          all.push([
+            t,
+            cell.x,
+            cell.y,
+            j,
+            cleanUrl,
+            dictData,
+            zIndex,
+            tileLayer,
+          ]);
         }
       }
     }
@@ -402,7 +456,8 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
   const allVisibleTiles = sortedTiles;
 
-  const spritesheet = activePet?.pet_details?.metadata?.visuals?.walking_spritesheet;
+  const spritesheet =
+    activePet?.pet_details?.metadata?.visuals?.walking_spritesheet;
 
   const playerAvatar = avatarData ? (
     <SkiaLayeredAvatar
@@ -429,7 +484,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       frameHeight={spritesheet.frame_height ?? 64}
       idleIndex={spritesheet.idle_frame ?? 0}
       x={width / 2} // RAW CENTER POINT
-            y={(height / 2) + 5} // Adjusted slightly down from -15 to be more natural
+      y={height / 2 + 5} // Adjusted slightly down from -15 to be more natural
       trailX={petOffsetX}
       trailY={petOffsetY}
     />
@@ -437,12 +492,15 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
   return (
     <View style={StyleSheet.absoluteFill}>
-      <Canvas style={{ position: 'absolute', width, height, zIndex: 1 }} pointerEvents="none">
+      <Canvas
+        style={{ position: "absolute", width, height, zIndex: 1 }}
+        pointerEvents="none"
+      >
         <Fill color="#1a1c0e" />
         <Group transform={skiaTransform}>
           {allVisibleTiles.map((e) => (
             <SkiaTile
-              key={`tile-${e[0].id || (e[1] + ',' + e[2] + ',' + e[7] + ',' + e[3])}`}
+              key={`tile-${e[0].id || e[1] + "," + e[2] + "," + e[7] + "," + e[3]}`}
               tile={e[0]}
               absPx={e[1] * tileSize}
               absPy={e[2] * tileSize}
@@ -456,56 +514,121 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
             />
           ))}
           {/* Pet moved to overlay layer to prevent clipping by player avatar */}
-          {showWalkabilityOverlay && (visibleGrid || []).map(cell => {
-            if (!cell) return null;
-            const blockedTiles = cell.tiles?.filter((t: any) => (t.isWalkable === false || t.is_walk_able === false || t.is_walkable === false));
-            const edgeTiles = cell.tiles?.filter((t: any) => {
-              const bits = Number(t.edgeBlocks ?? t.edge_blocks ?? t.edge_mask ?? t.edgeMask ?? 0);
-              return bits > 0;
-            });
-            
-            const cellX = cell.x * tileSize;
-            const cellY = cell.y * tileSize;
-            const BAR = 5 * (tileSize / 48);
+          {showWalkabilityOverlay &&
+            (visibleGrid || []).map((cell) => {
+              if (!cell) return null;
+              const blockedTiles = cell.tiles?.filter(
+                (t: any) =>
+                  t.isWalkable === false ||
+                  t.is_walk_able === false ||
+                  t.is_walkable === false,
+              );
+              const edgeTiles = cell.tiles?.filter((t: any) => {
+                const bits = Number(
+                  t.edgeBlocks ??
+                    t.edge_blocks ??
+                    t.edge_mask ??
+                    t.edgeMask ??
+                    0,
+                );
+                return bits > 0;
+              });
 
-            return (
-              <Group key={`walk-overlay-${cell.x}-${cell.y}`}>
-                {blockedTiles?.length > 0 && (
-                  <SkiaRect x={cellX} y={cellY} width={tileSize} height={tileSize} color="rgba(220, 38, 38, 0.35)" />
-                )}
-                {edgeTiles?.map((t: any, i: number) => {
-                  const bits = Number(t.edgeBlocks ?? t.edge_blocks ?? t.edge_mask ?? t.edgeMask ?? 0);
-                  return (
-                    <Group key={`edge-bits-${cell.x}-${cell.y}-${i}`}>
-                      {(bits & 1) && <SkiaRect x={cellX} y={cellY} width={tileSize} height={BAR} color="rgba(249, 115, 22, 0.85)" />}
-                      {(bits & 2) && <SkiaRect x={cellX + tileSize - BAR} y={cellY} width={BAR} height={tileSize} color="rgba(249, 115, 22, 0.85)" />}
-                      {(bits & 4) && <SkiaRect x={cellX} y={cellY + tileSize - BAR} width={tileSize} height={BAR} color="rgba(249, 115, 22, 0.85)" />}
-                      {(bits & 8) && <SkiaRect x={cellX} y={cellY} width={BAR} height={tileSize} color="rgba(249, 115, 22, 0.85)" />}
-                    </Group>
-                  );
-                })}
-              </Group>
-            );
-          })}
+              const cellX = cell.x * tileSize;
+              const cellY = cell.y * tileSize;
+              const BAR = 5 * (tileSize / 48);
+
+              return (
+                <Group key={`walk-overlay-${cell.x}-${cell.y}`}>
+                  {blockedTiles?.length > 0 && (
+                    <SkiaRect
+                      x={cellX}
+                      y={cellY}
+                      width={tileSize}
+                      height={tileSize}
+                      color="rgba(220, 38, 38, 0.35)"
+                    />
+                  )}
+                  {edgeTiles?.map((t: any, i: number) => {
+                    const bits = Number(
+                      t.edgeBlocks ??
+                        t.edge_blocks ??
+                        t.edge_mask ??
+                        t.edgeMask ??
+                        0,
+                    );
+                    return (
+                      <Group key={`edge-bits-${cell.x}-${cell.y}-${i}`}>
+                        {bits & 1 && (
+                          <SkiaRect
+                            x={cellX}
+                            y={cellY}
+                            width={tileSize}
+                            height={BAR}
+                            color="rgba(249, 115, 22, 0.85)"
+                          />
+                        )}
+                        {bits & 2 && (
+                          <SkiaRect
+                            x={cellX + tileSize - BAR}
+                            y={cellY}
+                            width={BAR}
+                            height={tileSize}
+                            color="rgba(249, 115, 22, 0.85)"
+                          />
+                        )}
+                        {bits & 4 && (
+                          <SkiaRect
+                            x={cellX}
+                            y={cellY + tileSize - BAR}
+                            width={tileSize}
+                            height={BAR}
+                            color="rgba(249, 115, 22, 0.85)"
+                          />
+                        )}
+                        {bits & 8 && (
+                          <SkiaRect
+                            x={cellX}
+                            y={cellY}
+                            width={BAR}
+                            height={tileSize}
+                            color="rgba(249, 115, 22, 0.85)"
+                          />
+                        )}
+                      </Group>
+                    );
+                  })}
+                </Group>
+              );
+            })}
 
           {/* NATIVE SKIA NODE RENDERING (Zero Shaking!) */}
           {nodesInVision?.map((node) => {
             // 1. Get the pre-loaded image from Supabase
-            const cleanUrl = node.icon_url?.split('?')[0];
+            const cleanUrl = node.icon_url?.split("?")[0];
             const img = cleanUrl ? images.get(cleanUrl) : null;
-            
+
             // 2. Calculate exact pixel-perfect positions
             const nodeX = Math.round(node.x * tileSize);
             const nodeY = Math.round(node.y * tileSize);
             const centerX = Math.round(nodeX + tileSize / 2);
             const centerY = Math.round(nodeY + tileSize / 2);
-            const radius = Math.round(tileSize * 0.45); 
+            const radius = Math.round(tileSize * 0.45);
             const tokenSize = radius * 2;
 
             return (
-              <Group 
+              <Group
                 key={`skia-node-${node.id}`}
-                clip={Skia.RRectXY(Skia.XYWHRect(centerX - radius, centerY - radius, tokenSize, tokenSize), radius, radius)}
+                clip={Skia.RRectXY(
+                  Skia.XYWHRect(
+                    centerX - radius,
+                    centerY - radius,
+                    tokenSize,
+                    tokenSize,
+                  ),
+                  radius,
+                  radius,
+                )}
                 opacity={0.6}
               >
                 {/* The Opaque Pedestal/Background */}
@@ -521,14 +644,14 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
                   <SkiaImage
                     image={img}
                     x={centerX - radius}
-                    y={centerY - radius} 
+                    y={centerY - radius}
                     width={tokenSize}
                     height={tokenSize}
                     fit="contain"
                     sampling={{ filter: FilterMode.Nearest }}
                   />
                 )}
-                
+
                 {/* The Bright Blue Token Border */}
                 <Circle
                   cx={centerX}
@@ -544,23 +667,15 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
         </Group>
 
         {/* NATIVE SKIA PLAYER & PET RENDERING - Depth Sorted without JS Bridge */}
-        <Group opacity={petBehindOpacity}>
-          {petSprite}
-        </Group>
+        <Group opacity={petBehindOpacity}>{petSprite}</Group>
 
         {playerAvatar}
 
-        <Group opacity={petInFrontOpacity}>
-          {petSprite}
-        </Group>
+        <Group opacity={petInFrontOpacity}>{petSprite}</Group>
       </Canvas>
 
-      <Reanimated.View 
-        style={[
-          StyleSheet.absoluteFill, 
-          { zIndex: 100 }, 
-          uiTransformStyle
-        ]} 
+      <Reanimated.View
+        style={[StyleSheet.absoluteFill, { zIndex: 100 }, uiTransformStyle]}
         pointerEvents="box-none"
       >
         {children}
@@ -569,5 +684,12 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   );
 };
 
-// Use standard React.memo so it properly updates when any props (like activePet or nodes) change.
-export const SkiaWorldMap = React.memo(SkiaWorldMapInternal);
+export const SkiaWorldMap = React.memo(SkiaWorldMapInternal, (prev, next) => {
+  if (prev.visionGrid !== next.visionGrid) return false;
+  const dx = Math.abs(next.spawnX - prev.spawnX);
+  const dy = Math.abs(next.spawnY - prev.spawnY);
+  // Threshold raised to 10 to match the teleport-reset effect.
+  // Stop-sync writes (small deltas) no longer trigger re-renders.
+  if (dx >= 10 || dy >= 10) return false;
+  return true;
+});
