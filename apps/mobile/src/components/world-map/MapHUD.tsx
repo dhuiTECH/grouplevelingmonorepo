@@ -203,7 +203,7 @@ export const MapHUD: React.FC<MapHUDProps> = ({
 const styles = StyleSheet.create({
   hudTop: {
     position: 'absolute',
-    top: 60,
+    top: 62,
     width: '100%',
     alignItems: 'center',
     zIndex: 20,
