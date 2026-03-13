@@ -160,7 +160,7 @@ export default function LandingPage() {
 
         {/* Hero Content (UI Layer) */}
         <div className="relative z-40 container mx-auto px-4 h-full flex flex-col justify-between items-center md:items-start pt-28 pb-16 md:pb-8 md:justify-center md:pt-20 text-center md:text-left">
-          <SystemWindow className="max-w-2xl mt-4 md:mt-12">
+          <SystemWindow className="max-w-2xl mt-2 md:mt-12">
             {/* Top Section: Title */}
             <motion.div
               initial={{ opacity: 0, x: -50 }}
