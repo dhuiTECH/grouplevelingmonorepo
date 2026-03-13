@@ -54,10 +54,9 @@ export default function SystemWindow({ children, className = "" }: SystemWindowP
         <div className="absolute top-[49px] bottom-[49px] left-[0px] w-[2px] bg-[#0e7490]" />
         <div className="absolute top-[49px] bottom-[43px] left-[5px] w-[1px] bg-[#0891b2]/50" />
       </div>
-      <div className="absolute top-[4px] left-[32px] w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] animate-pulse" />
-      <span className="absolute top-[1px] left-[44px] text-[10px] md:text-xs font-mono text-slate-300 tracking-[0.2em] font-bold">SYSTEM WINDOW</span>
-      <div className="absolute left-[8px] top-1/2 -translate-y-1/2 -rotate-90 text-[7px] font-mono text-cyan-600/40 tracking-[0.3em] pointer-events-none select-none origin-center">HUNTER CLASS PROTOCOLS: ACTIVE</div>
-      <div className="relative z-10 w-full p-4 md:p-10 pt-8 md:pt-14">{children}</div>
+      <div className="absolute top-[16px] left-[32px] w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] animate-pulse" />
+      <span className="absolute top-[13px] left-[44px] text-[10px] md:text-xs font-mono text-slate-300 tracking-[0.2em] font-bold">SYSTEM WINDOW</span>
+      <div className="relative z-10 w-full p-3 md:p-10 pt-10 md:pt-14">{children}</div>
     </div>
   );
 }
