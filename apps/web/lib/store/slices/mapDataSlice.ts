@@ -289,10 +289,54 @@ export const createMapDataSlice: StateCreator<
   },
 
   updateCustomTile: async (id, updates) => {
+    const state = get();
+    const oldTile = state.customTiles.find(t => t.id === id);
+    if (!oldTile) return;
+    const baseTileUrl = oldTile.url.split('?')[0];
+
     set((state) => ({
       customTiles: state.customTiles.map(t => t.id === id ? { ...t, ...updates } : t)
     }));
     
+    // NEW: Update all placed tiles that reference this custom tile's URL
+    // So that their properties stay in sync with the palette!
+    const touchedChunks = new Set<string>();
+    set((state) => {
+      let hasChanges = false;
+      const newTiles = state.tiles.map(t => {
+        if (!t.imageUrl) return t;
+        
+        const tUrl = t.imageUrl.split('?')[0];
+        if (tUrl === baseTileUrl) {
+          hasChanges = true;
+          touchedChunks.add(`${Math.floor(t.x / CHUNK_SIZE)},${Math.floor(t.y / CHUNK_SIZE)}`);
+          return { 
+            ...t, 
+            ...(updates.type !== undefined && { type: updates.type }),
+            ...(updates.isSpritesheet !== undefined && { isSpritesheet: updates.isSpritesheet }),
+            ...(updates.frameCount !== undefined && { frameCount: updates.frameCount }),
+            ...(updates.frameWidth !== undefined && { frameWidth: updates.frameWidth }),
+            ...(updates.frameHeight !== undefined && { frameHeight: updates.frameHeight }),
+            ...(updates.animationSpeed !== undefined && { animationSpeed: updates.animationSpeed }),
+            ...(updates.layer !== undefined && { layer: updates.layer }),
+            ...(updates.isWalkable !== undefined && { isWalkable: updates.isWalkable }),
+            ...(updates.snapToGrid !== undefined && { snapToGrid: updates.snapToGrid }),
+            ...(updates.isAutoFill !== undefined && { isAutoFill: updates.isAutoFill }),
+            ...(updates.isAutoTile !== undefined && { isAutoTile: updates.isAutoTile }),
+            ...(updates.rotation !== undefined && { rotation: updates.rotation }),
+            ...(updates.smartType !== undefined && { smartType: updates.smartType }),
+          };
+        }
+        return t;
+      });
+      return hasChanges ? { tiles: newTiles } : state;
+    });
+
+    touchedChunks.forEach(key => {
+      const [cx, cy] = key.split(',').map(Number);
+      triggerChunkSync(cx, cy, get);
+    });
+
     // Map updates to snake_case for Supabase
     const dbUpdates: any = {};
     if ('name' in updates) dbUpdates.name = updates.name;
@@ -561,16 +605,15 @@ export const createMapDataSlice: StateCreator<
     // Calculate the base URL once outside the loop to strip cache-busting parameters
     const baseOldUrl = oldUrl.split('?')[0];
 
-    // 1. Update Custom Tile Library
+    // 1. Update Custom Tile Library locally
     set((state) => ({
       customTiles: state.customTiles.map(t => t.id === id ? { ...t, url: newUrl } : t)
     }));
-    
-    await supabase.from('custom_tiles').update({ url: newUrl }).eq('id', id);
 
-    // 2. Update all placed tiles that use this asset
+    // 2. Update all placed tiles that use this asset locally
     const touchedChunks = new Set<string>();
     set((state) => {
+      let hasChanges = false;
       const newTiles = state.tiles.map(t => {
         if (!t.imageUrl) return t;
         
@@ -578,12 +621,13 @@ export const createMapDataSlice: StateCreator<
         const baseTileUrl = t.imageUrl.split('?')[0];
         
         if (baseTileUrl === baseOldUrl) {
+          hasChanges = true;
           touchedChunks.add(`${Math.floor(t.x / CHUNK_SIZE)},${Math.floor(t.y / CHUNK_SIZE)}`);
           return { ...t, imageUrl: newUrl };
         }
         return t;
       });
-      return { tiles: newTiles };
+      return hasChanges ? { tiles: newTiles } : state;
     });
 
     // 3. Trigger debounced sync for touched chunks
@@ -591,6 +635,9 @@ export const createMapDataSlice: StateCreator<
       const [cx, cy] = key.split(',').map(Number);
       triggerChunkSync(cx, cy, get);
     });
+    
+    // 4. Update Database
+    await supabase.from('custom_tiles').update({ url: newUrl }).eq('id', id);
   },
 
   forceSyncAllChunks: async () => {

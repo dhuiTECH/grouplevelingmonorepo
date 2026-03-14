@@ -47,7 +47,7 @@ export const metadata: Metadata = {
     siteName: 'Hunter System',
     images: [
       {
-        url: '/website/og-image.png',
+        url: '/og-image.png',
         width: 1200,
         height: 630,
         alt: 'Hunter System - Level Up Through Fitness',
@@ -60,7 +60,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Hunter System | Level Up Through Fitness',
     description: 'Awaken your inner hunter. Track runs, conquer dungeons, level up, and climb the elite rankings in this immersive fitness RPG system.',
-    images: ['/website/og-image.png'],
+    images: ['/og-image.png'],
     creator: '@huntersystem',
   },
   robots: {
