@@ -120,13 +120,14 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
   const debouncedUpdate = (updates: Partial<CustomTile>) => {
     if (!currentlyEditedTile) return;
     
-    // Update local store immediately for visual feedback
-    // (Note: updateCustomTile already updates store before DB call)
-    
+    // Clear existing timeout
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    
+    // Set a much longer debounce for dimension/property edits (1500ms)
+    // This ensures we only sync to Supabase once the user is truly done typing
     debounceTimerRef.current = setTimeout(() => {
       updateCustomTile(currentlyEditedTile.id, updates);
-    }, 500); // 500ms debounce for DB sync
+    }, 1500);
   };
 
   const [activeTab, setActiveTab] = React.useState<'water' | 'ground' | 'road' | 'prop' | 'structure' | 'mountain' | 'big_structure' | 'poi'>('ground');

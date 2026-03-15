@@ -12,12 +12,22 @@ const globalForSupabase = globalThis as unknown as {
   supabaseAdmin: SupabaseClient | undefined;
 };
 
-// 1. Client-side Client: Used for general data fetching (respects RLS)
+// 1. Create a dummy lock to bypass the buggy Navigator LockManager in local dev
+const dummyLock = async (name: string, acquireTimeout: number, fn: () => Promise<any>) => {
+  return await fn();
+};
+
+// 2. Client-side Client: Used for general data fetching (respects RLS)
 export const supabase = globalForSupabase.supabase ?? createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
+    // 🛑 THIS IS THE CRITICAL FIX
+    // In development, we use the dummy lock to prevent the 10,000ms timeout
+    lock: process.env.NODE_ENV === 'development' ? (dummyLock as any) : undefined,
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true
+    detectSessionInUrl: true,
+    // Add this to be extra safe with storage access
+    storageKey: 'sb-world-editor-auth' 
   }
 })
 

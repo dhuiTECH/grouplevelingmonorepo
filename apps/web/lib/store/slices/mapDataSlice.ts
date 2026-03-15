@@ -104,7 +104,7 @@ export const createMapDataSlice: StateCreator<
       // 4. Load Chunks (can be huge)
       const { data: chunksData, error: chunksError } = await supabase.from('map_chunks').select('*');
       if (chunksError) {
-        console.error('Error loading map chunks:', chunksError);
+        console.error('Error loading map chunks ERROR DETAILS:', JSON.stringify(chunksError, null, 2));
       } else if (chunksData) {
         const allTiles: Tile[] = [];
         chunksData.forEach((chunk: any) => {
@@ -174,7 +174,7 @@ export const createMapDataSlice: StateCreator<
       interaction_data: node.properties || {}
     });
     if (error) {
-      console.error('Failed to persist world_map_node on insert', error);
+      console.error('Failed to persist world_map_node on insert ERROR DETAILS:', JSON.stringify(error, null, 2));
     }
     return newId;
   },
@@ -202,7 +202,7 @@ export const createMapDataSlice: StateCreator<
       .eq('id', id);
 
     if (error) {
-      console.error('Failed to persist world_map_node on update', error);
+      console.error('Failed to persist world_map_node on update ERROR DETAILS:', JSON.stringify(error, null, 2));
     }
   },
 
@@ -217,7 +217,7 @@ export const createMapDataSlice: StateCreator<
 
     const { error } = await supabase.from('world_map_nodes').delete().eq('id', id);
     if (error) {
-      console.error('Failed to delete world_map_node', error);
+      console.error('Failed to delete world_map_node ERROR DETAILS:', JSON.stringify(error, null, 2));
       return;
     }
 
@@ -276,7 +276,9 @@ export const createMapDataSlice: StateCreator<
       rotation: tile.rotation || 0,
       sort_order: tile.sort_order || 0
     });
-    if (error) console.error("Failed to add custom tile:", error);
+    if (error) {
+      console.error("Failed to add custom tile ERROR DETAILS:", JSON.stringify(error, null, 2));
+    }
   },
 
   removeCustomTile: async (id) => {
@@ -285,7 +287,9 @@ export const createMapDataSlice: StateCreator<
       selectedTileId: state.selectedTileId === id ? null : state.selectedTileId
     }));
     const { error } = await supabase.from('custom_tiles').delete().eq('id', id);
-    if (error) console.error("Failed to remove custom tile:", error);
+    if (error) {
+      console.error("Failed to remove custom tile ERROR DETAILS:", JSON.stringify(error, null, 2));
+    }
   },
 
   updateCustomTile: async (id, updates) => {
@@ -298,44 +302,64 @@ export const createMapDataSlice: StateCreator<
       customTiles: state.customTiles.map(t => t.id === id ? { ...t, ...updates } : t)
     }));
     
-    // NEW: Update all placed tiles that reference this custom tile's URL
-    // So that their properties stay in sync with the palette!
-    const touchedChunks = new Set<string>();
-    set((state) => {
-      let hasChanges = false;
-      const newTiles = state.tiles.map(t => {
-        if (!t.imageUrl) return t;
-        
-        const tUrl = t.imageUrl.split('?')[0];
-        if (tUrl === baseTileUrl) {
-          hasChanges = true;
-          touchedChunks.add(`${Math.floor(t.x / CHUNK_SIZE)},${Math.floor(t.y / CHUNK_SIZE)}`);
-          return { 
-            ...t, 
-            ...(updates.type !== undefined && { type: updates.type }),
-            ...(updates.isSpritesheet !== undefined && { isSpritesheet: updates.isSpritesheet }),
-            ...(updates.frameCount !== undefined && { frameCount: updates.frameCount }),
-            ...(updates.frameWidth !== undefined && { frameWidth: updates.frameWidth }),
-            ...(updates.frameHeight !== undefined && { frameHeight: updates.frameHeight }),
-            ...(updates.animationSpeed !== undefined && { animationSpeed: updates.animationSpeed }),
-            ...(updates.layer !== undefined && { layer: updates.layer }),
-            ...(updates.isWalkable !== undefined && { isWalkable: updates.isWalkable }),
-            ...(updates.snapToGrid !== undefined && { snapToGrid: updates.snapToGrid }),
-            ...(updates.isAutoFill !== undefined && { isAutoFill: updates.isAutoFill }),
-            ...(updates.isAutoTile !== undefined && { isAutoTile: updates.isAutoTile }),
-            ...(updates.rotation !== undefined && { rotation: updates.rotation }),
-            ...(updates.smartType !== undefined && { smartType: updates.smartType }),
-          };
-        }
-        return t;
-      });
-      return hasChanges ? { tiles: newTiles } : state;
-    });
+    // Check if this update actually changes properties that would affect placed tiles
+    const affectsPlacedTiles = 
+      updates.type !== undefined ||
+      updates.isSpritesheet !== undefined ||
+      updates.frameCount !== undefined ||
+      updates.frameWidth !== undefined ||
+      updates.frameHeight !== undefined ||
+      updates.animationSpeed !== undefined ||
+      updates.layer !== undefined ||
+      updates.isWalkable !== undefined ||
+      updates.snapToGrid !== undefined ||
+      updates.isAutoFill !== undefined ||
+      updates.isAutoTile !== undefined ||
+      updates.rotation !== undefined ||
+      updates.smartType !== undefined;
 
-    touchedChunks.forEach(key => {
-      const [cx, cy] = key.split(',').map(Number);
-      triggerChunkSync(cx, cy, get);
-    });
+    if (affectsPlacedTiles) {
+      // NEW: Update all placed tiles that reference this custom tile's URL
+      // So that their properties stay in sync with the palette!
+      const touchedChunks = new Set<string>();
+      set((state) => {
+        let hasChanges = false;
+        const newTiles = state.tiles.map(t => {
+          if (!t.imageUrl) return t;
+          
+          const tUrl = t.imageUrl.split('?')[0];
+          if (tUrl === baseTileUrl) {
+            hasChanges = true;
+            touchedChunks.add(`${Math.floor(t.x / CHUNK_SIZE)},${Math.floor(t.y / CHUNK_SIZE)}`);
+            return { 
+              ...t, 
+              ...(updates.type !== undefined && { type: updates.type }),
+              ...(updates.isSpritesheet !== undefined && { isSpritesheet: updates.isSpritesheet }),
+              ...(updates.frameCount !== undefined && { frameCount: updates.frameCount }),
+              ...(updates.frameWidth !== undefined && { frameWidth: updates.frameWidth }),
+              ...(updates.frameHeight !== undefined && { frameHeight: updates.frameHeight }),
+              ...(updates.animationSpeed !== undefined && { animationSpeed: updates.animationSpeed }),
+              ...(updates.layer !== undefined && { layer: updates.layer }),
+              ...(updates.isWalkable !== undefined && { isWalkable: updates.isWalkable }),
+              ...(updates.snapToGrid !== undefined && { snapToGrid: updates.snapToGrid }),
+              ...(updates.isAutoFill !== undefined && { isAutoFill: updates.isAutoFill }),
+              ...(updates.isAutoTile !== undefined && { isAutoTile: updates.isAutoTile }),
+              ...(updates.rotation !== undefined && { rotation: updates.rotation }),
+              ...(updates.smartType !== undefined && { smartType: updates.smartType }),
+            };
+          }
+          return t;
+        });
+        return hasChanges ? { tiles: newTiles } : state;
+      });
+
+      // Instead of instantly triggering sync for ALL chunks at once (which locks Auth),
+      // we add them to the queue and rely on our serialized chunkSync logic.
+      touchedChunks.forEach(key => {
+        const [cx, cy] = key.split(',').map(Number);
+        triggerChunkSync(cx, cy, get);
+      });
+    }
 
     // Map updates to snake_case for Supabase
     const dbUpdates: any = {};
@@ -360,7 +384,7 @@ export const createMapDataSlice: StateCreator<
     if (Object.keys(dbUpdates).length > 0) {
       const { error } = await supabase.from('custom_tiles').update(dbUpdates).eq('id', id);
       if (error) {
-        console.error("Failed to update custom tile:", error.message, error.details, error.hint);
+        console.error("Failed to update custom tile ERROR DETAILS:", JSON.stringify(error, null, 2));
       }
     }
   },
@@ -653,22 +677,25 @@ export const createMapDataSlice: StateCreator<
       chunks.get(key)!.push(t);
     });
 
-    const promises = Array.from(chunks.entries()).map(async ([key, tiles]) => {
+    const entries = Array.from(chunks.entries());
+    for (const [key, tiles] of entries) {
       const [cx, cy] = key.split(',').map(Number);
       const chunkTiles = tiles.map(t => {
         const { id, ...rest } = t;
         return { ...rest, block_col: t.blockCol || 0, block_row: t.blockRow || 0 };
       });
 
-      await supabase.from('map_chunks').upsert({
+      const { error } = await supabase.from('map_chunks').upsert({
         chunk_x: cx,
         chunk_y: cy,
         tile_data: chunkTiles,
         updated_at: new Date().toISOString()
       }, { onConflict: 'chunk_x,chunk_y' });
-    });
 
-    await Promise.all(promises);
+      if (error) {
+        console.error(`Failed to force sync chunk [${cx}, ${cy}] ERROR DETAILS:`, JSON.stringify(error, null, 2));
+      }
+    }
   },
 
   syncChunks: (chunkKeys: string[]) => {
