@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
     zIndex: 1, 
   },
   stickerTitle: { color: '#22d3ee', fontSize: 16, fontWeight: '900', fontStyle: 'italic', letterSpacing: 2, marginBottom: 15, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
-  stickerDataRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', paddingHorizontal: 10 },
+  stickerDataRow: { flexDirection: 'row', justifyContent: 'center', gap: 20, width: '100%' },
   stickerDataItem: { alignItems: 'center' },
   stickerDataLabel: { color: '#94a3b8', fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 4 },
   stickerDataValue: { color: '#FFF', fontSize: 18, fontWeight: '900', fontVariant: ['tabular-nums'], textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },

@@ -89,15 +89,15 @@ export const MaskPainter = ({
       const tCtx = tempCanvas.getContext('2d');
       if (!tCtx) return;
 
-      // 1. Draw solid black
-      tCtx.fillStyle = 'black';
+      // 1. Draw solid green (for visibility while editing)
+      tCtx.fillStyle = '#00ff00';
       tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
 
       // 2. Punch out the mask's opaque areas
       tCtx.globalCompositeOperation = 'destination-out';
       tCtx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-      // 3. Now tempCanvas has Black where the mask was Transparent.
+      // 3. Now tempCanvas has Green where the mask was Transparent.
       // This is exactly our "strokes" canvas.
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.globalCompositeOperation = 'source-over';
@@ -132,6 +132,7 @@ export const MaskPainter = ({
     const ctx = canvasRef.current?.getContext('2d');
     if (!ctx) return;
     ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = '#00ff00'; // Ensure green brush for visibility
     ctx.lineWidth = brushSize;
     const pos = getMousePos(e);
     setMousePos(pos);
