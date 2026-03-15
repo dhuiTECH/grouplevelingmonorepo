@@ -21,8 +21,8 @@ const dummyLock = async (name: string, acquireTimeout: number, fn: () => Promise
 export const supabase = globalForSupabase.supabase ?? createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     // 🛑 THIS IS THE CRITICAL FIX
-    // In development, we use the dummy lock to prevent the 10,000ms timeout
-    lock: process.env.NODE_ENV === 'development' ? (dummyLock as any) : undefined,
+    // Force the dummy lock everywhere to prevent the 10,000ms timeout in production
+    lock: dummyLock as any,
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,

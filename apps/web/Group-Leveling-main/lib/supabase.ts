@@ -6,9 +6,16 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key'
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-key'
 
+// 1. Create a dummy lock to bypass the buggy Navigator LockManager everywhere
+const dummyLock = async (name: string, acquireTimeout: number, fn: () => Promise<any>) => {
+  return await fn();
+};
+
 // 1. Client-side Client: Used for general data fetching (respects RLS)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
+    // 🛑 FORCE DUMMY LOCK EVERYWHERE
+    lock: dummyLock as any,
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true
