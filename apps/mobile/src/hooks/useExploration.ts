@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import * as Haptics from 'expo-haptics';
@@ -316,6 +317,11 @@ export const useExploration = (
       last_sync_time: now 
     }).eq('id', user.id);
 
+    // Save fresh coords to local storage
+    AsyncStorage.setItem('last_known_coords', JSON.stringify({ x: nx, y: ny })).catch(e => {
+      console.warn('Failed to save local coordinates:', e);
+    });
+
     setUser({ ...user, world_y: ny, last_sync_time: now });
     setAutoTravelReport(report);
   };
@@ -370,6 +376,11 @@ export const useExploration = (
           .update({ world_x: pos.x, world_y: pos.y, steps_banked: pos.banked })
           .eq('id', userForSync.id)
           .then();
+
+        // Save fresh coords to local storage for instant loading on next boot
+        AsyncStorage.setItem('last_known_coords', JSON.stringify({ x: pos.x, y: pos.y })).catch(e => {
+          console.warn('Failed to save local coordinates:', e);
+        });
 
         setUser({ ...userForSync, world_x: pos.x, world_y: pos.y, steps_banked: pos.banked });
       }, 500);

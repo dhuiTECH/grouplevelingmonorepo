@@ -1,6 +1,7 @@
 import React, { useEffect, createContext, useContext, useState, ReactNode } from 'react';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { User } from '@/types/user';
@@ -50,6 +51,15 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
   const [supabaseUser, setSupabaseUser] = useState<SupabaseAuthUser | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Helper to sync local coordinates to AsyncStorage
+  const saveLocalCoords = async (x: number, y: number) => {
+    try {
+      await AsyncStorage.setItem('last_known_coords', JSON.stringify({ x, y }));
+    } catch (e) {
+      console.warn('Failed to save local coordinates:', e);
+    }
+  };
 
   const refreshProfile = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -123,6 +133,9 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
           steps_banked: profile.steps_banked ?? 0,
           last_sync_time: profile.last_sync_time,
         } as User);
+
+        // Save fresh coords to local storage
+        saveLocalCoords(profile.world_x ?? 0, profile.world_y ?? 0);
       }
     } catch (err) {
       console.error('Fatal error refreshing profile:', err);
@@ -159,7 +172,33 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
       if (session) {
         setSupabaseUser(session.user);
         
-        // Fetch full profile from DB
+        // 1. Load local coordinates IMMEDIATELY to prevent 0,0 map flash
+        try {
+          const stored = await AsyncStorage.getItem('last_known_coords');
+          if (stored) {
+            const { x, y } = JSON.parse(stored);
+            setUser(prev => {
+              if (prev) return { ...prev, world_x: x, world_y: y };
+              // If no profile yet, provide a skeleton user with the local coords
+              return {
+                id: session.user.id,
+                email: session.user.email || '',
+                world_x: x,
+                world_y: y,
+                level: 1,
+                exp: 0,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                submittedIds: [],
+                slotsUsed: 0,
+              } as User;
+            });
+          }
+        } catch (e) {
+          console.warn('Failed to load local coords:', e);
+        }
+
+        // 2. Fetch full profile from DB
         try {
           const { data: profile, error: profileError } = await supabase
             .from('profiles')
@@ -226,6 +265,9 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
               steps_banked: profile.steps_banked ?? 0,
               last_sync_time: profile.last_sync_time,
             } as User);
+
+            // Sync fresh coords to local storage
+            saveLocalCoords(profile.world_x ?? 0, profile.world_y ?? 0);
           }
         } catch (err) {
           console.error('Fatal error in getInitialSession:', err);
@@ -307,6 +349,9 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
                 current_ap: profile.current_ap || 3,
                 max_ap: profile.max_ap || 3,
               } as User);
+
+              // Sync fresh coords to local storage
+              saveLocalCoords(profile.world_x ?? 0, profile.world_y ?? 0);
              }
           } catch (err) {
             console.error('Fatal error in onAuthStateChange:', err);

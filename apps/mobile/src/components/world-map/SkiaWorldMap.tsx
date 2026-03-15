@@ -178,18 +178,20 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   const targetX = useSharedValue(spawnX);
   const targetY = useSharedValue(spawnY);
 
-  const prevReactX = useRef(spawnX);
-  const prevReactY = useRef(spawnY);
-
   const lastEnteredTileX = useSharedValue(-999);
   const lastEnteredTileY = useSharedValue(-999);
 
   useEffect(() => {
     const ux = spawnX;
     const uy = spawnY;
-    const dx = Math.abs(ux - prevReactX.current);
-    const dy = Math.abs(uy - prevReactY.current);
+    
+    // Check distance against the CURRENT VISUAL TARGET, not the last DB sync.
+    // This prevents "teleporting" (rubber-banding) the camera when the DB syncs a few steps later.
+    const dx = Math.abs(ux - targetX.value);
+    const dy = Math.abs(uy - targetY.value);
 
+    // If the DB says we're >= 5 tiles away from where the camera thinks we are,
+    // it's a genuine teleport (e.g. Unstuck, Fast Travel, initial load).
     if (dx >= 5 || dy >= 5) {
       isMoving.value = false;
       cancelAnimation(mapLeft);
@@ -203,9 +205,6 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       lastEnteredTileX.value = ux;
       lastEnteredTileY.value = uy;
     }
-
-    prevReactX.current = ux;
-    prevReactY.current = uy;
   }, [spawnX, spawnY, tileSize]);
 
   // Collision data
@@ -309,21 +308,38 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   const centerX = Math.floor(width / 2);
   const centerY = Math.floor(height / 2);
 
-  const cameraTranslateX = useDerivedValue(() => Math.round(mapLeft.value + centerX));
-  const cameraTranslateY = useDerivedValue(() => Math.round(mapTop.value + centerY));
+  // You can increase MAP_SCALE (e.g., to 1.25 or 1.5) to zoom in the map
+  const MAP_SCALE = 1.25; 
 
-  // Keep Skia tiles and the React Native map-following overlay on the same pixel grid.
-  const skiaTransform = useDerivedValue(() => [
-    { translateX: cameraTranslateX.value },
-    { translateY: cameraTranslateY.value }
-  ]);
+  // We calculate the exact scaled pixels, then round them to integers.
+  // This completely eliminates sub-pixel shimmering and camera jitter!
+  const skiaTransform = useDerivedValue(() => {
+    const roundedMapLeft = Math.round(mapLeft.value * MAP_SCALE);
+    const roundedMapTop = Math.round(mapTop.value * MAP_SCALE);
 
-  const uiTransformStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: cameraTranslateX.value },
-      { translateY: cameraTranslateY.value }
-    ],
-  }));
+    return [
+      { translateX: centerX },
+      { translateY: centerY },
+      { translateX: roundedMapLeft },
+      { translateY: roundedMapTop },
+      { scale: MAP_SCALE }
+    ];
+  });
+
+  const uiTransformStyle = useAnimatedStyle(() => {
+    const roundedMapLeft = Math.round(mapLeft.value * MAP_SCALE);
+    const roundedMapTop = Math.round(mapTop.value * MAP_SCALE);
+
+    return {
+      transform: [
+        { translateX: centerX },
+        { translateY: centerY },
+        { translateX: roundedMapLeft },
+        { translateY: roundedMapTop },
+        { scale: MAP_SCALE }
+      ]
+    };
+  });
 
   // Build collision lookup from visibleGrid
   const collisionMap = useMemo(() => {
@@ -492,6 +508,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
               <Group 
                 key={`skia-node-${node.id}`}
                 clip={Skia.RRectXY(Skia.XYWHRect(centerX - radius, centerY - radius, tokenSize, tokenSize), radius, radius)}
+                opacity={0.6}
               >
                 {/* The Opaque Pedestal/Background */}
                 <Circle
@@ -554,10 +571,5 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   );
 };
 
-export const SkiaWorldMap = React.memo(SkiaWorldMapInternal, (prev, next) => {
-  if (prev.visionGrid !== next.visionGrid) return false;
-  const dx = Math.abs(next.spawnX - prev.spawnX);
-  const dy = Math.abs(next.spawnY - prev.spawnY);
-  if (dx >= 5 || dy >= 5) return false;
-  return true;
-});
+// Use standard React.memo so it properly updates when any props (like activePet or nodes) change.
+export const SkiaWorldMap = React.memo(SkiaWorldMapInternal);
