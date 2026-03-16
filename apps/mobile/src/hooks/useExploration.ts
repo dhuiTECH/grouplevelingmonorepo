@@ -579,20 +579,39 @@ export const useExploration = (
     [currentMapId],
   ); // Stable — reads user/nodes/pool from refs
 
-  return {
-    onTileEnter,
-    move: () => {},
-    refreshVision,
-    flushPendingVision,
-    visionGrid,
-    nodesInVision,
-    loading: false,
-    fastTravel,
-    bankSteps,
-    autoTravelReport,
-    setAutoTravelReport,
-    checkpointAlert,
-    setCheckpointAlert,
-    latestPos,
-  };
+      // Queue vision refresh — never call server during movement.
+      // flushPendingVision (on stop) will fetch when player stops.
+      const dist =
+        Math.abs(nx - lastRefreshCenter.current.x) +
+        Math.abs(ny - lastRefreshCenter.current.y);
+      if (dist >= GRID_REFRESH_DISTANCE) {
+        pendingRefreshCenterRef.current = { x: nx, y: ny };
+        // Update gridCenter immediately during movement to prevent black spaces.
+        // Chunk cache already covers prefetch radius; we just recenter the visible grid.
+        setGridCenter({ x: nx, y: ny });
+        lastRefreshCenter.current = { x: nx, y: ny };
+      }
+
+      // DB position write — fire and forget, NO setUser.
+      // React state sync happens in WorldMapScreen via applyPendingSync when isMoving stops.
+      if (dbWriteTimer.current) clearTimeout(dbWriteTimer.current);
+      dbWriteTimer.current = setTimeout(() => {
+        const pos = latestPos.current;
+        const userForSync = userRef.current;
+        if (!userForSync) return;
+        supabase
+          .from('profiles')
+          .update({ world_x: pos.x, world_y: pos.y, steps_banked: pos.banked })
+          .eq('id', userForSync.id)
+          .then();
+        // No setUser — WorldMapScreen owns that via applyPendingSync
+      }, 500);
+
+    } finally {
+      tileEnterBusy.current = false;
+    }
+  }, [currentMapId]); // Stable — reads user/nodes/pool from refs
+
+  return { onTileEnter, move: () => {}, refreshVision, flushPendingVision, visionGrid, nodesInVision, loading: false, fastTravel, bankSteps, autoTravelReport, setAutoTravelReport, checkpointAlert, setCheckpointAlert, latestPos };
+
 };

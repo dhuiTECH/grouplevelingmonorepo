@@ -233,22 +233,25 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     [key: string]: { isWalkable: boolean; edgeBlocks: number };
   }>({});
 
-  const handleTileEnter = React.useCallback(
-    (tx: number, ty: number) => {
-      if (onTileEnter) {
-        onTileEnter(tx, ty);
-      }
-    },
-    [onTileEnter],
-  );
+  const handleTileEnter = React.useCallback((tx: number, ty: number) => {
+    if (onTileEnter) {
+      onTileEnter(tx, ty);
+    }
+    // Set isMoving=false AFTER onTileEnter updates latestPos, so callOnMovementStop
+    // reads the correct position. Prevents "jumping back" from race condition.
+    isMoving.value = false;
+  }, [onTileEnter, isMoving]);
 
   const checkTileEnter = (tx: number, ty: number) => {
-    "worklet";
-    if (tx !== lastEnteredTileX.value || ty !== lastEnteredTileY.value) {
+    'worklet';
+    const isNewTile = tx !== lastEnteredTileX.value || ty !== lastEnteredTileY.value;
+    if (isNewTile) {
+
       lastEnteredTileX.value = tx;
       lastEnteredTileY.value = ty;
-      runOnJS(handleTileEnter)(tx, ty);
     }
+    // Always call handleTileEnter so isMoving is reset; onTileEnter no-ops if same tile
+    runOnJS(handleTileEnter)(tx, ty);
   };
 
   const moveNext = () => {
@@ -303,6 +306,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
     if (nx !== currentTileX.value) {
       cancelAnimation(mapLeft);
+<<<<<<< HEAD
       mapLeft.value = withTiming(
         targetPixelX,
         { duration, easing: Easing.linear },
@@ -323,6 +327,20 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
           isMoving.value = false; // always reset
         },
       );
+=======
+      mapLeft.value = withTiming(targetPixelX, { duration, easing: Easing.linear }, () => {
+        currentTileX.value = nx; // always commit, even if interrupted
+        checkTileEnter(nx, ny);
+        // isMoving set in handleTileEnter after onTileEnter updates latestPos
+      });
+    } else if (ny !== currentTileY.value) {
+      cancelAnimation(mapTop);
+      mapTop.value = withTiming(targetPixelY, { duration, easing: Easing.linear }, () => {
+        currentTileY.value = ny; // always commit, even if interrupted
+        checkTileEnter(nx, ny);
+        // isMoving set in handleTileEnter after onTileEnter updates latestPos
+      });
+>>>>>>> 57e9496 (S)
     }
   };
 
