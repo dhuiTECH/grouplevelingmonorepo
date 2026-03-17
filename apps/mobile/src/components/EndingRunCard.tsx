@@ -27,12 +27,22 @@ interface EndingRunCardProps {
   missionName?: string;
   dungeonImage?: ImageSource;
   animate?: boolean;
-  variant?: 'full' | 'minimal' | 'sticker';
+  variant?: 'full' | 'minimal' | 'sticker' | 'party_sticker';
   /** Pass so LayeredAvatar can render hand grip for equipped weapon */
   allShopItems?: any[];
+  partyMembers?: User[];
 }
 
-export const EndingRunCard = forwardRef(({ runData, user, missionName, dungeonImage, animate = false, variant = 'full', allShopItems = [] }: EndingRunCardProps, ref) => {
+export const EndingRunCard = forwardRef(({ 
+  runData, 
+  user, 
+  missionName, 
+  dungeonImage, 
+  animate = false, 
+  variant = 'full', 
+  allShopItems = [],
+  partyMembers = []
+}: EndingRunCardProps, ref) => {
   const shotRef = useRef<ViewShot>(null);
   const pulseAnim = useRef(new Animated.Value(0.4)).current;
 
@@ -181,9 +191,55 @@ export const EndingRunCard = forwardRef(({ runData, user, missionName, dungeonIm
     </View>
   );
 
+  // 3. PARTY COLLAGE STICKER LAYOUT
+  const renderPartySticker = () => {
+    const members = partyMembers && partyMembers.length > 0 ? partyMembers : [user];
+    // Scale avatar size based on count. 1-2 = large, 3+ = smaller grid
+    const avatarSize = members.length <= 2 ? CARD_WIDTH * 0.55 : CARD_WIDTH * 0.40;
+    
+    return (
+      <View style={styles.transparentCard} collapsable={false}>
+        <View style={[
+          styles.partyAvatarContainer, 
+          members.length > 2 && styles.partyAvatarGrid
+        ]}>
+          {members.map((member, idx) => (
+            <View 
+              key={member.id + idx} 
+              style={[
+                styles.partyAvatarWrapper, 
+                members.length === 2 && { 
+                  marginLeft: idx === 0 ? 0 : -avatarSize * 0.25,
+                  zIndex: 10 - idx 
+                },
+                members.length > 2 && {
+                   margin: -avatarSize * 0.1,
+                   zIndex: idx % 2 === 0 ? 5 : 6
+                }
+              ]}
+            >
+              <LayeredAvatar user={member} size={avatarSize} square={true} allShopItems={allShopItems} hideBackground={true} />
+            </View>
+          ))}
+        </View>
+        
+        <View style={styles.stickerStatsBox}>
+          <Text style={styles.stickerTitle}>PARTY MISSION CLEARED</Text>
+          <Image source={require('../../assets/icons/groupleveling-logo.png')} style={styles.logoSticker} contentFit="contain" />
+          <View style={styles.stickerDataRow}>
+            <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>DISTANCE</Text><Text style={styles.stickerDataValue}>{distanceKm}</Text></View>
+            <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>PACE</Text><Text style={styles.stickerDataValue}>{paceStr}</Text></View>
+            <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>TIME</Text><Text style={styles.stickerDataValue}>{timeStr}</Text></View>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <ViewShot ref={shotRef} options={{ format: "png", quality: 1, result: "tmpfile" }}>
       {variant === 'sticker' && renderSticker()}
+      {variant === 'party_sticker' && renderPartySticker()}
       {(variant === 'full' || variant === 'minimal') && renderStandard()}
     </ViewShot>
   );
@@ -376,4 +432,23 @@ const styles = StyleSheet.create({
   stickerDataItem: { alignItems: 'center' },
   stickerDataLabel: { color: '#94a3b8', fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 4 },
   stickerDataValue: { color: '#FFF', fontSize: 18, fontWeight: '900', fontVariant: ['tabular-nums'], textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  partyAvatarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+    marginBottom: -40,
+    width: '100%',
+  },
+  partyAvatarGrid: {
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  partyAvatarWrapper: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 15,
+  },
 });

@@ -86,6 +86,11 @@ export const usePaintTool = () => {
           const dy_off = (t.offsetY || 0) - offsetY;
           return (dx_off * dx_off + dy_off * dy_off) < 4; // 2px threshold
         }) || null;
+      } else if (currentSnapMode === 'half') {
+        // Only replace if they are exactly on the same half-grid snap point!
+        tileToRemove = tilesAtPos.find(t => 
+          (t.offsetX || 0) === offsetX && (t.offsetY || 0) === offsetY
+        ) || null;
       } else {
         tileToRemove = tilesAtPos[0] || null;
       }

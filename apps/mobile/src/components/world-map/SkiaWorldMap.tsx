@@ -332,10 +332,8 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
     return {
       transform: [
-        { translateX: centerX },
-        { translateY: centerY },
-        { translateX: roundedMapLeft },
-        { translateY: roundedMapTop },
+        { translateX: roundedMapLeft + MAP_SCALE * centerX },
+        { translateY: roundedMapTop + MAP_SCALE * centerY },
         { scale: MAP_SCALE }
       ]
     };

@@ -26,10 +26,11 @@ export default function RunCompleteScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   
-  // Refs for 3 cards
+  // Refs for 4 cards
   const cardRef = useRef<any>(null);
   const cardMinimalRef = useRef<any>(null);
   const cardStickerRef = useRef<any>(null);
+  const cardPartyStickerRef = useRef<any>(null);
   
   const runRecordedRef = useRef(false);
   const [sharing, setSharing] = useState(false);
@@ -46,6 +47,7 @@ export default function RunCompleteScreen() {
   const [showChest, setShowChest] = useState(false);
   const [chestType, setChestType] = useState<'small' | 'silver' | 'medium' | 'large'>('small');
   const [partySize, setPartySize] = useState(1);
+  const [partyMembers, setPartyMembers] = useState<any[]>([]);
 
   const { runData: paramRunData, dungeon: paramDungeon, demo, isInParty = false } = route.params || {};
   const isDemo = demo === true;
@@ -123,8 +125,34 @@ export default function RunCompleteScreen() {
         try {
           let currentPartySize = 1;
           if (isInParty && user.current_party_id) {
-            const { count } = await supabase.from('party_members').select('*', { count: 'exact', head: true }).eq('party_id', user.current_party_id);
-            currentPartySize = count || 1;
+            const { data: members, error: membersError } = await supabase
+              .from('party_members')
+              .select(`
+                hunter_id,
+                profiles:hunter_id (
+                  id, 
+                  hunter_name, 
+                  avatar, 
+                  level, 
+                  hunter_rank,
+                  cosmetics:user_cosmetics(
+                    id,
+                    equipped,
+                    shop_item_id,
+                    shop_items:shop_item_id(*)
+                  )
+                )
+              `)
+              .eq('party_id', user.current_party_id);
+
+            if (!membersError && members) {
+              currentPartySize = members.length;
+              const formattedMembers = members.map((m: any) => ({
+                ...m.profiles,
+                name: m.profiles.hunter_name // Map hunter_name to name for EndingRunCard
+              }));
+              setPartyMembers(formattedMembers);
+            }
           }
           setPartySize(currentPartySize);
 
@@ -182,14 +210,11 @@ export default function RunCompleteScreen() {
     setSharing(true);
     try {
       let activeRef;
-      let isSticker = false;
 
       if (activeIndex === 0) activeRef = cardRef;
       else if (activeIndex === 1) activeRef = cardMinimalRef;
-      else {
-        activeRef = cardStickerRef;
-        isSticker = true;
-      }
+      else if (activeIndex === 2) activeRef = cardStickerRef;
+      else activeRef = cardPartyStickerRef;
 
       const uri = await activeRef.current?.capture();
       if (!uri) throw new Error("Failed to capture image");
@@ -212,10 +237,11 @@ export default function RunCompleteScreen() {
     }
   };
 
-  const getVariantForIndex = (index: number): 'full' | 'minimal' | 'sticker' => {
+  const getVariantForIndex = (index: number): 'full' | 'minimal' | 'sticker' | 'party_sticker' => {
     if (index === 0) return 'full';
     if (index === 1) return 'minimal';
-    return 'sticker';
+    if (index === 2) return 'sticker';
+    return 'party_sticker';
   };
 
   return (
@@ -288,10 +314,30 @@ export default function RunCompleteScreen() {
               </View>
             </Pressable>
           </View>
+
+          {/* Slide 3: Party Sticker (Transparent Collage) - Only if party exists */}
+          {partyMembers.length > 0 && (
+            <View style={styles.slide}>
+              <Pressable onPress={() => setIsModalVisible(true)}>
+                <View style={styles.stickerPreviewBackground}>
+                  <EndingRunCard
+                    ref={cardPartyStickerRef}
+                    runData={runData}
+                    user={user}
+                    missionName={dungeon.name}
+                    variant="party_sticker"
+                    partyMembers={partyMembers}
+                    dungeonImage={{ uri: dungeon.image_url }}
+                    allShopItems={shopItems}
+                  />
+                </View>
+              </Pressable>
+            </View>
+          )}
         </ScrollView>
 
         <View style={styles.pagination}>
-          {[0, 1, 2].map((i) => (
+          {[0, 1, 2, ...(partyMembers.length > 0 ? [3] : [])].map((i) => (
             <View key={i} style={[styles.dot, activeIndex === i && styles.activeDot]} />
           ))}
         </View>
@@ -301,7 +347,7 @@ export default function RunCompleteScreen() {
 
       <View style={styles.footer}>
         <TouchableOpacity style={styles.shareBtn} onPress={handleShare} disabled={sharing}>
-            {sharing ? <ActivityIndicator color="#0f172a" /> : <Text style={styles.shareText}>{activeIndex === 2 ? "SHARE STICKER" : "SHARE CARD"}</Text>}
+            {sharing ? <ActivityIndicator color="#0f172a" /> : <Text style={styles.shareText}>{activeIndex >= 2 ? "SHARE STICKER" : "SHARE CARD"}</Text>}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.homeBtn} onPress={() => navigation.navigate('Home')}>
@@ -311,10 +357,11 @@ export default function RunCompleteScreen() {
 
       <Modal visible={isModalVisible} transparent={false} animationType="fade" onRequestClose={() => setIsModalVisible(false)}>
         <Pressable style={styles.modalContainer} onPress={() => setIsModalVisible(false)}>
-          <View style={[styles.modalContent, activeIndex === 2 && styles.stickerPreviewBackground]}>
+          <View style={[styles.modalContent, activeIndex >= 2 && styles.stickerPreviewBackground]}>
              <EndingRunCard 
               runData={runData} user={user} missionName={dungeon.name} animate={true}
               variant={getVariantForIndex(activeIndex)}
+              partyMembers={partyMembers}
               dungeonImage={{ uri: dungeon.image_url }} allShopItems={shopItems}
             />
           </View>

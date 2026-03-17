@@ -500,11 +500,19 @@ export const createMapDataSlice: StateCreator<
 
     // 1. Update local state with full data
     set((state) => {
-      const tileMap = new Map(state.tiles.map(t => [`${t.x},${t.y},${t.layer || 0}`, t]));
-      newTiles.forEach(nt => {
-        tileMap.set(`${nt.x},${nt.y},${nt.layer || 0}`, { ...nt, id: uuidv4() } as Tile);
+      const newTilesKeySet = new Set<string>();
+      const processedNewTiles = newTiles.map(nt => {
+        const key = `${nt.x},${nt.y},${nt.layer || 0},${nt.offsetX || 0},${nt.offsetY || 0}`;
+        newTilesKeySet.add(key);
+        return { ...nt, id: uuidv4() } as Tile;
       });
-      return { tiles: Array.from(tileMap.values()) };
+
+      const filteredExisting = state.tiles.filter(t => {
+        const key = `${t.x},${t.y},${t.layer || 0},${t.offsetX || 0},${t.offsetY || 0}`;
+        return !newTilesKeySet.has(key);
+      });
+
+      return { tiles: [...filteredExisting, ...processedNewTiles] };
     });
 
     // 2. Trigger debounced sync for all affected chunks

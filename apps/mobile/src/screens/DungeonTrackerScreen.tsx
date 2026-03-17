@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import MapView, { Polyline } from '@/utils/maps';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -6,13 +6,21 @@ import { useRunTracker } from '@/hooks/useRunTracker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio } from '@/contexts/AudioContext';
+import { InviteFriendsModal } from '@/components/modals/InviteFriendsModal';
+import { useAuth } from '@/contexts/AuthContext';
+import { Users } from 'lucide-react-native';
+import { supabase } from '@/lib/supabase';
 
 const DungeonTrackerScreen = () => {
   const route = useRoute<any>();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const { dungeon } = route.params || {};
   const { stopBackgroundMusic, playTrack } = useAudio();
+  const { user } = useAuth();
   
+  const [inviteModalVisible, setInviteModalVisible] = useState(false);
+  const [partySize, setPartySize] = useState(1);
+
   const { 
     isTracking, 
     distance, 
@@ -21,6 +29,23 @@ const DungeonTrackerScreen = () => {
     startRun, 
     stopRun 
   } = useRunTracker();
+
+  // Fetch party size if in party
+  useEffect(() => {
+    const fetchPartySize = async () => {
+      if (user?.current_party_id) {
+        const { count } = await supabase
+          .from('party_members')
+          .select('*', { count: 'exact', head: true })
+          .eq('party_id', user.current_party_id);
+        setPartySize(count || 1);
+      } else {
+        setPartySize(1);
+      }
+    };
+
+    fetchPartySize();
+  }, [user?.current_party_id, inviteModalVisible]);
 
   // Play "Beginning Map" music when entering the tracker screen
   useFocusEffect(
@@ -105,9 +130,21 @@ const DungeonTrackerScreen = () => {
            </View>
 
            {!isTracking ? (
-             <TouchableOpacity style={styles.btnStart} onPress={startRun}>
-               <Text style={styles.btnText}>INITIALIZE TRACKING</Text>
-             </TouchableOpacity>
+             <>
+               <TouchableOpacity 
+                 style={styles.btnParty} 
+                 onPress={() => setInviteModalVisible(true)}
+               >
+                 <Users size={18} color="#22d3ee" />
+                 <Text style={styles.btnPartyText}>
+                   PARTY {partySize > 1 ? `(${partySize})` : 'INVITE'}
+                 </Text>
+               </TouchableOpacity>
+
+               <TouchableOpacity style={styles.btnStart} onPress={startRun}>
+                 <Text style={styles.btnText}>INITIALIZE TRACKING</Text>
+               </TouchableOpacity>
+             </>
            ) : (
              <TouchableOpacity 
                style={[
@@ -130,6 +167,12 @@ const DungeonTrackerScreen = () => {
            )}
         </View>
       </LinearGradient>
+
+      <InviteFriendsModal 
+        visible={inviteModalVisible}
+        onClose={() => setInviteModalVisible(false)}
+        dungeonId={dungeon?.id}
+      />
     </View>
   );
 };
@@ -258,6 +301,25 @@ const styles = StyleSheet.create({
   btnText: {
     color: '#fff',
     fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  btnParty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(34, 211, 238, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.3)',
+    paddingVertical: 12,
+    borderRadius: 8,
+    width: '100%',
+    marginBottom: 15,
+  },
+  btnPartyText: {
+    color: '#22d3ee',
+    fontSize: 12,
     fontWeight: '900',
     letterSpacing: 2,
   },

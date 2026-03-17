@@ -18,6 +18,8 @@ import Animated, {
   FadeOut,
   ZoomIn,
   SlideInDown,
+  FadeInUp,
+  FadeInRight,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
   import { ChevronRight, FastForward } from 'lucide-react-native';
@@ -316,7 +318,7 @@ export function DialogueScene({
         {/* NPC Sprite (Large Background) */}
         {!!npcSpriteUrl && (
           <Animated.View
-            entering={FadeIn.delay(300)}
+            entering={FadeInRight.delay(150).duration(600).springify().damping(18)}
             style={[styles.spriteContainer, breathingStyle]}
             pointerEvents="none"
           >
@@ -351,7 +353,7 @@ export function DialogueScene({
 
         {/* Dialogue Box Area */}
         <Animated.View
-          entering={ZoomIn.duration(400).springify().damping(15)}
+          entering={FadeInUp.duration(500)}
           style={styles.dialogueWrapper}
         >
           <BlurView intensity={80} tint="dark" style={styles.dialogueBox}>
