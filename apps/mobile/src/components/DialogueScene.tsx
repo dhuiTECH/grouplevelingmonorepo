@@ -81,7 +81,7 @@ export function DialogueScene({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [displayedText, setDisplayedText] = useState('');
   const [isTypingComplete, setIsTypingComplete] = useState(false);
-  const [typeSound, setTypeSound] = useState<Audio.Sound | null>(null);
+  const typeSoundRef = useRef<Audio.Sound | null>(null);
   const [voiceSound, setVoiceSound] = useState<Audio.Sound | null>(null);
   const voiceCacheRef = useRef<Record<string, Audio.Sound | null>>({});
 
@@ -117,7 +117,7 @@ export function DialogueScene({
           require('../../assets/sounds/tap.mp3')
         );
         soundObj = sound;
-        setTypeSound(sound);
+        typeSoundRef.current = sound;
       } catch (err) {
         console.log('Failed to load type sound', err);
       }
@@ -221,9 +221,9 @@ export function DialogueScene({
         charsTypedSinceHaptic++;
 
         // Audio blip (skip if a voice line is playing to avoid noise stacking)
-        if (typeSound && !currentLine.voice_line_url) {
-           typeSound.setPositionAsync(0);
-           typeSound.playAsync();
+        if (typeSoundRef.current && !currentLine.voice_line_url) {
+           typeSoundRef.current.setPositionAsync(0);
+           typeSoundRef.current.playAsync();
         }
 
         // Haptic feedback every 3 characters
@@ -244,7 +244,7 @@ export function DialogueScene({
       isActive = false;
       clearInterval(interval);
     };
-  }, [currentIndex, visible, currentLine.text, typeSound, typingSpeed, dialogueScript]);
+  }, [currentIndex, visible, currentLine.text, typingSpeed, dialogueScript]);
 
   // 3. Interaction Handling
   const handleDialogueTap = () => {
@@ -308,12 +308,17 @@ export function DialogueScene({
       exiting={FadeOut}
       style={[StyleSheet.absoluteFill, { zIndex: 9999 }]}
     >
-      <ImageBackground
-        source={backgroundUrl || require('../../assets/stone-bg.jpg')}
-        style={styles.container}
-        resizeMode="cover"
-      >
-        <BlurView intensity={30} style={StyleSheet.absoluteFill} tint="dark" />
+      <View style={[styles.container, !backgroundUrl && styles.containerTransparent]}>
+        {!!backgroundUrl && (
+          <>
+            <Image
+              source={backgroundUrl}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+            />
+            <BlurView intensity={30} style={StyleSheet.absoluteFill} tint="dark" />
+          </>
+        )}
 
         {/* NPC Sprite (Large Background) */}
         {!!npcSpriteUrl && (
@@ -450,7 +455,7 @@ export function DialogueScene({
             </TouchableOpacity>
           </BlurView>
         </Animated.View>
-      </ImageBackground>
+      </View>
     </Animated.View>
   );
 }
@@ -459,6 +464,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#020617', // Fallback
+  },
+  containerTransparent: {
+    backgroundColor: 'transparent',
   },
   spriteContainer: {
     position: 'absolute',

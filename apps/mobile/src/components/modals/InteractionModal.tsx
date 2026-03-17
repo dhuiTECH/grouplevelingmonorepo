@@ -171,7 +171,8 @@ export const InteractionModal = ({ visible, onClose, activeInteraction }) => {
   }
 
   // 3. Resolve Visuals (Safe after early return)
-  const bgSource = mapNodeBackground(activeInteraction.interaction_data?.scene?.scene_background_url || activeInteraction.metadata?.visuals?.bg_url || activeInteraction.modal_image_url || activeInteraction.background_url);
+  const bgUrlStr = activeInteraction.interaction_data?.scene?.scene_background_url || activeInteraction.metadata?.visuals?.bg_url || activeInteraction.modal_image_url || activeInteraction.background_url;
+  const bgSource = bgUrlStr ? mapNodeBackground(bgUrlStr) : null;
   const spriteSource = mapNodeIcon(activeInteraction.interaction_data?.scene?.scene_npc_sprite_url || activeInteraction.metadata?.visuals?.npc_sprite_url || activeInteraction.metadata?.visuals?.monster_url || activeInteraction.icon_url);
   const isSpritesheet = activeInteraction.interaction_data?.scene?.npc_is_spritesheet || !!activeInteraction.metadata?.visuals?.spritesheet;
   const frameCount = activeInteraction.interaction_data?.scene?.npc_frame_count || activeInteraction.metadata?.visuals?.spritesheet?.frame_count || 1;
