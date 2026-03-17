@@ -306,28 +306,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
     if (nx !== currentTileX.value) {
       cancelAnimation(mapLeft);
-<<<<<<< HEAD
-      mapLeft.value = withTiming(
-        targetPixelX,
-        { duration, easing: Easing.linear },
-        () => {
-          currentTileX.value = nx; // always commit, even if interrupted
-          checkTileEnter(nx, ny);
-          isMoving.value = false; // always reset
-        },
-      );
-    } else if (ny !== currentTileY.value) {
-      cancelAnimation(mapTop);
-      mapTop.value = withTiming(
-        targetPixelY,
-        { duration, easing: Easing.linear },
-        () => {
-          currentTileY.value = ny; // always commit, even if interrupted
-          checkTileEnter(nx, ny);
-          isMoving.value = false; // always reset
-        },
-      );
-=======
+
       mapLeft.value = withTiming(targetPixelX, { duration, easing: Easing.linear }, () => {
         currentTileX.value = nx; // always commit, even if interrupted
         checkTileEnter(nx, ny);
@@ -340,7 +319,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
         checkTileEnter(nx, ny);
         // isMoving set in handleTileEnter after onTileEnter updates latestPos
       });
->>>>>>> 57e9496 (S)
+
     }
   };
 
