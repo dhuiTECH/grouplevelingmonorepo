@@ -148,6 +148,7 @@ export const WorldMapScreen = () => {
     visionGrid,
     nodesInVision,
     fastTravel,
+    bankedSteps,
     bankSteps,
     setCheckpointAlert,
     loading: movingOnMap,
@@ -383,7 +384,6 @@ export const WorldMapScreen = () => {
           activeDirection={activeDirection}
           isRunning={isRunning}
           isMoving={isMoving}
-          bankedSteps={bankedSteps}
           mapLeft={mapLeft}
           mapTop={mapTop}
           onTileEnter={onTileEnter}

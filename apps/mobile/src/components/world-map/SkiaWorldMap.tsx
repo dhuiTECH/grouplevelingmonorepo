@@ -45,7 +45,6 @@ interface SkiaWorldMapProps {
   activeDirection: SharedValue<"UP" | "DOWN" | "LEFT" | "RIGHT" | null>;
   isRunning: SharedValue<boolean>;
   isMoving: SharedValue<boolean>;
-  bankedSteps: SharedValue<number>;
   mapLeft: SharedValue<number>;
   mapTop: SharedValue<number>;
   onTileEnter?: (x: number, y: number) => void;
@@ -83,7 +82,6 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   activeDirection,
   isRunning,
   isMoving,
-  bankedSteps,
   mapLeft,
   mapTop,
   onTileEnter,
@@ -258,10 +256,6 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     "worklet";
     const dirStr = activeDirection.value;
     if (!dirStr) {
-      return;
-    }
-
-    if (bankedSteps.value < MOVE_COST) {
       return;
     }
 
