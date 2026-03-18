@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Group, Image, rect, SkImage, Paint, FilterMode } from '@shopify/react-native-skia';
-import { SharedValue } from 'react-native-reanimated';
+import { SharedValue, useDerivedValue } from 'react-native-reanimated';
 import { SkiaSpritesheet } from './SkiaSpritesheet';
 import { CustomTileMetadata } from '../../contexts/TileContext';
 import { getPixiTextureCoords, getLiquidTextureCoords } from './mapUtils';
@@ -87,13 +87,21 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
       activeUrl = mapSettings.dirt_sheet_url;
     } else if (smartType === 'water' && mapSettings?.water_sheet_url) {
       activeUrl = mapSettings.water_sheet_url;
+    } else if (smartType === 'dirtv2' && mapSettings?.dirtv2_sheet_url) {
+      activeUrl = mapSettings.dirtv2_sheet_url;
+    } else if (smartType === 'waterv2' && mapSettings?.waterv2_sheet_url) {
+      activeUrl = mapSettings.waterv2_sheet_url;
     }
 
     // DEBUG LOG TO SEE WHAT URL IS BEING USED
     // console.log(`Tile ${tile.x},${tile.y} [${smartType}] activeUrl:`, activeUrl, 'isProp:', isProp, 'isAutoTile:', tile.isAutoTile);
 
     const cleanSheetUrl = activeUrl && mapSettings
-      ? (smartType === 'dirt' ? mapSettings.cleanDirtSheetUrl : smartType === 'water' ? mapSettings.cleanWaterSheetUrl : mapSettings.cleanAutotileSheetUrl)
+      ? (smartType === 'dirt' ? mapSettings.cleanDirtSheetUrl : 
+         smartType === 'water' ? mapSettings.cleanWaterSheetUrl : 
+         smartType === 'dirtv2' ? mapSettings.cleanDirtv2SheetUrl : 
+         smartType === 'waterv2' ? mapSettings.cleanWaterv2SheetUrl : 
+         mapSettings.cleanAutotileSheetUrl)
       : undefined;
     const img = cleanSheetUrl ? images.get(cleanSheetUrl) : null;
     
@@ -107,27 +115,40 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
       const blockCol = tile.blockCol !== undefined ? tile.blockCol : (smartType === 'grass' ? 1 : 0);
       const blockRow = tile.blockRow || 0;
       
-      const coordsList = smartType === 'water'
+      const coordsList = (smartType === 'water' || smartType === 'waterv2')
         ? getLiquidTextureCoords(mask, blockCol, blockRow)
         : getPixiTextureCoords(mask, blockCol, blockRow);
 
       const coords = coordsList[0];
       
+      const autoTileTransform = useDerivedValue(() => {
+        if (smartType === 'waterv2') {
+           const NUM_FRAMES = 3;
+           const durationSecs = 1.0; // 1 second loop
+           const progress = (animationFrame.value % durationSecs) / durationSecs;
+           const frameIndex = Math.floor(progress * NUM_FRAMES) % NUM_FRAMES;
+           return [{ translateX: -frameIndex * 576 }];
+        }
+        return [];
+      });
+
       // Use clipping instead of src prop to ensure correct cropping of large sheets
       baseLayer = (
         <Group clip={baseDestRect}>
           <Paint antiAlias={false} />
-          <Image 
-            image={img} 
-            sampling={{ filter: FilterMode.Nearest }}
-            antiAlias={false}
-            rect={{
-              x: absPx - coords.sourceX,
-              y: absPy - coords.sourceY,
-              width: img.width(),
-              height: img.height()
-            }}
-          />
+          <Group transform={autoTileTransform}>
+            <Image 
+              image={img} 
+              sampling={{ filter: FilterMode.Nearest }}
+              antiAlias={false}
+              rect={{
+                x: absPx - coords.sourceX,
+                y: absPy - coords.sourceY,
+                width: img.width(),
+                height: img.height()
+              }}
+            />
+          </Group>
         </Group>
       );
     }
@@ -196,10 +217,18 @@ export const SkiaTile = React.memo(SkiaTileInternal, (prev, next) => {
   const prevIsSmart = prev.tile.isAutoTile || (!prev.tile.isAutoTile && !!prev.tile.smartType);
   const nextIsSmart = next.tile.isAutoTile || (!next.tile.isAutoTile && !!next.tile.smartType);
   const prevCleanUrl = prevIsSmart
-    ? (prev.tile.smartType === 'dirt' ? prev.mapSettings?.cleanDirtSheetUrl : prev.tile.smartType === 'water' ? prev.mapSettings?.cleanWaterSheetUrl : prev.mapSettings?.cleanAutotileSheetUrl)
+    ? (prev.tile.smartType === 'dirt' ? prev.mapSettings?.cleanDirtSheetUrl : 
+       prev.tile.smartType === 'water' ? prev.mapSettings?.cleanWaterSheetUrl : 
+       prev.tile.smartType === 'dirtv2' ? prev.mapSettings?.cleanDirtv2SheetUrl : 
+       prev.tile.smartType === 'waterv2' ? prev.mapSettings?.cleanWaterv2SheetUrl : 
+       prev.mapSettings?.cleanAutotileSheetUrl)
     : prev.tile.cleanUrl;
   const nextCleanUrl = nextIsSmart
-    ? (next.tile.smartType === 'dirt' ? next.mapSettings?.cleanDirtSheetUrl : next.tile.smartType === 'water' ? next.mapSettings?.cleanWaterSheetUrl : next.mapSettings?.cleanAutotileSheetUrl)
+    ? (next.tile.smartType === 'dirt' ? next.mapSettings?.cleanDirtSheetUrl : 
+       next.tile.smartType === 'water' ? next.mapSettings?.cleanWaterSheetUrl : 
+       next.tile.smartType === 'dirtv2' ? next.mapSettings?.cleanDirtv2SheetUrl : 
+       next.tile.smartType === 'waterv2' ? next.mapSettings?.cleanWaterv2SheetUrl : 
+       next.mapSettings?.cleanAutotileSheetUrl)
     : next.tile.cleanUrl;
 
   if (prevCleanUrl !== nextCleanUrl) return false;
