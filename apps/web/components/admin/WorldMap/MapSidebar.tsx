@@ -44,6 +44,8 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
   const autoTileSheetUrl = useMapStore(state => state.autoTileSheetUrl);
   const dirtSheetUrl = useMapStore(state => state.dirtSheetUrl);
   const waterSheetUrl = useMapStore(state => state.waterSheetUrl);
+  const dirtv2SheetUrl = useMapStore(state => state.dirtv2SheetUrl);
+  const waterv2SheetUrl = useMapStore(state => state.waterv2SheetUrl);
   const selectedWaterBaseId = useMapStore(state => state.selectedWaterBaseId);
   const selectedFoamStripId = useMapStore(state => state.selectedFoamStripId);
   const sidebarWidth = useMapStore(state => state.sidebarWidth);
@@ -63,6 +65,8 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
   const setAutoTileSheetUrl = useMapStore(state => state.setAutoTileSheetUrl);
   const setDirtSheetUrl = useMapStore(state => state.setDirtSheetUrl);
   const setWaterSheetUrl = useMapStore(state => state.setWaterSheetUrl);
+  const setDirtv2SheetUrl = useMapStore(state => state.setDirtv2SheetUrl);
+  const setWaterv2SheetUrl = useMapStore(state => state.setWaterv2SheetUrl);
   const setSelectedWaterBaseId = useMapStore(state => state.setSelectedWaterBaseId);
   const setSelectedFoamStripId = useMapStore(state => state.setSelectedFoamStripId);
   const waterBaseTile = useMapStore(state => state.waterBaseTile);
@@ -84,6 +88,8 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
   const autoTileInputRef = useRef<HTMLInputElement>(null);
   const dirtInputRef = useRef<HTMLInputElement>(null);
   const waterInputRef = useRef<HTMLInputElement>(null);
+  const dirtv2InputRef = useRef<HTMLInputElement>(null);
+  const waterv2InputRef = useRef<HTMLInputElement>(null);
   const waterBaseUploadRef = useRef<HTMLInputElement>(null);
   const foamStripUploadRef = useRef<HTMLInputElement>(null);
   
@@ -213,6 +219,26 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
       await setWaterSheetUrl(publicUrl);
     }
     if (waterInputRef.current) waterInputRef.current.value = '';
+  };
+
+  const handleDirtv2SheetUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const publicUrl = await handleUploadAsset(file, 'tiles/auto');
+    if (publicUrl) {
+      await setDirtv2SheetUrl(publicUrl);
+    }
+    if (dirtv2InputRef.current) dirtv2InputRef.current.value = '';
+  };
+
+  const handleWaterv2SheetUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const publicUrl = await handleUploadAsset(file, 'tiles/auto');
+    if (publicUrl) {
+      await setWaterv2SheetUrl(publicUrl);
+    }
+    if (waterv2InputRef.current) waterv2InputRef.current.value = '';
   };
 
   const processFiles = async (files: FileList | File[], category: 'tile' | 'prop' | 'road' | 'water_base' | 'foam_strip' | 'structure' | 'mountain' | 'big_structure' | 'poi' = 'tile') => {
@@ -817,6 +843,44 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
             ) : (
               <div onClick={() => waterInputRef.current?.click()} className="h-10 bg-slate-900/30 rounded border border-dashed border-slate-800 flex items-center justify-center cursor-pointer">
                 <span className="text-[9px] text-slate-700 font-black uppercase">No Water Sheet</span>
+              </div>
+            )}
+          </div>
+
+          {/* Dirt v2 Sheet */}
+          <div className="space-y-2 pt-2 border-t border-slate-800/50">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Dirt v2 Sheet</label>
+              <button onClick={() => dirtv2InputRef.current?.click()} className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded border border-slate-700 font-bold transition-colors">LOAD</button>
+              <input type="file" ref={dirtv2InputRef} className="hidden" accept="image/png" onChange={handleDirtv2SheetUpload} />
+            </div>
+            {dirtv2SheetUrl ? (
+              <div className="relative h-10 bg-slate-950 rounded border border-slate-800 overflow-hidden group">
+                 <img src={dirtv2SheetUrl} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" alt="Dirt v2" />
+                 <button onClick={() => setDirtv2SheetUrl(null)} className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"><XCircle size={10} /></button>
+              </div>
+            ) : (
+              <div onClick={() => dirtv2InputRef.current?.click()} className="h-10 bg-slate-900/30 rounded border border-dashed border-slate-800 flex items-center justify-center cursor-pointer">
+                <span className="text-[9px] text-slate-700 font-black uppercase">No Dirt v2 Sheet</span>
+              </div>
+            )}
+          </div>
+
+          {/* Water v2 Sheet */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Water v2 Sheet</label>
+              <button onClick={() => waterv2InputRef.current?.click()} className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded border border-slate-700 font-bold transition-colors">LOAD</button>
+              <input type="file" ref={waterv2InputRef} className="hidden" accept="image/png" onChange={handleWaterv2SheetUpload} />
+            </div>
+            {waterv2SheetUrl ? (
+              <div className="relative h-10 bg-slate-950 rounded border border-slate-800 overflow-hidden group">
+                 <img src={waterv2SheetUrl} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" alt="Water v2" />
+                 <button onClick={() => setWaterv2SheetUrl(null)} className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"><XCircle size={10} /></button>
+              </div>
+            ) : (
+              <div onClick={() => waterv2InputRef.current?.click()} className="h-10 bg-slate-900/30 rounded border border-dashed border-slate-800 flex items-center justify-center cursor-pointer">
+                <span className="text-[9px] text-slate-700 font-black uppercase">No Water v2 Sheet</span>
               </div>
             )}
           </div>

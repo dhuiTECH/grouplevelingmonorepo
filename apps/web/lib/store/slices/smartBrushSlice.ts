@@ -23,6 +23,8 @@ export const createSmartBrushSlice: StateCreator<
   autoTileSheetUrl: null,
   dirtSheetUrl: null,
   waterSheetUrl: null,
+  dirtv2SheetUrl: null,
+  waterv2SheetUrl: null,
   selectedWaterBaseId: null,
   selectedFoamStripId: null,
   collisionMode: 'full',
@@ -68,6 +70,14 @@ export const createSmartBrushSlice: StateCreator<
   setWaterSheetUrl: async (url) => {
     set({ waterSheetUrl: url });
     await supabase.from('world_map_settings').upsert({ id: 1, water_sheet_url: url }, { onConflict: 'id' });
+  },
+  setDirtv2SheetUrl: async (url) => {
+    set({ dirtv2SheetUrl: url });
+    await supabase.from('world_map_settings').upsert({ id: 1, dirtv2_sheet_url: url }, { onConflict: 'id' });
+  },
+  setWaterv2SheetUrl: async (url) => {
+    set({ waterv2SheetUrl: url });
+    await supabase.from('world_map_settings').upsert({ id: 1, waterv2_sheet_url: url }, { onConflict: 'id' });
   },
   setSelectedWaterBaseId: async (id) => {
     set({ selectedWaterBaseId: id });

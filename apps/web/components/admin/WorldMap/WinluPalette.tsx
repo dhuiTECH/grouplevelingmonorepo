@@ -11,6 +11,8 @@ export const WinluPalette = ({ compact = false }: { compact?: boolean }) => {
   const autoTileSheetUrl = useMapStore(state => state.autoTileSheetUrl);
   const dirtSheetUrl = useMapStore(state => state.dirtSheetUrl);
   const waterSheetUrl = useMapStore(state => state.waterSheetUrl);
+  const dirtv2SheetUrl = useMapStore(state => state.dirtv2SheetUrl);
+  const waterv2SheetUrl = useMapStore(state => state.waterv2SheetUrl);
   const selectedSmartType = useMapStore(state => state.selectedSmartType);
   const setSelectedSmartType = useMapStore(state => state.setSelectedSmartType);
 
@@ -20,6 +22,8 @@ export const WinluPalette = ({ compact = false }: { compact?: boolean }) => {
     grass: { url: autoTileSheetUrl, name: 'Grass' },
     dirt: { url: dirtSheetUrl, name: 'Dirt' },
     water: { url: waterSheetUrl, name: 'Water' },
+    dirtv2: { url: dirtv2SheetUrl, name: 'Dirt v2' },
+    waterv2: { url: waterv2SheetUrl, name: 'Water v2' },
   };
 
   const [selectedSheet, setSelectedSheet] = useState('grass');

@@ -54,6 +54,8 @@ export const createMapDataSlice: StateCreator<
           autoTileSheetUrl: settingsData.autotile_sheet_url,
           dirtSheetUrl: settingsData.dirt_sheet_url,
           waterSheetUrl: settingsData.water_sheet_url,
+          dirtv2SheetUrl: settingsData.dirtv2_sheet_url,
+          waterv2SheetUrl: settingsData.waterv2_sheet_url,
         });
       }
 

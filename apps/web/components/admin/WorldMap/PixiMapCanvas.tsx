@@ -159,9 +159,10 @@ PixiTile.displayName = 'PixiTile';
 
 // --- Smart Tile Component ---
 const SmartPixiTile = React.memo(({
-  tile, customTileLookup, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl, isFoamEnabled, foamStripTile, worldSize, showDebugNumbers
+  tile, customTileLookup, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl, dirtv2SheetUrl, waterv2SheetUrl, isFoamEnabled, foamStripTile, worldSize, showDebugNumbers
 }: {
   tile: Tile; customTileLookup: Map<string, CustomTile>; autoTileSheetUrl?: string | null; dirtSheetUrl?: string | null; waterSheetUrl?: string | null;
+  dirtv2SheetUrl?: string | null; waterv2SheetUrl?: string | null;
   isFoamEnabled: boolean; foamStripTile?: CustomTile; worldSize: number; onPropMouseDown?: (tileId: string, e: any) => void;
   showDebugNumbers?: boolean; selectedTool?: string;
 }) => {
@@ -176,6 +177,8 @@ const SmartPixiTile = React.memo(({
   if (tile.isAutoTile || isFrozenSmartTile) {
     if (effectiveSmartType === 'water' && waterSheetUrl) mainUrl = waterSheetUrl;
     else if (effectiveSmartType === 'dirt' && dirtSheetUrl) mainUrl = dirtSheetUrl;
+    else if (effectiveSmartType === 'dirtv2' && dirtv2SheetUrl) mainUrl = dirtv2SheetUrl;
+    else if (effectiveSmartType === 'waterv2' && waterv2SheetUrl) mainUrl = waterv2SheetUrl;
     else if (autoTileSheetUrl) mainUrl = autoTileSheetUrl;
   }
 
@@ -292,9 +295,36 @@ const SmartPixiTile = React.memo(({
 
   // Silent ticker that mutates the GPU texture directly without React re-renders
   useTick(() => {
-    if (!isAnimated || !spriteRef.current || !mainTextureBase?.source) return;
+    const isWaterv2 = effectiveSmartType === 'waterv2';
+    if ((!isAnimated && !isWaterv2) || !spriteRef.current || !mainTextureBase?.source) return;
 
     const globalTick = useTickStore.getState().globalTick;
+
+    if (isWaterv2) {
+      const NUM_FRAMES = 3;
+      const durationTicks = 60; // 1 second at 60fps
+      const currentFrame = Math.floor((globalTick % durationTicks) / (durationTicks / NUM_FRAMES)) % NUM_FRAMES;
+
+      if (currentFrame !== prevFrameRef.current) {
+        prevFrameRef.current = currentFrame;
+        const coords = getLiquidTextureCoords(tile.bitmask || 0, tile.blockCol || 0, tile.blockRow || 0);
+        const q = coords[0];
+        const frameX = q.sourceX + (currentFrame * 576);
+        const cacheKey = `waterv2-${mainUrl}-${tile.bitmask}-${tile.blockCol}-${tile.blockRow}-${currentFrame}`;
+
+        if (!textureCache[cacheKey]) {
+          try {
+            textureCache[cacheKey] = new PIXI.Texture({
+              source: mainTextureBase.source,
+              frame: new PIXI.Rectangle(frameX, q.sourceY, q.sourceWidth, q.sourceHeight)
+            });
+          } catch (e) { return; }
+        }
+        spriteRef.current.texture = textureCache[cacheKey];
+      }
+      return;
+    }
+
     const currentFrame = Math.floor(globalTick * speed) % frameCount;
 
     if (currentFrame !== prevFrameRef.current) {
@@ -490,6 +520,8 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
   const autoTileSheetUrl = useMapStore(state => state.autoTileSheetUrl);
   const dirtSheetUrl = useMapStore(state => state.dirtSheetUrl);
   const waterSheetUrl = useMapStore(state => state.waterSheetUrl);
+  const dirtv2SheetUrl = useMapStore(state => state.dirtv2SheetUrl);
+  const waterv2SheetUrl = useMapStore(state => state.waterv2SheetUrl);
   const selection = useMapStore(state => state.selection);
 
   // Pre-calculate custom tile lookup map for O(1) access during culling and rendering
@@ -559,12 +591,14 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
       <SmartPixiTile
         key={`${tile.id}-${tile.bitmask}-${tile.foamBitmask}`} tile={tile} customTileLookup={customTileLookup}
         autoTileSheetUrl={autoTileSheetUrl} dirtSheetUrl={dirtSheetUrl} waterSheetUrl={waterSheetUrl}
+        dirtv2SheetUrl={dirtv2SheetUrl} waterv2SheetUrl={waterv2SheetUrl}
         isFoamEnabled={isFoamEnabled} foamStripTile={foamStripTile} worldSize={worldSize}
         showDebugNumbers={showDebugNumbers}
       />
     ));
   }, [
     visibleTiles, customTileLookup, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl,
+    dirtv2SheetUrl, waterv2SheetUrl,
     isFoamEnabled, foamStripTile, worldSize, showDebugNumbers
   ]);
 

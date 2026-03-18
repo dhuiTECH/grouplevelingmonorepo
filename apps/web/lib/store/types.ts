@@ -131,6 +131,8 @@ export interface SmartBrushSlice {
   autoTileSheetUrl: string | null;
   dirtSheetUrl: string | null;
   waterSheetUrl: string | null;
+  dirtv2SheetUrl: string | null;
+  waterv2SheetUrl: string | null;
   selectedWaterBaseId: string | null;
   selectedFoamStripId: string | null;
   collisionMode: 'full' | 'edge';
@@ -147,6 +149,8 @@ export interface SmartBrushSlice {
   setAutoTileSheetUrl: (url: string | null) => Promise<void>;
   setDirtSheetUrl: (url: string | null) => Promise<void>;
   setWaterSheetUrl: (url: string | null) => Promise<void>;
+  setDirtv2SheetUrl: (url: string | null) => Promise<void>;
+  setWaterv2SheetUrl: (url: string | null) => Promise<void>;
   setSelectedWaterBaseId: (id: string | null) => Promise<void>;
   setSelectedFoamStripId: (id: string | null) => Promise<void>;
   waterBaseTile: () => CustomTile | undefined;
