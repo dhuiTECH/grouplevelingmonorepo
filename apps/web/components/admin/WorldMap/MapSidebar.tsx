@@ -122,20 +122,36 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
     }
   }, [currentlyEditedTile?.id, currentlyEditedTile?.isSpritesheet]);
 
-  // Debounced store updates
+  // Debounced store updates (shorter delay + immediate commit on blur)
   const debounceTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const clearDebouncedUpdate = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+  };
+
+  const commitTileUpdate = (updates: Partial<CustomTile>) => {
+    if (!currentlyEditedTile) return;
+    clearDebouncedUpdate();
+    updateCustomTile(currentlyEditedTile.id, updates);
+  };
+
   const debouncedUpdate = (updates: Partial<CustomTile>) => {
     if (!currentlyEditedTile) return;
-    
-    // Clear existing timeout
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    
-    // Set a much longer debounce for dimension/property edits (1500ms)
-    // This ensures we only sync to Supabase once the user is truly done typing
+    clearDebouncedUpdate();
     debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
       updateCustomTile(currentlyEditedTile.id, updates);
-    }, 1500);
+    }, 450);
   };
+
+  React.useEffect(
+    () => () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    },
+    [],
+  );
 
   const [activeTab, setActiveTab] = React.useState<'water' | 'ground' | 'road' | 'prop' | 'structure' | 'mountain' | 'big_structure' | 'poi'>('ground');
   const [currentPage, setCurrentPage] = React.useState(0);
@@ -695,7 +711,9 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
                   onBlur={() => {
                     if (layerInputValue === '' || isNaN(parseInt(layerInputValue))) {
                       setLayerInputValue('0');
-                      debouncedUpdate({ layer: 0 });
+                      commitTileUpdate({ layer: 0 });
+                    } else {
+                      commitTileUpdate({ layer: parseInt(layerInputValue, 10) });
                     }
                   }}
                   className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" 
@@ -714,7 +732,9 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
                   onBlur={() => {
                     if (rotationInputValue === '' || isNaN(parseInt(rotationInputValue))) {
                       setRotationInputValue('0');
-                      debouncedUpdate({ rotation: 0 });
+                      commitTileUpdate({ rotation: 0 });
+                    } else {
+                      commitTileUpdate({ rotation: parseInt(rotationInputValue, 10) });
                     }
                   }}
                   className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" 
@@ -733,7 +753,9 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
                   onBlur={() => {
                     if (widthInputValue === '' || isNaN(parseInt(widthInputValue))) {
                       setWidthInputValue('48');
-                      debouncedUpdate({ frameWidth: 48 });
+                      commitTileUpdate({ frameWidth: 48 });
+                    } else {
+                      commitTileUpdate({ frameWidth: parseInt(widthInputValue, 10) });
                     }
                   }}
                   className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" 
@@ -752,7 +774,9 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
                   onBlur={() => {
                     if (heightInputValue === '' || isNaN(parseInt(heightInputValue))) {
                       setHeightInputValue('48');
-                      debouncedUpdate({ frameHeight: 48 });
+                      commitTileUpdate({ frameHeight: 48 });
+                    } else {
+                      commitTileUpdate({ frameHeight: parseInt(heightInputValue, 10) });
                     }
                   }}
                   className="bg-slate-950 border border-slate-700 text-[10px] text-cyan-400 rounded px-1 py-1 font-bold text-center" 
@@ -822,7 +846,9 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
                     onBlur={() => {
                       if (frameInputValue === '' || isNaN(parseInt(frameInputValue))) {
                         setFrameInputValue('1');
-                        debouncedUpdate({ frameCount: 1 });
+                        commitTileUpdate({ frameCount: 1 });
+                      } else {
+                        commitTileUpdate({ frameCount: parseInt(frameInputValue, 10) });
                       }
                     }}
                     className="bg-slate-900 border border-slate-700 text-[9px] text-cyan-400 rounded px-1 py-0.5 text-center"
@@ -842,7 +868,9 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
                     onBlur={() => {
                       if (speedInputValue === '' || isNaN(parseFloat(speedInputValue))) {
                         setSpeedInputValue('0.8');
-                        debouncedUpdate({ animationSpeed: 0.8 });
+                        commitTileUpdate({ animationSpeed: 0.8 });
+                      } else {
+                        commitTileUpdate({ animationSpeed: parseFloat(speedInputValue) });
                       }
                     }}
                     className="bg-slate-900 border border-slate-700 text-[9px] text-cyan-400 rounded px-1 py-0.5 text-center"

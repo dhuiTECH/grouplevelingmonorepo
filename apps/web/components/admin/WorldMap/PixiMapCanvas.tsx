@@ -157,6 +157,92 @@ const PixiTile = React.memo(React.forwardRef<PIXI.Sprite, any>(({
 
 PixiTile.displayName = 'PixiTile';
 
+/** Pixi tick only for spritesheet-animated or waterv2 tiles — avoids ~60fps callbacks on every static tile. */
+const AnimatedTileTicker = React.memo(function AnimatedTileTicker({
+  spriteRef,
+  mainTextureBase,
+  isAnimated,
+  effectiveSmartType,
+  tile,
+  mainUrl,
+  frameCount,
+  speed,
+  displayWidth,
+  displayHeight,
+}: {
+  spriteRef: React.MutableRefObject<PIXI.Sprite | null>;
+  mainTextureBase: PIXI.Texture | null;
+  isAnimated: boolean;
+  effectiveSmartType: string;
+  tile: Tile;
+  mainUrl: string;
+  frameCount: number;
+  speed: number;
+  displayWidth: number;
+  displayHeight: number;
+}) {
+  const prevFrameRef = useRef(-1);
+
+  useTick(() => {
+    const isWaterv2 = effectiveSmartType === 'waterv2';
+    if ((!isAnimated && !isWaterv2) || !spriteRef.current || !mainTextureBase?.source) return;
+
+    const globalTick = useTickStore.getState().globalTick;
+
+    if (isWaterv2) {
+      const NUM_FRAMES = 3;
+      const durationTicks = 60;
+      const currentFrame = Math.floor((globalTick % durationTicks) / (durationTicks / NUM_FRAMES)) % NUM_FRAMES;
+
+      if (currentFrame !== prevFrameRef.current) {
+        prevFrameRef.current = currentFrame;
+        const coords = getLiquidTextureCoords(tile.bitmask || 0, tile.blockCol || 0, tile.blockRow || 0);
+        const q = coords[0];
+        const frameX = q.sourceX + (currentFrame * 576);
+        const cacheKey = `waterv2-${mainUrl}-${tile.bitmask}-${tile.blockCol}-${tile.blockRow}-${currentFrame}`;
+
+        if (!textureCache[cacheKey]) {
+          try {
+            textureCache[cacheKey] = new PIXI.Texture({
+              source: mainTextureBase.source,
+              frame: new PIXI.Rectangle(frameX, q.sourceY, q.sourceWidth, q.sourceHeight)
+            });
+          } catch (e) { return; }
+        }
+        spriteRef.current.texture = textureCache[cacheKey];
+      }
+      return;
+    }
+
+    const fc = Math.max(1, frameCount);
+    const currentFrame = Math.floor(globalTick * speed) % fc;
+
+    if (currentFrame !== prevFrameRef.current) {
+      prevFrameRef.current = currentFrame;
+      const cacheKey = `${mainUrl}-frame-${currentFrame}-${displayWidth}x${displayHeight}`;
+
+      if (!textureCache[cacheKey]) {
+        const frameX = currentFrame * displayWidth;
+        try {
+          textureCache[cacheKey] = new PIXI.Texture({
+            source: mainTextureBase.source,
+            frame: new PIXI.Rectangle(
+              mainTextureBase.source.width >= frameX + displayWidth ? frameX : 0,
+              0,
+              displayWidth,
+              displayHeight
+            )
+          });
+        } catch (e) { return; }
+      }
+
+      spriteRef.current.texture = textureCache[cacheKey];
+    }
+  });
+
+  return null;
+});
+
 // --- Smart Tile Component ---
 const SmartPixiTile = React.memo(({
   tile, customTileLookup, autoTileSheetUrl, dirtSheetUrl, waterSheetUrl, dirtv2SheetUrl, waterv2SheetUrl, isFoamEnabled, foamStripTile, worldSize, showDebugNumbers
@@ -198,7 +284,9 @@ const SmartPixiTile = React.memo(({
   const speed = Number(liveCustomTile?.animationSpeed || tile.animationSpeed || 1);
 
   const spriteRef = useRef<PIXI.Sprite | null>(null);
-  const prevFrameRef = useRef(-1);
+  const needsAnimationTick =
+    !!mainTextureBase?.source &&
+    (isAnimated || effectiveSmartType === 'waterv2');
 
   const quarterTextures = useMemo(() => {
     if (!mainTextureBase || !mainTextureBase.source || !isSmartRendered) return null;
@@ -293,63 +381,6 @@ const SmartPixiTile = React.memo(({
     return textureCache[cacheKey];
   }, [foamTextureBase, foamQuarterTextures, tile.foamBitmask, foamUrl]);
 
-  // Silent ticker that mutates the GPU texture directly without React re-renders
-  useTick(() => {
-    const isWaterv2 = effectiveSmartType === 'waterv2';
-    if ((!isAnimated && !isWaterv2) || !spriteRef.current || !mainTextureBase?.source) return;
-
-    const globalTick = useTickStore.getState().globalTick;
-
-    if (isWaterv2) {
-      const NUM_FRAMES = 3;
-      const durationTicks = 60; // 1 second at 60fps
-      const currentFrame = Math.floor((globalTick % durationTicks) / (durationTicks / NUM_FRAMES)) % NUM_FRAMES;
-
-      if (currentFrame !== prevFrameRef.current) {
-        prevFrameRef.current = currentFrame;
-        const coords = getLiquidTextureCoords(tile.bitmask || 0, tile.blockCol || 0, tile.blockRow || 0);
-        const q = coords[0];
-        const frameX = q.sourceX + (currentFrame * 576);
-        const cacheKey = `waterv2-${mainUrl}-${tile.bitmask}-${tile.blockCol}-${tile.blockRow}-${currentFrame}`;
-
-        if (!textureCache[cacheKey]) {
-          try {
-            textureCache[cacheKey] = new PIXI.Texture({
-              source: mainTextureBase.source,
-              frame: new PIXI.Rectangle(frameX, q.sourceY, q.sourceWidth, q.sourceHeight)
-            });
-          } catch (e) { return; }
-        }
-        spriteRef.current.texture = textureCache[cacheKey];
-      }
-      return;
-    }
-
-    const currentFrame = Math.floor(globalTick * speed) % frameCount;
-
-    if (currentFrame !== prevFrameRef.current) {
-      prevFrameRef.current = currentFrame;
-      const cacheKey = `${mainUrl}-frame-${currentFrame}-${displayWidth}x${displayHeight}`;
-
-      if (!textureCache[cacheKey]) {
-        const frameX = currentFrame * displayWidth;
-        try {
-          textureCache[cacheKey] = new PIXI.Texture({
-            source: mainTextureBase.source,
-            frame: new PIXI.Rectangle(
-              mainTextureBase.source.width >= frameX + displayWidth ? frameX : 0,
-              0,
-              displayWidth,
-              displayHeight
-            )
-          });
-        } catch (e) { return; }
-      }
-
-      spriteRef.current.texture = textureCache[cacheKey];
-    }
-  });
-
   const x = tile.x * TILE_SIZE + worldSize / 2 + (tile.offsetX || 0) - (displayWidth - TILE_SIZE) / 2;
   const y = tile.y * TILE_SIZE + worldSize / 2 + (tile.offsetY || 0) - (displayHeight - TILE_SIZE);
 
@@ -359,22 +390,38 @@ const SmartPixiTile = React.memo(({
   } : null;
 
   return (
-    <PixiTile
-      ref={spriteRef}
-      zIndex={zIndex}
-      texture={texture}
-      x={x}
-      y={y}
-      width={displayWidth}
-      height={displayHeight}
-      rotation={tile.rotation || 0}
-      isInteractive={false}
-      onMouseDown={undefined}
-      foamTexture={foamTexture}
-      quarterTextures={quarterTextures || undefined}
-      foamQuarterTextures={foamQuarterTextures || undefined}
-      debugInfo={debugInfo}
-    />
+    <React.Fragment>
+      <PixiTile
+        ref={spriteRef}
+        zIndex={zIndex}
+        texture={texture}
+        x={x}
+        y={y}
+        width={displayWidth}
+        height={displayHeight}
+        rotation={tile.rotation || 0}
+        isInteractive={false}
+        onMouseDown={undefined}
+        foamTexture={foamTexture}
+        quarterTextures={quarterTextures || undefined}
+        foamQuarterTextures={foamQuarterTextures || undefined}
+        debugInfo={debugInfo}
+      />
+      {needsAnimationTick && mainTextureBase && (
+        <AnimatedTileTicker
+          spriteRef={spriteRef}
+          mainTextureBase={mainTextureBase}
+          isAnimated={!!isAnimated}
+          effectiveSmartType={effectiveSmartType}
+          tile={tile}
+          mainUrl={mainUrl}
+          frameCount={frameCount}
+          speed={speed}
+          displayWidth={displayWidth}
+          displayHeight={displayHeight}
+        />
+      )}
+    </React.Fragment>
   );
 });
 

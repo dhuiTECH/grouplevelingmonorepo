@@ -3,7 +3,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../../supabase';
 import { calculateBitmask } from '../../../components/admin/WorldMap/mapUtils';
 import { MapState, MapDataSlice, Tile, CustomTile } from '../types';
-import { triggerChunkSync } from '../chunkSync';
+import {
+  triggerChunkSync,
+  queueChunkSyncs,
+  buildLibByUrl,
+  serializeTileForChunkPersistence,
+} from '../chunkSync';
 
 const CHUNK_SIZE = 16;
 
@@ -112,6 +117,7 @@ export const createMapDataSlice: StateCreator<
       if (chunksError) {
         console.error('Error loading map chunks ERROR DETAILS:', JSON.stringify(chunksError, null, 2));
       } else if (chunksData) {
+        const libByUrl = buildLibByUrl(get().customTiles);
         const allTiles: Tile[] = [];
         chunksData.forEach((chunk: any) => {
           const tileData = chunk.tile_data;
@@ -121,17 +127,19 @@ export const createMapDataSlice: StateCreator<
                  return;
               }
 
+              const lib = libByUrl.get((t.imageUrl || '').split('?')[0]);
+
               allTiles.push({
                 id: uuidv4(),
                 x: t.x,
                 y: t.y,
                 imageUrl: t.imageUrl,
                 type: t.type,
-                isSpritesheet: t.isSpritesheet,
-                frameCount: t.frameCount,
-                frameWidth: t.frame_width || t.frameWidth,
-                frameHeight: t.frame_height || t.frameHeight,
-                animationSpeed: t.animationSpeed,
+                isSpritesheet: lib?.isSpritesheet ?? t.isSpritesheet,
+                frameCount: lib?.frameCount ?? t.frameCount,
+                frameWidth: lib?.frameWidth ?? t.frame_width ?? t.frameWidth,
+                frameHeight: lib?.frameHeight ?? t.frame_height ?? t.frameHeight,
+                animationSpeed: lib?.animationSpeed ?? t.animationSpeed,
                 layer: t.layer || 0,
                 offsetX: t.offsetX || 0,
                 offsetY: t.offsetY || 0,
@@ -368,69 +376,53 @@ export const createMapDataSlice: StateCreator<
     const baseTileUrl = oldTile.url.split('?')[0];
 
     // Optimistically update local state
-    set((state) => ({
-      customTiles: state.customTiles.map(t =>
+    set((s) => ({
+      customTiles: s.customTiles.map(t =>
         t.id === id ? { ...t, ...updates, syncStatus: 'syncing' as const satisfies CustomTileSyncStatus } : t
       )
     }));
-    
-    // Check if this update actually changes properties that would affect placed tiles
-    const affectsPlacedTiles = 
-      updates.type !== undefined ||
+
+    const structuralPatch: Partial<Tile> = {};
+    if (updates.type !== undefined) structuralPatch.type = updates.type as Tile['type'];
+    if (updates.layer !== undefined) structuralPatch.layer = updates.layer;
+    if (updates.isWalkable !== undefined) structuralPatch.isWalkable = updates.isWalkable;
+    if (updates.snapToGrid !== undefined) structuralPatch.snapToGrid = updates.snapToGrid;
+    if (updates.isAutoFill !== undefined) structuralPatch.isAutoFill = updates.isAutoFill;
+    if (updates.isAutoTile !== undefined) structuralPatch.isAutoTile = updates.isAutoTile;
+    if (updates.rotation !== undefined) structuralPatch.rotation = updates.rotation;
+    if (updates.smartType !== undefined) structuralPatch.smartType = updates.smartType;
+
+    const hasStructural = Object.keys(structuralPatch).length > 0;
+    const hasSpriteMeta =
       updates.isSpritesheet !== undefined ||
       updates.frameCount !== undefined ||
       updates.frameWidth !== undefined ||
       updates.frameHeight !== undefined ||
-      updates.animationSpeed !== undefined ||
-      updates.layer !== undefined ||
-      updates.isWalkable !== undefined ||
-      updates.snapToGrid !== undefined ||
-      updates.isAutoFill !== undefined ||
-      updates.isAutoTile !== undefined ||
-      updates.rotation !== undefined ||
-      updates.smartType !== undefined;
+      updates.animationSpeed !== undefined;
 
-    if (affectsPlacedTiles) {
-      // PERFORMANCE OPTIMIZATION: Check if ANY tiles actually use this asset before running a full tiles.map
-      // This saves O(N) work on large maps when the edited tile isn't even used yet.
-      const hasAnyMatches = state.tiles.some(t => t.imageUrl?.split('?')[0] === baseTileUrl);
-      
+    const needsChunkResync = hasStructural || hasSpriteMeta;
+
+    if (needsChunkResync) {
+      const latest = get();
+      const hasAnyMatches = latest.tiles.some(t => t.imageUrl?.split('?')[0] === baseTileUrl);
+
       if (hasAnyMatches) {
-        const touchedChunks = new Set<string>();
-        set((state) => {
-          const newTiles = state.tiles.map(t => {
-            if (!t.imageUrl) return t;
-            
-            const tUrl = t.imageUrl.split('?')[0];
-            if (tUrl === baseTileUrl) {
-              touchedChunks.add(`${Math.floor(t.x / CHUNK_SIZE)},${Math.floor(t.y / CHUNK_SIZE)}`);
-              return { 
-                ...t, 
-                ...(updates.type !== undefined && { type: updates.type }),
-                ...(updates.isSpritesheet !== undefined && { isSpritesheet: updates.isSpritesheet }),
-                ...(updates.frameCount !== undefined && { frameCount: updates.frameCount }),
-                ...(updates.frameWidth !== undefined && { frameWidth: updates.frameWidth }),
-                ...(updates.frameHeight !== undefined && { frameHeight: updates.frameHeight }),
-                ...(updates.animationSpeed !== undefined && { animationSpeed: updates.animationSpeed }),
-                ...(updates.layer !== undefined && { layer: updates.layer }),
-                ...(updates.isWalkable !== undefined && { isWalkable: updates.isWalkable }),
-                ...(updates.snapToGrid !== undefined && { snapToGrid: updates.snapToGrid }),
-                ...(updates.isAutoFill !== undefined && { isAutoFill: updates.isAutoFill }),
-                ...(updates.isAutoTile !== undefined && { isAutoTile: updates.isAutoTile }),
-                ...(updates.rotation !== undefined && { rotation: updates.rotation }),
-                ...(updates.smartType !== undefined && { smartType: updates.smartType }),
-              };
-            }
-            return t;
-          });
-          return { tiles: newTiles };
-        });
+        if (hasStructural) {
+          set(s => ({
+            tiles: s.tiles.map(t => {
+              if (!t.imageUrl || t.imageUrl.split('?')[0] !== baseTileUrl) return t;
+              return { ...t, ...structuralPatch };
+            }),
+          }));
+        }
 
-        // Trigger sync for touched chunks
-        touchedChunks.forEach(key => {
-          const [cx, cy] = key.split(',').map(Number);
-          triggerChunkSync(cx, cy, get);
-        });
+        const chunkKeys = new Set<string>();
+        for (const t of get().tiles) {
+          if (!t.imageUrl) continue;
+          if (t.imageUrl.split('?')[0] !== baseTileUrl) continue;
+          chunkKeys.add(`${Math.floor(t.x / CHUNK_SIZE)},${Math.floor(t.y / CHUNK_SIZE)}`);
+        }
+        queueChunkSyncs([...chunkKeys], get);
       }
     }
 
@@ -759,8 +751,8 @@ export const createMapDataSlice: StateCreator<
   },
 
   forceSyncAllChunks: async () => {
-    // Recompute all chunks from the current in-memory tiles and upsert them.
     const allTiles = get().tiles;
+    const libByUrl = buildLibByUrl(get().customTiles);
     const chunks = new Map<string, Tile[]>();
 
     allTiles.forEach(t => {
@@ -774,10 +766,7 @@ export const createMapDataSlice: StateCreator<
     const entries = Array.from(chunks.entries());
     for (const [key, tiles] of entries) {
       const [cx, cy] = key.split(',').map(Number);
-      const chunkTiles = tiles.map(t => {
-        const { id, ...rest } = t;
-        return { ...rest, block_col: t.blockCol || 0, block_row: t.blockRow || 0 };
-      });
+      const chunkTiles = tiles.map(t => serializeTileForChunkPersistence(t, libByUrl));
 
       const { error } = await supabase.from('map_chunks').upsert({
         chunk_x: cx,
@@ -793,11 +782,8 @@ export const createMapDataSlice: StateCreator<
   },
 
   syncChunks: (chunkKeys: string[]) => {
-    const uniqueKeys = new Set(chunkKeys);
-    uniqueKeys.forEach(key => {
-      const [cx, cy] = key.split(',').map(Number);
-      triggerChunkSync(cx, cy, get);
-    });
+    const uniqueKeys = [...new Set(chunkKeys)];
+    queueChunkSyncs(uniqueKeys, get);
   },
 
   exportMap: () => {
