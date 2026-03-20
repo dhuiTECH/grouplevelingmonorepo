@@ -18,7 +18,7 @@ export const useMapInteraction = (
     nodes, tiles, customTiles, selectedTool, selectedTileId, selectedSmartType,
     setUndoStack, removeNode, updateNode,
     selectNode, setDraggingNode, setDragGrabOffset, setDraggingTile,
-    rotateTile, removeTileById, setSelection, setCurrentStamp, selectTile,
+    rotateTile, flipTile, removeTileById, setSelection, setCurrentStamp, selectTile,
     moveTile, setTool, nodeSnapToGrid, activeNodeType, addNode, smartBrushLock,
     layerSettings,
   } = useMapStore();
@@ -355,6 +355,22 @@ export const useMapInteraction = (
       if (topTileId) {
         e.stopPropagation();
         rotateTile(topTileId, e.shiftKey ? -90 : 90);
+      }
+      return;
+    }
+
+    if (tool === 'flip') {
+      const { positionX, positionY, scale } = transformComponentRef.current!.instance.transformState;
+      const rect = dropTargetRef.current!.getBoundingClientRect();
+      const worldX = (e.clientX - rect.left - positionX) / scale;
+      const worldY = (e.clientY - rect.top - positionY) / scale;
+      const gx = Math.floor((worldX - WORLD_SIZE / 2) / TILE_SIZE);
+      const gy = Math.floor((worldY - WORLD_SIZE / 2) / TILE_SIZE);
+
+      const topTileId = getTopMostTileId(gx, gy);
+      if (topTileId) {
+        e.stopPropagation();
+        void flipTile(topTileId);
       }
       return;
     }

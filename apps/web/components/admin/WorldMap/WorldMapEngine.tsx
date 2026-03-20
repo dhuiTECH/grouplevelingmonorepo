@@ -291,6 +291,10 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
           useMapStore.getState().setTool('rotate');
           return;
         }
+        if (e.key.toLowerCase() === 'h') {
+          useMapStore.getState().setTool('flip');
+          return;
+        }
         if (e.key.toLowerCase() === 'd') {
           setShowDebugModal(true);
           return;

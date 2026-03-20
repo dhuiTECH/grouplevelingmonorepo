@@ -18,6 +18,14 @@ interface SkiaTileProps {
   dictionaryData?: CustomTileMetadata;
 }
 
+/** Matches Pixi editor: scaleX then rotate around tile center. */
+function staticOrientTransform(rotation?: number, flipX?: boolean) {
+  const out: Array<{ scaleX: number } | { rotate: number }> = [];
+  if (flipX) out.push({ scaleX: -1 });
+  if (rotation) out.push({ rotate: (rotation * Math.PI) / 180 });
+  return out;
+}
+
 const SkiaTileInternal: React.FC<SkiaTileProps> = ({
   tile, absPx, absPy, tileSize, images, mapSettings, animationFrame, foamOpacity, isProp, dictionaryData
 }) => {
@@ -30,6 +38,11 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
   const displayHeight = frameHeight * (tileSize / 48);
   const offsetX = tile.offsetX || 0;
   const offsetY = tile.offsetY || 0;
+
+  const staticTransform = useMemo(
+    () => staticOrientTransform(tile.rotation, tile.flipX),
+    [tile.rotation, tile.flipX],
+  );
 
   // Lock the destination rect to the pixel grid to stop Nearest Neighbor tearing
   const destRect = useMemo(() => rect(
@@ -181,7 +194,7 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
       // If it's a spritesheet, ALWAYS use the spritesheet logic to ensure clipping, 
       // even if it only has 1 frame (prevents showing full ass horizontal strips).
       return (
-        <Group origin={{ x: destRect.x + destRect.width / 2, y: destRect.y + destRect.height / 2 }} transform={tile.rotation ? [{ rotate: (tile.rotation * Math.PI) / 180 }] : []}>
+        <Group origin={{ x: destRect.x + destRect.width / 2, y: destRect.y + destRect.height / 2 }} transform={staticTransform}>
           {foamLayer}
           <SkiaSpritesheet
             image={img}
@@ -194,7 +207,7 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
       );
     } else {
       return (
-        <Group origin={{ x: destRect.x + destRect.width / 2, y: destRect.y + destRect.height / 2 }} transform={tile.rotation ? [{ rotate: (tile.rotation * Math.PI) / 180 }] : []}>
+        <Group origin={{ x: destRect.x + destRect.width / 2, y: destRect.y + destRect.height / 2 }} transform={staticTransform}>
           {foamLayer}
           <Paint antiAlias={false} />
           <Image image={img} rect={destRect} fit="fill" sampling={{ filter: FilterMode.Nearest }} antiAlias={false} />
@@ -239,6 +252,7 @@ export const SkiaTile = React.memo(SkiaTileInternal, (prev, next) => {
   const t2 = next.tile;
   if (t1.layer !== t2.layer) return false;
   if (t1.rotation !== t2.rotation) return false;
+  if (!!t1.flipX !== !!t2.flipX) return false;
   if (t1.offsetX !== t2.offsetX) return false;
   if (t1.offsetY !== t2.offsetY) return false;
   if (t1.isAutoTile !== t2.isAutoTile) return false;

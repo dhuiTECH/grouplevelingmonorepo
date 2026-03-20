@@ -38,6 +38,8 @@ export interface Tile {
   blockCol?: number;
   blockRow?: number;
   rotation?: number; // In degrees
+  /** Horizontal mirror around tile center (static / prop tiles only; ignored for autotiles). */
+  flipX?: boolean;
   edgeBlocks?: number; // Directional edge collision bitmask: N=1, E=2, S=4, W=8
 }
 
@@ -63,7 +65,7 @@ export interface CustomTile {
   syncStatus?: 'synced' | 'syncing' | 'error';
 }
 
-export type ToolType = 'select' | 'paint' | 'erase' | 'node' | 'stamp' | 'eyedropper' | 'rotate' | 'collision';
+export type ToolType = 'select' | 'paint' | 'erase' | 'node' | 'stamp' | 'eyedropper' | 'rotate' | 'flip' | 'collision';
 
 export interface LayerSetting {
   locked: boolean;
@@ -197,12 +199,13 @@ export interface MapDataSlice {
   reorderCustomTiles: (tiles: CustomTile[]) => Promise<void>;
   setSpawnPoint: (x: number, y: number) => void;
   addTile: (tile: Tile) => void;
-  addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number, edgeBlocks?: number) => Promise<void>;
+  addTileSimple: (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number, edgeBlocks?: number, flipX?: boolean) => Promise<void>;
   batchAddTiles: (newTiles: Omit<Tile, 'id'>[]) => Promise<void>;
   removeTileAt: (x: number, y: number, excludeAutoTiles?: boolean) => Promise<Tile | null>;
   removeTileById: (id: string, excludeAutoTiles?: boolean) => Promise<void>;
   moveTile: (tileId: string, newX: number, newY: number, newOffsetX: number, newOffsetY: number) => Promise<void>;
   rotateTile: (tileId: string, rotationDelta: number) => Promise<void>;
+  flipTile: (tileId: string) => Promise<void>;
   replaceCustomTileAsset: (id: string, newUrl: string) => Promise<void>;
   updateTileAndNeighbors: (x: number, y: number, layer: number, isRemoving?: boolean, smartType?: string, blockCol?: number, blockRow?: number) => Promise<void>;
   batchUpdateTileAndNeighbors: (updates: { x: number, y: number, layer: number, isRemoving?: boolean, smartType?: string, blockCol?: number, blockRow?: number }[]) => Promise<void>;

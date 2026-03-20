@@ -155,6 +155,7 @@ export const createMapDataSlice: StateCreator<
                 foamBitmask: t.foamBitmask,
                 smartType: t.smartType,
                 rotation: t.rotation || 0,
+                flipX: !!(t.flipX ?? t.flip_x),
                 edgeBlocks: t.edgeBlocks,
               });
             });
@@ -504,7 +505,7 @@ export const createMapDataSlice: StateCreator<
     tiles: [...state.tiles.filter(t => t.x !== tile.x || t.y !== tile.y), tile]
   })),
 
-  addTileSimple: async (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number, edgeBlocks?: number) => {
+  addTileSimple: async (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number, edgeBlocks?: number, flipX?: boolean) => {
     const chunkX = Math.floor(x / CHUNK_SIZE);
     const chunkY = Math.floor(y / CHUNK_SIZE);
 
@@ -544,7 +545,8 @@ export const createMapDataSlice: StateCreator<
         isWalkable: isWalkable ?? true, snapToGrid: snapToGrid ?? false, isAutoFill: isAutoFill ?? true,
         isAutoTile, bitmask, elevation, hasFoam, foamBitmask, smartType,
         blockCol: blockCol || 0, blockRow: blockRow || 0, rotation: rotation || 0,
-        ...(edgeBlocks !== undefined ? { edgeBlocks } : {})
+        ...(edgeBlocks !== undefined ? { edgeBlocks } : {}),
+        ...(flipX ? { flipX: true } : {}),
       };
 
       if (existingIdx !== -1) {
@@ -701,6 +703,24 @@ export const createMapDataSlice: StateCreator<
     }));
 
     // Sync to Supabase
+    const chunkX = Math.floor(tile.x / CHUNK_SIZE);
+    const chunkY = Math.floor(tile.y / CHUNK_SIZE);
+    triggerChunkSync(chunkX, chunkY, get);
+  },
+
+  flipTile: async (tileId) => {
+    const tile = get().tiles.find(t => t.id === tileId);
+    if (!tile) return;
+
+    const isFrozenSmart = !tile.isAutoTile && !!tile.smartType && tile.bitmask !== undefined;
+    if (tile.isAutoTile || isFrozenSmart) return;
+
+    const nextFlip = !tile.flipX;
+
+    set((state) => ({
+      tiles: state.tiles.map(t => (t.id === tileId ? { ...t, flipX: nextFlip } : t)),
+    }));
+
     const chunkX = Math.floor(tile.x / CHUNK_SIZE);
     const chunkY = Math.floor(tile.y / CHUNK_SIZE);
     triggerChunkSync(chunkX, chunkY, get);

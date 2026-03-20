@@ -66,7 +66,11 @@ export const useMapClipboard = () => {
           previousTile.hasFoam,
           previousTile.foamBitmask,
           previousTile.smartType,
-          previousTile.rotation || 0
+          previousTile.rotation || 0,
+          previousTile.blockCol,
+          previousTile.blockRow,
+          previousTile.edgeBlocks,
+          previousTile.flipX
         );
       } else {
         const chunkX = Math.floor(safeX / 16); 
@@ -103,7 +107,11 @@ export const useMapClipboard = () => {
           previousTile.hasFoam,
           previousTile.foamBitmask,
           previousTile.smartType,
-          previousTile.rotation || 0
+          previousTile.rotation || 0,
+          previousTile.blockCol,
+          previousTile.blockRow,
+          previousTile.edgeBlocks,
+          previousTile.flipX
         );
       }
     } else if (action === 'node_add') {

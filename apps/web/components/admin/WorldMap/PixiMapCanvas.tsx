@@ -97,7 +97,7 @@ const useTexture = (url: string | undefined | null) => {
 
 // --- Sub-component for individual Tile Rendering ---
 const PixiTile = React.memo(React.forwardRef<PIXI.Sprite, any>(({ 
-  texture, x, y, width, height, rotation, onMouseDown, isInteractive, 
+  texture, x, y, width, height, rotation, flipX, onMouseDown, isInteractive, 
   foamTexture, quarterTextures, foamQuarterTextures, debugInfo, zIndex 
 }, ref) => {
   const drawPinkSquare = React.useCallback((g: PIXI.Graphics) => {
@@ -112,9 +112,18 @@ const PixiTile = React.memo(React.forwardRef<PIXI.Sprite, any>(({
     fontSize: 10, fill: '#ffffff', fontWeight: 'bold', stroke: { color: '#000000', width: 2 }, align: 'center'
   }), []);
 
+  const sx = flipX ? -1 : 1;
+
   return (
     // Let Pixi sort children by zIndex on the GPU
-    <PixiContainer zIndex={zIndex} x={centerX} y={centerY} rotation={rotation * (Math.PI / 180)} pivot={{ x: width / 2, y: height / 2 }}>
+    <PixiContainer
+      zIndex={zIndex}
+      x={centerX}
+      y={centerY}
+      scale={{ x: sx, y: 1 }}
+      rotation={rotation * (Math.PI / 180)}
+      pivot={{ x: width / 2, y: height / 2 }}
+    >
       {foamQuarterTextures ? (
         <PixiContainer alpha={0.8}>
           {foamQuarterTextures[0] && <PixiSprite texture={foamQuarterTextures[0]} x={0} y={0} width={width} height={height} />}
@@ -389,6 +398,8 @@ const SmartPixiTile = React.memo(({
     mask: tile.bitmask || 0
   } : null;
 
+  const visualFlipX = !isSmartRendered && !!tile.flipX;
+
   return (
     <React.Fragment>
       <PixiTile
@@ -400,6 +411,7 @@ const SmartPixiTile = React.memo(({
         width={displayWidth}
         height={displayHeight}
         rotation={tile.rotation || 0}
+        flipX={visualFlipX}
         isInteractive={false}
         onMouseDown={undefined}
         foamTexture={foamTexture}
@@ -636,7 +648,7 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
   const tileElements = useMemo(() => {
     return visibleTiles.map(tile => (
       <SmartPixiTile
-        key={`${tile.id}-${tile.bitmask}-${tile.foamBitmask}`} tile={tile} customTileLookup={customTileLookup}
+        key={`${tile.id}-${tile.bitmask}-${tile.foamBitmask}-${tile.rotation}-${tile.flipX ? 1 : 0}`} tile={tile} customTileLookup={customTileLookup}
         autoTileSheetUrl={autoTileSheetUrl} dirtSheetUrl={dirtSheetUrl} waterSheetUrl={waterSheetUrl}
         dirtv2SheetUrl={dirtv2SheetUrl} waterv2SheetUrl={waterv2SheetUrl}
         isFoamEnabled={isFoamEnabled} foamStripTile={foamStripTile} worldSize={worldSize}

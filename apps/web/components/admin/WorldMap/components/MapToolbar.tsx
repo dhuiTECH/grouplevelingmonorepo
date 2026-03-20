@@ -18,6 +18,7 @@ import {
   Paintbrush,
   Bug,
   RotateCw,
+  FlipHorizontal,
   Lock,
   Unlock,
   Box,
@@ -354,6 +355,17 @@ export const MapToolbar = React.memo(
                 title="Rotate Tool (R)"
               >
                 <RotateCw size={18} />
+              </button>
+              <button
+                onClick={() => setTool('flip')}
+                className={`p-1.5 rounded-lg transition-all ${
+                  selectedTool === 'flip'
+                    ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/40'
+                    : 'text-slate-400 hover:bg-slate-800'
+                }`}
+                title="Flip horizontal — click a tile (H)"
+              >
+                <FlipHorizontal size={18} />
               </button>
               <button
                 onClick={() => {
