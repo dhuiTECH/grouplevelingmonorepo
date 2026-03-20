@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { useMapStore, NodeType } from '@/lib/store/mapStore';
 import { useCursorStore } from '@/lib/store/cursorStore';
 import { usePaintTool } from './tools/usePaintTool';
@@ -23,6 +23,14 @@ export const useMapInteraction = (
     layerSettings,
   } = useMapStore();
 
+  const customTileLookup = useMemo(() => {
+    const m = new Map<string, (typeof customTiles)[number]>();
+    for (const ct of customTiles) {
+      m.set(normalizeUrl(ct.url), ct);
+    }
+    return m;
+  }, [customTiles]);
+
   const { setCursorCoords, setSmoothCursorCoords, setIsDrawing } = useCursorStore.getState();
 
   const { executePaint, executeErase } = usePaintTool();
@@ -43,7 +51,7 @@ export const useMapInteraction = (
 
       const containingTiles = tiles.filter(tile => {
         const normalizedTileUrl = normalizeUrl(tile.imageUrl);
-        const customTile = customTiles.find(ct => normalizeUrl(ct.url) === normalizedTileUrl);
+        const customTile = customTileLookup.get(normalizedTileUrl);
         
         const isFrozenSmart = !tile.isAutoTile && !!tile.smartType && tile.bitmask !== undefined;
         const isSmartSize = (tile.isAutoTile || isFrozenSmart) && (tile.layer || 0) === 0;
@@ -180,7 +188,7 @@ export const useMapInteraction = (
         state.setCurrentStamp([{ ...topTile, id: '', x: 0, y: 0, isAutoTile: false }]);
         setTool('stamp');
         setIsDrawing(false);
-        const foundCustomTile = customTiles.find(ct => normalizeUrl(ct.url) === normalizeUrl(topTile.imageUrl));
+        const foundCustomTile = customTileLookup.get(normalizeUrl(topTile.imageUrl));
         if (foundCustomTile) selectTile(foundCustomTile.id);
       }
     }
@@ -385,11 +393,11 @@ export const useMapInteraction = (
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isSpacePressed) return;
     
-    const { brushMode: currentBrushMode } = useMapStore.getState();
     const { isDrawing } = useCursorStore.getState();
     const isPaintEraseOrCollision = selectedTool === 'paint' || selectedTool === 'erase' || selectedTool === 'collision';
 
-    if (isDrawing && (e.buttons > 0 || e.button === 2) && (!isPaintEraseOrCollision || currentBrushMode)) {
+    // RAF-coalesce all paint / erase / collision drags (including erase with brush off and right-click erase)
+    if (isDrawing && (e.buttons > 0 || e.button === 2) && isPaintEraseOrCollision) {
       e.stopPropagation();
       pendingBrushRef.current = { 
         clientX: e.clientX, clientY: e.clientY, 
