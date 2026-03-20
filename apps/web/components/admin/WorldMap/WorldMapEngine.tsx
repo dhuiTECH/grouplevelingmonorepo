@@ -22,7 +22,6 @@ import NodeEditModal from '../NodeEditModal';
 
 // Hooks
 import { useMapData } from './hooks/useMapData';
-import { useMapGeneration } from './hooks/useMapGeneration';
 import { useMapClipboard } from './hooks/useMapClipboard';
 import { useMapInteraction } from './hooks/useMapInteraction';
 
@@ -100,13 +99,6 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
   const [goToY, setGoToY] = useState('');
 
   // Custom Hooks
-    const { 
-    handleAutoFill, 
-    isGenerating, 
-    seed, 
-    setSeed 
-  } = useMapGeneration();
-
   const { 
     handleUndo, 
     handleCopySelection, 
