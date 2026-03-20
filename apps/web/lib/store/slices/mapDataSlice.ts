@@ -7,6 +7,9 @@ import { triggerChunkSync } from '../chunkSync';
 
 const CHUNK_SIZE = 16;
 
+/** Keeps syncStatus literals typed as the CustomTile union (not `string`) for Zustand set(). */
+type CustomTileSyncStatus = NonNullable<CustomTile['syncStatus']>;
+
 export const createMapDataSlice: StateCreator<
   MapState,
   [],
@@ -83,7 +86,7 @@ export const createMapDataSlice: StateCreator<
           category: t.category,
           rotation: t.rotation || 0,
           sort_order: t.sort_order || 0,
-          syncStatus: 'synced'
+          syncStatus: 'synced' as const
         }));
 
         let initialWaterBaseId = null;
@@ -263,7 +266,7 @@ export const createMapDataSlice: StateCreator<
 
   addCustomTile: async (tile) => {
     set((state) => ({
-      customTiles: [...state.customTiles, { ...tile, syncStatus: 'syncing' }]
+      customTiles: [...state.customTiles, { ...tile, syncStatus: 'syncing' as const satisfies CustomTileSyncStatus }]
     }));
     
     // Fire and forget persistence
@@ -290,11 +293,11 @@ export const createMapDataSlice: StateCreator<
       if (error) {
         console.error("Failed to add custom tile ERROR DETAILS:", JSON.stringify(error, null, 2));
         set(state => ({
-          customTiles: state.customTiles.map(t => t.id === tile.id ? { ...t, syncStatus: 'error' } : t)
+          customTiles: state.customTiles.map(t => t.id === tile.id ? { ...t, syncStatus: 'error' as const satisfies CustomTileSyncStatus } : t)
         }));
       } else {
         set(state => ({
-          customTiles: state.customTiles.map(t => t.id === tile.id ? { ...t, syncStatus: 'synced' } : t)
+          customTiles: state.customTiles.map(t => t.id === tile.id ? { ...t, syncStatus: 'synced' as const satisfies CustomTileSyncStatus } : t)
         }));
       }
     });
@@ -302,7 +305,10 @@ export const createMapDataSlice: StateCreator<
 
   batchAddCustomTiles: async (newTiles) => {
     set((state) => ({
-      customTiles: [...state.customTiles, ...newTiles.map(t => ({ ...t, syncStatus: 'syncing' }))]
+      customTiles: [
+        ...state.customTiles,
+        ...newTiles.map((t): CustomTile => ({ ...t, syncStatus: 'syncing' as const satisfies CustomTileSyncStatus })),
+      ]
     }));
 
     const rows = newTiles.map(tile => ({
@@ -331,11 +337,11 @@ export const createMapDataSlice: StateCreator<
       if (error) {
         console.error("Failed to batch add custom tiles ERROR DETAILS:", JSON.stringify(error, null, 2));
         set(state => ({
-          customTiles: state.customTiles.map(t => ids.has(t.id) ? { ...t, syncStatus: 'error' } : t)
+          customTiles: state.customTiles.map(t => ids.has(t.id) ? { ...t, syncStatus: 'error' as const satisfies CustomTileSyncStatus } : t)
         }));
       } else {
         set(state => ({
-          customTiles: state.customTiles.map(t => ids.has(t.id) ? { ...t, syncStatus: 'synced' } : t)
+          customTiles: state.customTiles.map(t => ids.has(t.id) ? { ...t, syncStatus: 'synced' as const satisfies CustomTileSyncStatus } : t)
         }));
       }
     });
@@ -363,7 +369,9 @@ export const createMapDataSlice: StateCreator<
 
     // Optimistically update local state
     set((state) => ({
-      customTiles: state.customTiles.map(t => t.id === id ? { ...t, ...updates, syncStatus: 'syncing' } : t)
+      customTiles: state.customTiles.map(t =>
+        t.id === id ? { ...t, ...updates, syncStatus: 'syncing' as const satisfies CustomTileSyncStatus } : t
+      )
     }));
     
     // Check if this update actually changes properties that would affect placed tiles
@@ -452,11 +460,15 @@ export const createMapDataSlice: StateCreator<
         if (error) {
           console.error("Failed to update custom tile ERROR DETAILS:", JSON.stringify(error, null, 2));
           set(state => ({
-            customTiles: state.customTiles.map(t => t.id === id ? { ...t, syncStatus: 'error' } : t)
+            customTiles: state.customTiles.map(t =>
+              t.id === id ? { ...t, syncStatus: 'error' as const satisfies CustomTileSyncStatus } : t
+            )
           }));
         } else {
           set(state => ({
-            customTiles: state.customTiles.map(t => t.id === id ? { ...t, syncStatus: 'synced' } : t)
+            customTiles: state.customTiles.map(t =>
+              t.id === id ? { ...t, syncStatus: 'synced' as const satisfies CustomTileSyncStatus } : t
+            )
           }));
         }
       });
