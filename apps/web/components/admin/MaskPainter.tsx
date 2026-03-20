@@ -348,7 +348,7 @@ export const MaskPainter = ({
               ref={canvasRef}
               width={512}
               height={512}
-              className={`absolute inset-0 z-10 ${showBrush ? 'cursor-none' : 'cursor-crosshair'}`}
+              className={`absolute inset-0 z-[100] ${showBrush ? 'cursor-none' : 'cursor-crosshair'}`}
               onMouseDown={startDrawing}
               onMouseMove={handleMouseMove}
               onMouseUp={stopDrawing}
@@ -363,7 +363,7 @@ export const MaskPainter = ({
             {/* Brush Preview Circle */}
             {showBrush && (
               <div
-                className="absolute rounded-full border border-white pointer-events-none z-50"
+                className="absolute rounded-full border border-white pointer-events-none z-[110]"
                 style={{
                   width: brushSize,
                   height: brushSize,
