@@ -43,54 +43,50 @@ export const createSmartBrushSlice: StateCreator<
   setAutoTileSheetUrl: async (url) => {
     set({ autoTileSheetUrl: url });
     
-    try {
-      console.log("Attempting to save new tilesheet URL to database...", url);
-      
-      const { data, error } = await supabase
-        .from('world_map_settings')
-        .upsert({ id: 1, autotile_sheet_url: url }, { onConflict: 'id' })
-        .select(); // Added .select() to force a response back from the database
-
-      if (error) {
-        console.error("🔥 Supabase Upsert Error:", error.message);
-        console.error("🔥 Error Details:", error.details);
-        console.error("🔥 Error Hint:", error.hint);
-        console.error("🔥 Full Error Object:", error);
-      } else {
-        console.log("✅ Database successfully updated! Response:", data);
-      }
-    } catch (err) {
-      console.error("💥 Critical Network or Execution Error:", err);
-    }
+    // Fire and forget
+    supabase
+      .from('world_map_settings')
+      .upsert({ id: 1, autotile_sheet_url: url }, { onConflict: 'id' })
+      .select()
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("🔥 Supabase Upsert Error:", error.message);
+        } else {
+          console.log("✅ Database successfully updated! Response:", data);
+        }
+      })
+      .catch(err => {
+        console.error("💥 Critical Network or Execution Error:", err);
+      });
   },
   setDirtSheetUrl: async (url) => {
     set({ dirtSheetUrl: url });
-    await supabase.from('world_map_settings').upsert({ id: 1, dirt_sheet_url: url }, { onConflict: 'id' });
+    supabase.from('world_map_settings').upsert({ id: 1, dirt_sheet_url: url }, { onConflict: 'id' }).then();
   },
   setWaterSheetUrl: async (url) => {
     set({ waterSheetUrl: url });
-    await supabase.from('world_map_settings').upsert({ id: 1, water_sheet_url: url }, { onConflict: 'id' });
+    supabase.from('world_map_settings').upsert({ id: 1, water_sheet_url: url }, { onConflict: 'id' }).then();
   },
   setDirtv2SheetUrl: async (url) => {
     set({ dirtv2SheetUrl: url });
-    await supabase.from('world_map_settings').upsert({ id: 1, dirtv2_sheet_url: url }, { onConflict: 'id' });
+    supabase.from('world_map_settings').upsert({ id: 1, dirtv2_sheet_url: url }, { onConflict: 'id' }).then();
   },
   setWaterv2SheetUrl: async (url) => {
     set({ waterv2SheetUrl: url });
-    await supabase.from('world_map_settings').upsert({ id: 1, waterv2_sheet_url: url }, { onConflict: 'id' });
+    supabase.from('world_map_settings').upsert({ id: 1, waterv2_sheet_url: url }, { onConflict: 'id' }).then();
   },
   setSelectedWaterBaseId: async (id) => {
     set({ selectedWaterBaseId: id });
     const tile = get().customTiles.find(t => t.id === id);
     if (tile) {
-      await supabase.from('world_map_settings').upsert({ id: 1, water_base_url: tile.url }, { onConflict: 'id' });
+      supabase.from('world_map_settings').upsert({ id: 1, water_base_url: tile.url }, { onConflict: 'id' }).then();
     }
   },
   setSelectedFoamStripId: async (id) => {
     set({ selectedFoamStripId: id });
     const tile = get().customTiles.find(t => t.id === id);
     if (tile) {
-      await supabase.from('world_map_settings').upsert({ 
+      supabase.from('world_map_settings').upsert({ 
         id: 1, 
         foam_sheet_url: tile.url,
         foam_is_spritesheet: tile.isSpritesheet || false,
@@ -98,7 +94,7 @@ export const createSmartBrushSlice: StateCreator<
         foam_frame_width: tile.frameWidth || 48,
         foam_frame_height: tile.frameHeight || 48,
         foam_animation_speed: String(tile.animationSpeed || 0.8)
-      }, { onConflict: 'id' });
+      }, { onConflict: 'id' }).then();
     }
   },
 

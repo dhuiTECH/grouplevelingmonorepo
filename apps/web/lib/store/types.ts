@@ -60,6 +60,7 @@ export interface CustomTile {
   category?: 'water_base' | 'foam_strip' | 'tile' | 'prop' | 'road' | 'structure' | 'mountain' | 'big_structure' | 'poi';
   rotation?: number; // Default rotation
   sort_order?: number;
+  syncStatus?: 'synced' | 'syncing' | 'error';
 }
 
 export type ToolType = 'select' | 'paint' | 'erase' | 'node' | 'stamp' | 'eyedropper' | 'rotate' | 'collision';
@@ -190,6 +191,7 @@ export interface MapDataSlice {
   updateNode: (id: string, updates: Partial<MapNode>) => Promise<void>;
   removeNode: (id: string) => Promise<void>;
   addCustomTile: (tile: CustomTile) => Promise<void>;
+  batchAddCustomTiles: (tiles: CustomTile[]) => Promise<void>;
   removeCustomTile: (id: string) => Promise<void>;
   updateCustomTile: (id: string, updates: Partial<CustomTile>) => Promise<void>;
   reorderCustomTiles: (tiles: CustomTile[]) => Promise<void>;

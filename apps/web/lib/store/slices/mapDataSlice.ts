@@ -82,7 +82,8 @@ export const createMapDataSlice: StateCreator<
           smartType: t.smartType,
           category: t.category,
           rotation: t.rotation || 0,
-          sort_order: t.sort_order || 0
+          sort_order: t.sort_order || 0,
+          syncStatus: 'synced'
         }));
 
         let initialWaterBaseId = null;
@@ -162,7 +163,9 @@ export const createMapDataSlice: StateCreator<
     set((state) => ({ 
       nodes: [...state.nodes, { ...node, id: newId }] 
     }));
-    const { error } = await supabase.from('world_map_nodes').insert({
+    
+    // Fire and forget persistence
+    supabase.from('world_map_nodes').insert({
       id: newId,
       // Keep legacy (x, y) in-sync with new global_x/global_y so we don't hit the unique(x,y) constraint.
       global_x: node.x,
@@ -174,10 +177,12 @@ export const createMapDataSlice: StateCreator<
       icon_url: node.iconUrl,
       interaction_type: node.type === 'spawn' ? 'CITY' : node.type === 'enemy' ? 'BATTLE' : 'DIALOGUE',
       interaction_data: node.properties || {}
+    }).then(({ error }) => {
+      if (error) {
+        console.error('Failed to persist world_map_node on insert ERROR DETAILS:', JSON.stringify(error, null, 2));
+      }
     });
-    if (error) {
-      console.error('Failed to persist world_map_node on insert ERROR DETAILS:', JSON.stringify(error, null, 2));
-    }
+    
     return newId;
   },
 
@@ -191,7 +196,8 @@ export const createMapDataSlice: StateCreator<
     const updatedNode = get().nodes.find((n) => n.id === id);
     if (!updatedNode) return;
 
-    const { error } = await supabase
+    // Fire and forget persistence
+    supabase
       .from('world_map_nodes')
       .update({
         global_x: updatedNode.x,
@@ -201,11 +207,12 @@ export const createMapDataSlice: StateCreator<
         icon_url: updatedNode.iconUrl,
         interaction_data: updatedNode.properties || {},
       })
-      .eq('id', id);
-
-    if (error) {
-      console.error('Failed to persist world_map_node on update ERROR DETAILS:', JSON.stringify(error, null, 2));
-    }
+      .eq('id', id)
+      .then(({ error }) => {
+        if (error) {
+          console.error('Failed to persist world_map_node on update ERROR DETAILS:', JSON.stringify(error, null, 2));
+        }
+      });
   },
 
   removeNode: async (id) => {
@@ -256,9 +263,11 @@ export const createMapDataSlice: StateCreator<
 
   addCustomTile: async (tile) => {
     set((state) => ({
-      customTiles: [...state.customTiles, tile]
+      customTiles: [...state.customTiles, { ...tile, syncStatus: 'syncing' }]
     }));
-    const { error } = await supabase.from('custom_tiles').insert({
+    
+    // Fire and forget persistence
+    supabase.from('custom_tiles').insert({
       id: tile.id,
       name: tile.name,
       url: tile.url,
@@ -273,14 +282,63 @@ export const createMapDataSlice: StateCreator<
       snap_to_grid: tile.snapToGrid ?? false,
       is_autofill: tile.isAutoFill ?? true,
       is_autotile: tile.isAutoTile ?? false,
-      smartType: tile.smartType, // Ensure smartType is saved
-      category: tile.category, // NEW
+      smartType: tile.smartType, 
+      category: tile.category, 
       rotation: tile.rotation || 0,
       sort_order: tile.sort_order || 0
+    }).then(({ error }) => {
+      if (error) {
+        console.error("Failed to add custom tile ERROR DETAILS:", JSON.stringify(error, null, 2));
+        set(state => ({
+          customTiles: state.customTiles.map(t => t.id === tile.id ? { ...t, syncStatus: 'error' } : t)
+        }));
+      } else {
+        set(state => ({
+          customTiles: state.customTiles.map(t => t.id === tile.id ? { ...t, syncStatus: 'synced' } : t)
+        }));
+      }
     });
-    if (error) {
-      console.error("Failed to add custom tile ERROR DETAILS:", JSON.stringify(error, null, 2));
-    }
+  },
+
+  batchAddCustomTiles: async (newTiles) => {
+    set((state) => ({
+      customTiles: [...state.customTiles, ...newTiles.map(t => ({ ...t, syncStatus: 'syncing' }))]
+    }));
+
+    const rows = newTiles.map(tile => ({
+      id: tile.id,
+      name: tile.name,
+      url: tile.url,
+      type: tile.type,
+      layer: tile.layer || 0,
+      is_spritesheet: tile.isSpritesheet,
+      frame_count: tile.frameCount,
+      frame_width: tile.frameWidth,
+      frame_height: tile.frameHeight,
+      animation_speed: tile.animationSpeed,
+      is_walkable: tile.isWalkable ?? true,
+      snap_to_grid: tile.snapToGrid ?? false,
+      is_autofill: tile.isAutoFill ?? true,
+      is_autotile: tile.isAutoTile ?? false,
+      smartType: tile.smartType,
+      category: tile.category,
+      rotation: tile.rotation || 0,
+      sort_order: tile.sort_order || 0
+    }));
+
+    supabase.from('custom_tiles').insert(rows).then(({ error }) => {
+      const ids = new Set(newTiles.map(t => t.id));
+      if (error) {
+        console.error("Failed to batch add custom tiles ERROR DETAILS:", JSON.stringify(error, null, 2));
+        set(state => ({
+          customTiles: state.customTiles.map(t => ids.has(t.id) ? { ...t, syncStatus: 'error' } : t)
+        }));
+      } else {
+        set(state => ({
+          customTiles: state.customTiles.map(t => ids.has(t.id) ? { ...t, syncStatus: 'synced' } : t)
+        }));
+      }
+    });
   },
 
   removeCustomTile: async (id) => {
@@ -288,10 +346,13 @@ export const createMapDataSlice: StateCreator<
       customTiles: state.customTiles.filter(t => t.id !== id),
       selectedTileId: state.selectedTileId === id ? null : state.selectedTileId
     }));
-    const { error } = await supabase.from('custom_tiles').delete().eq('id', id);
-    if (error) {
-      console.error("Failed to remove custom tile ERROR DETAILS:", JSON.stringify(error, null, 2));
-    }
+    
+    // Fire and forget persistence
+    supabase.from('custom_tiles').delete().eq('id', id).then(({ error }) => {
+      if (error) {
+        console.error("Failed to remove custom tile ERROR DETAILS:", JSON.stringify(error, null, 2));
+      }
+    });
   },
 
   updateCustomTile: async (id, updates) => {
@@ -300,8 +361,9 @@ export const createMapDataSlice: StateCreator<
     if (!oldTile) return;
     const baseTileUrl = oldTile.url.split('?')[0];
 
+    // Optimistically update local state
     set((state) => ({
-      customTiles: state.customTiles.map(t => t.id === id ? { ...t, ...updates } : t)
+      customTiles: state.customTiles.map(t => t.id === id ? { ...t, ...updates, syncStatus: 'syncing' } : t)
     }));
     
     // Check if this update actually changes properties that would affect placed tiles
@@ -321,46 +383,47 @@ export const createMapDataSlice: StateCreator<
       updates.smartType !== undefined;
 
     if (affectsPlacedTiles) {
-      // NEW: Update all placed tiles that reference this custom tile's URL
-      // So that their properties stay in sync with the palette!
-      const touchedChunks = new Set<string>();
-      set((state) => {
-        let hasChanges = false;
-        const newTiles = state.tiles.map(t => {
-          if (!t.imageUrl) return t;
-          
-          const tUrl = t.imageUrl.split('?')[0];
-          if (tUrl === baseTileUrl) {
-            hasChanges = true;
-            touchedChunks.add(`${Math.floor(t.x / CHUNK_SIZE)},${Math.floor(t.y / CHUNK_SIZE)}`);
-            return { 
-              ...t, 
-              ...(updates.type !== undefined && { type: updates.type }),
-              ...(updates.isSpritesheet !== undefined && { isSpritesheet: updates.isSpritesheet }),
-              ...(updates.frameCount !== undefined && { frameCount: updates.frameCount }),
-              ...(updates.frameWidth !== undefined && { frameWidth: updates.frameWidth }),
-              ...(updates.frameHeight !== undefined && { frameHeight: updates.frameHeight }),
-              ...(updates.animationSpeed !== undefined && { animationSpeed: updates.animationSpeed }),
-              ...(updates.layer !== undefined && { layer: updates.layer }),
-              ...(updates.isWalkable !== undefined && { isWalkable: updates.isWalkable }),
-              ...(updates.snapToGrid !== undefined && { snapToGrid: updates.snapToGrid }),
-              ...(updates.isAutoFill !== undefined && { isAutoFill: updates.isAutoFill }),
-              ...(updates.isAutoTile !== undefined && { isAutoTile: updates.isAutoTile }),
-              ...(updates.rotation !== undefined && { rotation: updates.rotation }),
-              ...(updates.smartType !== undefined && { smartType: updates.smartType }),
-            };
-          }
-          return t;
+      // PERFORMANCE OPTIMIZATION: Check if ANY tiles actually use this asset before running a full tiles.map
+      // This saves O(N) work on large maps when the edited tile isn't even used yet.
+      const hasAnyMatches = state.tiles.some(t => t.imageUrl?.split('?')[0] === baseTileUrl);
+      
+      if (hasAnyMatches) {
+        const touchedChunks = new Set<string>();
+        set((state) => {
+          const newTiles = state.tiles.map(t => {
+            if (!t.imageUrl) return t;
+            
+            const tUrl = t.imageUrl.split('?')[0];
+            if (tUrl === baseTileUrl) {
+              touchedChunks.add(`${Math.floor(t.x / CHUNK_SIZE)},${Math.floor(t.y / CHUNK_SIZE)}`);
+              return { 
+                ...t, 
+                ...(updates.type !== undefined && { type: updates.type }),
+                ...(updates.isSpritesheet !== undefined && { isSpritesheet: updates.isSpritesheet }),
+                ...(updates.frameCount !== undefined && { frameCount: updates.frameCount }),
+                ...(updates.frameWidth !== undefined && { frameWidth: updates.frameWidth }),
+                ...(updates.frameHeight !== undefined && { frameHeight: updates.frameHeight }),
+                ...(updates.animationSpeed !== undefined && { animationSpeed: updates.animationSpeed }),
+                ...(updates.layer !== undefined && { layer: updates.layer }),
+                ...(updates.isWalkable !== undefined && { isWalkable: updates.isWalkable }),
+                ...(updates.snapToGrid !== undefined && { snapToGrid: updates.snapToGrid }),
+                ...(updates.isAutoFill !== undefined && { isAutoFill: updates.isAutoFill }),
+                ...(updates.isAutoTile !== undefined && { isAutoTile: updates.isAutoTile }),
+                ...(updates.rotation !== undefined && { rotation: updates.rotation }),
+                ...(updates.smartType !== undefined && { smartType: updates.smartType }),
+              };
+            }
+            return t;
+          });
+          return { tiles: newTiles };
         });
-        return hasChanges ? { tiles: newTiles } : state;
-      });
 
-      // Instead of instantly triggering sync for ALL chunks at once (which locks Auth),
-      // we add them to the queue and rely on our serialized chunkSync logic.
-      touchedChunks.forEach(key => {
-        const [cx, cy] = key.split(',').map(Number);
-        triggerChunkSync(cx, cy, get);
-      });
+        // Trigger sync for touched chunks
+        touchedChunks.forEach(key => {
+          const [cx, cy] = key.split(',').map(Number);
+          triggerChunkSync(cx, cy, get);
+        });
+      }
     }
 
     // Map updates to snake_case for Supabase
@@ -384,10 +447,19 @@ export const createMapDataSlice: StateCreator<
     if ('sort_order' in updates) dbUpdates.sort_order = updates.sort_order;
 
     if (Object.keys(dbUpdates).length > 0) {
-      const { error } = await supabase.from('custom_tiles').update(dbUpdates).eq('id', id);
-      if (error) {
-        console.error("Failed to update custom tile ERROR DETAILS:", JSON.stringify(error, null, 2));
-      }
+      // Fire and forget persistence
+      supabase.from('custom_tiles').update(dbUpdates).eq('id', id).then(({ error }) => {
+        if (error) {
+          console.error("Failed to update custom tile ERROR DETAILS:", JSON.stringify(error, null, 2));
+          set(state => ({
+            customTiles: state.customTiles.map(t => t.id === id ? { ...t, syncStatus: 'error' } : t)
+          }));
+        } else {
+          set(state => ({
+            customTiles: state.customTiles.map(t => t.id === id ? { ...t, syncStatus: 'synced' } : t)
+          }));
+        }
+      });
     }
   },
 
