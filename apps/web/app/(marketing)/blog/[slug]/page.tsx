@@ -3,6 +3,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createPublicServerClient } from "@/utils/supabase/public-server";
 import BlogMarkdown from "@/components/blog/BlogMarkdown";
+import MarketingSubfooter from "@/components/marketing/MarketingSubfooter";
+import {
+  marketingBodyClass,
+  marketingContainerClass,
+  marketingMainClass,
+  marketingMutedClass,
+  marketingTitleClass,
+} from "@/components/marketing/marketingDoc";
 import { DEFAULT_OG_IMAGE, SITE_NAME, SITE_URL } from "@/lib/site";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -91,23 +99,21 @@ export default async function BlogPostPage({ params }: Props) {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-10 text-white md:px-8 md:py-14">
+    <main className={marketingMainClass}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
       />
-      <article className="mx-auto max-w-3xl">
+      <article className={marketingContainerClass}>
         <Link
           href="/blog"
           className="text-sm font-semibold text-cyan-400 hover:text-cyan-300"
         >
-          ← All posts
+          All posts
         </Link>
-        <h1 className="mt-6 font-[family-name:var(--font-orbitron)] text-3xl font-black leading-tight tracking-tight md:text-4xl">
-          {post.title}
-        </h1>
+        <h1 className={`mt-6 ${marketingTitleClass}`}>{post.title}</h1>
         {post.published_at && (
-          <p className="mt-3 text-sm text-slate-500">
+          <p className={`mt-3 ${marketingMutedClass}`}>
             {new Date(post.published_at).toLocaleDateString(undefined, {
               year: "numeric",
               month: "long",
@@ -116,11 +122,12 @@ export default async function BlogPostPage({ params }: Props) {
           </p>
         )}
         {post.excerpt && (
-          <p className="mt-6 text-lg text-slate-300">{post.excerpt}</p>
+          <p className={`mt-6 ${marketingBodyClass}`}>{post.excerpt}</p>
         )}
         <div className="mt-10 border-t border-white/10 pt-10">
           <BlogMarkdown content={post.body || ""} />
         </div>
+        <MarketingSubfooter />
       </article>
     </main>
   );

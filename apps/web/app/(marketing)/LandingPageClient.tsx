@@ -338,7 +338,7 @@ function HeroButtons({
               placeholder={
                 waitlistError
                   ? waitlistError
-                  : "Your Email + Premium Currency"
+                  : "Your Email + $20 Reward"
               }
               className="bg-transparent border-none text-xs font-semibold px-3 py-2 focus:outline-none w-full text-white placeholder-gray-400"
             />

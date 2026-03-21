@@ -5,10 +5,20 @@ import {
   formatSupabaseError,
 } from "@/utils/supabase/public-server";
 import { DEFAULT_OG_IMAGE, SITE_NAME } from "@/lib/site";
+import MarketingSubfooter from "@/components/marketing/MarketingSubfooter";
+import {
+  marketingContainerClass,
+  marketingDividerClass,
+  marketingLeadClass,
+  marketingMainClass,
+  marketingMutedClass,
+  marketingSmallClass,
+  marketingTitleClass,
+} from "@/components/marketing/marketingDoc";
 
 const title = `Blog | ${SITE_NAME}`;
 const description =
-  "Updates, fitness RPG tips, and hunter fantasy walking app ideas from the Group Leveling team.";
+  "Updates, fitness RPG tips, and launch news from the Group Leveling team.";
 
 export const metadata: Metadata = {
   title,
@@ -48,20 +58,20 @@ export default async function BlogIndexPage() {
   const list = error ? [] : (posts ?? []);
 
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-12 text-white md:px-8">
-      <div className="mx-auto max-w-3xl">
-        <h1 className="font-[family-name:var(--font-orbitron)] text-3xl font-black tracking-tight text-white md:text-4xl">
-          Blog
-        </h1>
-        <p className="mt-3 text-slate-400">
-          Notes from the team on turning real steps and workouts into a fantasy RPG
-          progression loop.
+    <main className={marketingMainClass}>
+      <div className={marketingContainerClass}>
+        <h1 className={marketingTitleClass}>Blog</h1>
+        <p className={marketingLeadClass}>
+          Updates from the team: how we turn steps, workouts, and meals into RPG
+          progression, not affiliated with the Solo Leveling brand.
         </p>
 
         {list.length === 0 ? (
-          <p className="mt-10 text-slate-500">No posts yet. Check back soon.</p>
+          <p className={`${marketingDividerClass} ${marketingMutedClass}`}>
+            No posts yet. Check back soon.
+          </p>
         ) : (
-          <ul className="mt-10 space-y-6">
+          <ul className={`${marketingDividerClass} space-y-6`}>
             {list.map((post) => (
               <li
                 key={post.slug}
@@ -69,15 +79,15 @@ export default async function BlogIndexPage() {
               >
                 <Link
                   href={`/blog/${post.slug}`}
-                  className="group block text-lg font-bold text-white hover:text-cyan-300"
+                  className="text-lg font-bold text-white transition-colors hover:text-cyan-300"
                 >
                   {post.title}
                 </Link>
                 {post.excerpt && (
-                  <p className="mt-2 text-sm text-slate-400">{post.excerpt}</p>
+                  <p className={`mt-2 ${marketingSmallClass}`}>{post.excerpt}</p>
                 )}
                 {post.published_at && (
-                  <p className="mt-2 text-xs text-slate-600">
+                  <p className={`mt-2 ${marketingMutedClass}`}>
                     {new Date(post.published_at).toLocaleDateString(undefined, {
                       year: "numeric",
                       month: "long",
@@ -89,6 +99,7 @@ export default async function BlogIndexPage() {
             ))}
           </ul>
         )}
+        <MarketingSubfooter />
       </div>
     </main>
   );

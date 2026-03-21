@@ -1,8 +1,16 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { PawPrint, Shield, UtensilsCrossed } from "lucide-react";
+import { PawPrint, UtensilsCrossed } from "lucide-react";
 import PhoneFrame from "@/components/marketing/features/PhoneFrame";
+import MarketingSubfooter from "@/components/marketing/MarketingSubfooter";
+import {
+  marketingContainerClass,
+  marketingLeadClass,
+  marketingMainClass,
+  marketingTitleClass,
+  marketingWideClass,
+} from "@/components/marketing/marketingDoc";
 import { DEFAULT_OG_IMAGE, SITE_NAME } from "@/lib/site";
 
 const title = `Features | ${SITE_NAME}`;
@@ -74,10 +82,20 @@ function SectionLabel({
 
 export default function FeaturesPage() {
   return (
-    <main className="min-h-screen bg-gl-background font-sans text-gl-on-surface selection:bg-gl-primary selection:text-gl-on-primary">
-      <h1 className="sr-only">Features</h1>
+    <main className={`${marketingMainClass} font-sans selection:bg-cyan-500/30 selection:text-white`}>
+      <div className={marketingContainerClass}>
+        <h1 className={marketingTitleClass}>Features</h1>
+        <p className={marketingLeadClass}>
+          How Group Leveling turns real walks, meals, and workouts into loot, XP, pets,
+          and guild co-op, an{" "}
+          <strong className="font-semibold text-slate-200">independent</strong> fitness
+          RPG, not the Solo Leveling brand.
+        </p>
+      </div>
 
-      <div className="mx-auto max-w-7xl space-y-32 px-6 pb-32 pt-28 md:space-y-48 md:px-12">
+      <div
+        className={`${marketingWideClass} space-y-32 px-6 pb-24 pt-10 text-slate-200 md:space-y-48 md:px-12`}
+      >
         {/* 1 — Walk to Explore */}
         <section
           aria-labelledby="feat-walk-heading"
@@ -90,9 +108,10 @@ export default function FeaturesPage() {
                 <Headline line1="WALK TO" accent="EXPLORE" />
               </div>
             </div>
-            <p className="max-w-2xl text-lg font-medium leading-relaxed text-gl-on-surface-variant">
-              The real world is your game map. <span className="text-gl-primary">Track steps</span> to earn loot,
-              explore, fight mobs and unlock powerful skills.
+            <p className="max-w-2xl text-base leading-relaxed text-slate-400">
+              The real world is your game map.{" "}
+              <span className="font-semibold text-cyan-300">Track steps</span> to earn
+              loot, explore, fight mobs and unlock powerful skills.
             </p>
             <div className="grid grid-cols-2 gap-6">
               <div className="gl-system-border bg-gl-surface-low p-6">
@@ -275,7 +294,7 @@ export default function FeaturesPage() {
                 <Headline line1="CATCH &" accent="EVOLVE PETS" />
               </div>
             </div>
-            <p className="ml-auto max-w-2xl text-lg font-medium leading-relaxed text-gl-on-surface-variant lg:ml-0">
+            <p className="ml-auto max-w-2xl text-base leading-relaxed text-slate-400 lg:ml-0">
               Find loyal companions on your walks. Rare pets grow stronger as
               you reach your step goals and help you in battles.
             </p>
@@ -356,7 +375,7 @@ export default function FeaturesPage() {
                 <Headline line1="STYLE YOUR" accent="HERO" />
               </div>
             </div>
-            <p className="ml-auto max-w-2xl text-lg font-medium leading-relaxed text-gl-on-surface-variant lg:ml-0">
+            <p className="ml-auto max-w-2xl text-base leading-relaxed text-slate-400 lg:ml-0">
               Unlock gear as you get stronger. Collect legendary outfits that
               show everyone how far you&apos;ve come.
             </p>
@@ -482,7 +501,7 @@ export default function FeaturesPage() {
                 </h2>
               </div>
             </div>
-            <p className="ml-auto max-w-2xl text-lg font-medium leading-relaxed text-gl-on-surface-variant lg:ml-0">
+            <p className="ml-auto max-w-2xl text-base leading-relaxed text-slate-400 lg:ml-0">
               Log meals to get buffs and boost your stats. Your nutrition is
               fuel for your character&apos;s power.
             </p>
@@ -519,9 +538,9 @@ export default function FeaturesPage() {
                 </h2>
               </div>
             </div>
-            <p className="max-w-2xl text-lg font-medium leading-relaxed text-gl-on-surface-variant">
-              Don&apos;t go it alone. Join local Guilds to crush fitness goals
-              with friends and defeat massive bosses by staying active together.
+            <p className="max-w-2xl text-base leading-relaxed text-slate-400">
+              Don&apos;t go it alone. Join local Guilds to crush fitness goals with
+              friends and defeat massive bosses by staying active together.
             </p>
             <div className="space-y-4">
               <div className="flex items-center justify-between px-2 font-sans text-[9px] uppercase tracking-[0.3em] text-gl-on-surface-variant">
@@ -626,43 +645,30 @@ export default function FeaturesPage() {
         </section>
       </div>
 
-      <footer className="w-full border-t border-gl-primary/10 bg-gl-surface-lowest py-16">
-        <div className="mx-auto flex max-w-7xl flex-col items-center gap-10 px-6 md:flex-row md:justify-between md:px-10">
-          <div className="flex flex-col items-center gap-4 md:items-start">
-            <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 rotate-45 items-center justify-center border border-gl-primary">
-                <Shield className="h-3.5 w-3.5 -rotate-45 text-gl-primary" />
-              </div>
-              <div className="font-sans text-lg font-black uppercase tracking-tighter text-gl-primary">
-                Group Leveling
-              </div>
-            </div>
-            <div className="font-sans text-[10px] font-medium uppercase tracking-[0.2em] text-gl-on-surface-variant/60">
-              Play More. Live More. v2.4.0
-            </div>
-          </div>
-          <nav
-            className="flex gap-10 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-gl-on-surface-variant"
-            aria-label="Footer"
-          >
+      <footer className="border-t border-white/10 bg-slate-900/90 py-12">
+        <div className={marketingContainerClass}>
+          <div className="mb-8 flex flex-wrap items-center gap-3 text-sm text-slate-500">
             <Link
               href="/privacy-policy"
-              className="transition-colors hover:text-gl-primary"
+              className="text-cyan-400 hover:text-cyan-300"
             >
               Privacy
             </Link>
+            <span aria-hidden>·</span>
             <Link
               href="/terms-of-service"
-              className="transition-colors hover:text-gl-primary"
+              className="text-cyan-400 hover:text-cyan-300"
             >
               Terms
             </Link>
-            <Link href="/faq" className="transition-colors hover:text-gl-primary">
-              Help Center
+            <span aria-hidden>·</span>
+            <Link href="/faq" className="text-cyan-400 hover:text-cyan-300">
+              FAQ
             </Link>
-          </nav>
-          <p className="text-center font-sans text-[10px] font-medium tracking-widest text-gl-on-surface-variant/40 md:text-right">
-            © {new Date().getFullYear()} GROUP LEVELING. ALL RIGHTS RESERVED.
+          </div>
+          <MarketingSubfooter />
+          <p className="mt-6 text-sm text-slate-600">
+            © {new Date().getFullYear()} Group Leveling. All rights reserved.
           </p>
         </div>
       </footer>

@@ -1,5 +1,12 @@
 import type { Metadata } from "next";
 import { DEFAULT_OG_IMAGE, SITE_NAME } from "@/lib/site";
+import MarketingSubfooter from "@/components/marketing/MarketingSubfooter";
+import {
+  marketingBodyClass,
+  marketingContainerClass,
+  marketingMainClass,
+  marketingTitleClass,
+} from "@/components/marketing/marketingDoc";
 
 const title = `Terms of Service | ${SITE_NAME}`;
 const description =
@@ -28,12 +35,15 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-20 text-sm">
-      <h1 className="text-2xl font-bold mb-4">Terms of Service</h1>
-      <p>
-        By using the Group Leveling app, you agree to track your fitness fairly. Any
-        manipulation of step data or GPS spoofing is grounds for account suspension.
-      </p>
-    </div>
+    <main className={marketingMainClass}>
+      <div className={marketingContainerClass}>
+        <h1 className={marketingTitleClass}>Terms of Service</h1>
+        <p className={`mt-6 ${marketingBodyClass}`}>
+          By using the Group Leveling app, you agree to track your fitness fairly. Any
+          manipulation of step data or GPS spoofing is grounds for account suspension.
+        </p>
+        <MarketingSubfooter />
+      </div>
+    </main>
   );
 }

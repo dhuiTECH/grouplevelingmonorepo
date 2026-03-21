@@ -1,5 +1,13 @@
 import type { Metadata } from "next";
 import { DEFAULT_OG_IMAGE, SITE_NAME } from "@/lib/site";
+import MarketingSubfooter from "@/components/marketing/MarketingSubfooter";
+import {
+  marketingBodyClass,
+  marketingContainerClass,
+  marketingMainClass,
+  marketingMutedClass,
+  marketingTitleClass,
+} from "@/components/marketing/marketingDoc";
 
 const title = `Privacy Policy | ${SITE_NAME}`;
 const description =
@@ -28,14 +36,17 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-20 text-sm">
-      <h1 className="text-2xl font-bold mb-4">Privacy Policy</h1>
-      <p className="mb-4">Last Updated: March 12, 2026</p>
-      <p>
-        We take your privacy seriously. Group Leveling collects fitness data (steps,
-        distance) and email addresses to provide our RPG services. We do not sell your
-        data to third parties.
-      </p>
-    </div>
+    <main className={marketingMainClass}>
+      <div className={marketingContainerClass}>
+        <h1 className={marketingTitleClass}>Privacy Policy</h1>
+        <p className={`mt-4 ${marketingMutedClass}`}>Last updated: March 12, 2026</p>
+        <p className={`mt-6 ${marketingBodyClass}`}>
+          We take your privacy seriously. Group Leveling collects fitness data (steps,
+          distance) and email addresses to provide our RPG services. We do not sell your
+          data to third parties.
+        </p>
+        <MarketingSubfooter />
+      </div>
+    </main>
   );
 }

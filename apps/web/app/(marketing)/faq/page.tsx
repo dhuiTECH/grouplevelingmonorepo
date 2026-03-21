@@ -1,5 +1,14 @@
 import type { Metadata } from "next";
 import { DEFAULT_OG_IMAGE, SITE_NAME } from "@/lib/site";
+import MarketingSubfooter from "@/components/marketing/MarketingSubfooter";
+import {
+  marketingBodyClass,
+  marketingContainerClass,
+  marketingLeadClass,
+  marketingMainClass,
+  marketingSectionTitleClass,
+  marketingTitleClass,
+} from "@/components/marketing/marketingDoc";
 
 const title = `FAQ | ${SITE_NAME}`;
 const description =
@@ -63,28 +72,27 @@ export default function FaqPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-12 text-white md:px-8">
+    <main className={marketingMainClass}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <div className="mx-auto max-w-3xl">
-        <h1 className="font-[family-name:var(--font-orbitron)] text-3xl font-black tracking-tight md:text-4xl">
-          FAQ
-        </h1>
-        <p className="mt-4 text-slate-400">
+      <div className={marketingContainerClass}>
+        <h1 className={marketingTitleClass}>FAQ</h1>
+        <p className={marketingLeadClass}>
           Straight answers about the app. We&apos;re an{" "}
-          <strong className="text-slate-200">independent</strong> fitness RPG, not
-          the official Solo Leveling brand.
+          <strong className="font-semibold text-slate-200">independent</strong> fitness
+          RPG, not the official Solo Leveling brand.
         </p>
         <dl className="mt-10 space-y-8">
           {faqs.map((item) => (
             <div key={item.q} className="border-b border-white/10 pb-8">
-              <dt className="text-lg font-bold text-cyan-300">{item.q}</dt>
-              <dd className="mt-3 text-slate-300 leading-relaxed">{item.a}</dd>
+              <dt className={marketingSectionTitleClass}>{item.q}</dt>
+              <dd className={`mt-3 ${marketingBodyClass}`}>{item.a}</dd>
             </div>
           ))}
         </dl>
+        <MarketingSubfooter />
       </div>
     </main>
   );

@@ -1,6 +1,15 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { DEFAULT_OG_IMAGE, SITE_NAME } from "@/lib/site";
+import MarketingSubfooter from "@/components/marketing/MarketingSubfooter";
+import {
+  marketingBodyClass,
+  marketingContainerClass,
+  marketingDividerClass,
+  marketingLeadClass,
+  marketingMainClass,
+  marketingSectionTitleClass,
+  marketingTitleClass,
+} from "@/components/marketing/marketingDoc";
 
 const title = `About | ${SITE_NAME}`;
 const description =
@@ -28,61 +37,49 @@ export const metadata: Metadata = {
 
 export default function AboutPage() {
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-12 text-white md:px-8">
-      <div className="mx-auto max-w-3xl">
-        <h1 className="font-[family-name:var(--font-orbitron)] text-3xl font-black tracking-tight text-white md:text-4xl">
-          About
-        </h1>
-        <p className="mt-4 text-slate-400">
-          Who we are, what we ship, and where we sit in hunter fantasy fitness as
-          an <strong className="text-slate-200">independent</strong> product.
+    <main className={marketingMainClass}>
+      <div className={marketingContainerClass}>
+        <h1 className={marketingTitleClass}>About</h1>
+        <p className={marketingLeadClass}>
+          Who we are, what we ship, and how we fit into hunter-fantasy fitness as an{" "}
+          <strong className="font-semibold text-slate-200">independent</strong> product
+          (not affiliated with the Solo Leveling anime, games, or brand).
         </p>
 
-        <div className="mt-10 space-y-10 border-t border-white/10 pt-10">
+        <div className={`${marketingDividerClass} space-y-10`}>
           <section className="border-b border-white/10 pb-10">
-            <h2 className="text-lg font-bold text-cyan-300">Our mission</h2>
-            <p className="mt-3 leading-relaxed text-slate-300">
-              We turn real movement and meals into an RPG you actually want to open
-              every day: quests, guild energy, and tools that make nutrition logging
-              less of a chore.
+            <h2 className={marketingSectionTitleClass}>
+              Our Mission: Your Real Life, Levelled Up
+            </h2>
+            <p className={`mt-3 font-semibold text-cyan-400/90 ${marketingBodyClass}`}>
+              Why settle for a basic step tracker when you can explore a fantasy world?
+            </p>
+            <p className={`mt-4 ${marketingBodyClass}`}>
+              Group Leveling is a walking game built to make you the main character of your
+              own RPG fitness journey. We turn your daily walks into world-traveling
+              adventures and your meals into &quot;Mana&quot; through our all-in-one
+              fitness and calorie tracker.
+            </p>
+            <p className={`mt-4 ${marketingBodyClass}`}>
+              Our mission is to provide the ultimate &quot;System&quot; you need to stop
+              just working out and start winning in real life. Whether you&rsquo;re a
+              casual walker or a hardcore grinder, we&rsquo;re here to help you turn every
+              real-world action into legendary progress.
             </p>
           </section>
 
           <section className="border-b border-white/10 pb-10">
-            <h2 className="text-lg font-bold text-cyan-300">
-              Solo Leveling &amp; third-party IP
-            </h2>
-            <p className="mt-3 leading-relaxed text-slate-300">
-              We are{" "}
-              <strong className="text-slate-200">not</strong> affiliated with the Solo
-              Leveling anime, manhwa, or licensed games. We&apos;re a separate product for
-              anyone who likes that vibe and wants progression they earn outside the
-              screen.
+            <h2 className={marketingSectionTitleClass}>Third-party IP</h2>
+            <p className={`mt-3 ${marketingBodyClass}`}>
+              We are <strong className="font-semibold text-slate-200">not</strong>{" "}
+              affiliated with the Solo Leveling anime, manhwa, or licensed games.
+              We&apos;re a separate product for anyone who likes that vibe and wants
+              progression they earn outside the screen.
             </p>
           </section>
         </div>
 
-        <p className="mt-10 text-sm text-slate-500">
-          <Link href="/" className="text-cyan-400 hover:text-cyan-300">
-            ← Home
-          </Link>
-          {" · "}
-          <Link href="/features" className="text-cyan-400 hover:text-cyan-300">
-            Features
-          </Link>
-          {" · "}
-          <Link href="/blog" className="text-cyan-400 hover:text-cyan-300">
-            Blog
-          </Link>
-          {" · "}
-          <Link href="/faq" className="text-cyan-400 hover:text-cyan-300">
-            FAQ
-          </Link>
-          {" · "}
-          <Link href="/join" className="text-cyan-400 hover:text-cyan-300">
-            Join
-          </Link>
-        </p>
+        <MarketingSubfooter />
       </div>
     </main>
   );
