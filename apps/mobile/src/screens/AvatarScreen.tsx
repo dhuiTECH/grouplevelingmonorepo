@@ -12,6 +12,7 @@ import LayeredAvatar from "@/components/LayeredAvatar";
 import { User } from "@/types/user";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAudio } from '@/contexts/AudioContext';
+import { findFemaleDefaultBodyShopItemIndex } from "@/utils/femaleBodyDefault";
 
 // Assets
 const BG_STONE = require("../../assets/stone-bg.jpg");
@@ -242,6 +243,25 @@ export default function AvatarScreen({ navigation }: any) {
     return out;
   }, [apiParts, selectedBase]);
 
+  // Female base: default body row to white shirt when `body` index not chosen yet (e.g. first paint, data load)
+  useEffect(() => {
+    if (!selectedBase) return;
+    let baseGender = "male";
+    if (selectedBase.gender) {
+      const g = Array.isArray(selectedBase.gender) ? selectedBase.gender[0] : selectedBase.gender;
+      baseGender = String(g).toLowerCase();
+    }
+    if (baseGender !== "female") return;
+    const bodyList = partsBySlot["body"];
+    if (!bodyList?.length) return;
+    const idx = findFemaleDefaultBodyShopItemIndex(bodyList);
+    if (idx < 0) return;
+    setSelectedPartIndex((prev) => {
+      if (prev.body !== undefined) return prev;
+      return { ...prev, body: idx };
+    });
+  }, [selectedBase, partsBySlot]);
+
   const currentOptions = activeCategory === "base" ? apiBases : partsBySlot[activeCategory] || [];
   const currentSelectionIndex = activeCategory === "base" ? selectedBaseIndex : (selectedPartIndex[activeCategory] ?? 0);
 
@@ -252,8 +272,27 @@ export default function AvatarScreen({ navigation }: any) {
     triggerSelectionFeedback();
     if (activeCategory === "base") {
       setSelectedBaseIndex(index);
-      setSelectedPartIndex({}); // Reset parts when base manually changed
       const newBase = apiBases[index];
+      let baseGender = "male";
+      if (newBase?.gender) {
+        const g = Array.isArray(newBase.gender) ? newBase.gender[0] : newBase.gender;
+        baseGender = String(g).toLowerCase();
+      }
+      const nextParts: Record<string, number> = {};
+      if (baseGender === "female") {
+        const bodyItems = apiParts.filter((p) => {
+          if (p.slot !== "body") return false;
+          if (!p.gender) return true;
+          const itemGenders = Array.isArray(p.gender)
+            ? p.gender.map((x: string) => x.toLowerCase())
+            : [String(p.gender).toLowerCase()];
+          if (itemGenders.includes("unisex") || itemGenders.includes("all")) return true;
+          return itemGenders.includes(baseGender);
+        });
+        const bi = findFemaleDefaultBodyShopItemIndex(bodyItems);
+        if (bi >= 0) nextParts.body = bi;
+      }
+      setSelectedPartIndex(nextParts);
       if (newBase?.skin_tint_hex) {
         setSkinTint(newBase.skin_tint_hex);
       }
@@ -298,6 +337,20 @@ export default function AvatarScreen({ navigation }: any) {
         if (availableCount > 0) {
             newPartIndices[slot] = Math.floor(Math.random() * availableCount);
         }
+    }
+
+    if (baseGender === "female") {
+      const bodyItems = apiParts.filter((p) => {
+        if (p.slot !== "body") return false;
+        if (!p.gender) return true;
+        const itemGenders = Array.isArray(p.gender)
+          ? p.gender.map((x: string) => x.toLowerCase())
+          : [String(p.gender).toLowerCase()];
+        if (itemGenders.includes("unisex") || itemGenders.includes("all")) return true;
+        return itemGenders.includes(baseGender);
+      });
+      const bi = findFemaleDefaultBodyShopItemIndex(bodyItems);
+      if (bi >= 0) newPartIndices.body = bi;
     }
 
     // 3. Pick random skin tone

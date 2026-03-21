@@ -167,7 +167,10 @@ export async function POST(request: NextRequest) {
       collection_id,
       is_sellable,
       onboarding_available,
-      grip_type
+      grip_type,
+      eraser_mask_targets,
+      eraser_mask_url,
+      eraser_mask_url_female
     } = body
 
     // Validate required fields
@@ -196,6 +199,13 @@ export async function POST(request: NextRequest) {
     if (class_req && !['All', 'Assassin', 'Fighter', 'Mage', 'Tanker', 'Ranger', 'Healer'].includes(class_req)) {
       return NextResponse.json({ error: 'Class requirement must be one of: All, Assassin, Fighter, Mage, Tanker, Ranger, Healer' }, { status: 400 })
     }
+
+    const normalizedEraserTargets =
+      Array.isArray(eraser_mask_targets)
+        ? eraser_mask_targets.filter((t: unknown) => typeof t === 'string' && t.trim())
+        : typeof eraser_mask_targets === 'string' && eraser_mask_targets.trim() && eraser_mask_targets !== 'none'
+          ? [eraser_mask_targets.trim()]
+          : []
 
     const insertData = {
       name: name.trim(),
@@ -232,7 +242,14 @@ export async function POST(request: NextRequest) {
       collection_id: collection_id || null,
       is_sellable: typeof is_sellable === 'boolean' ? is_sellable : true,
       onboarding_available: typeof onboarding_available === 'boolean' ? onboarding_available : false,
-      grip_type: grip_type || null
+      grip_type: grip_type || null,
+      eraser_mask_targets: normalizedEraserTargets.length > 0 ? normalizedEraserTargets : null,
+      eraser_mask_url:
+        typeof eraser_mask_url === 'string' && eraser_mask_url.trim() ? eraser_mask_url.trim() : null,
+      eraser_mask_url_female:
+        typeof eraser_mask_url_female === 'string' && eraser_mask_url_female.trim()
+          ? eraser_mask_url_female.trim()
+          : null
     };
 
     console.log('💾 DB INSERT START:', insertData);

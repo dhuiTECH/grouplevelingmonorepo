@@ -42,8 +42,12 @@ import { useApi } from '@/hooks/useApi';
 import { usePets } from '@/hooks/usePets';
 import { PetList } from '@/components/PetList';
 import { supabase } from '@/lib/supabase';
+import { getEffectiveGender } from '@/components/LayeredAvatar/LayeredAvatarUtils';
+import { findFemaleDefaultBodyCosmetic } from '@/utils/femaleBodyDefault';
 
 const { width } = Dimensions.get('window');
+
+const getCosmeticSlot = (item: ShopItem | undefined) => item?.slot?.trim().toLowerCase();
 
 export const InventoryScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -210,6 +214,78 @@ export const InventoryScreen: React.FC = () => {
       } catch (error) {
         console.error('Error updating pet background:', error);
         showNotification('Failed to update pet background', 'error');
+        return;
+      }
+    }
+
+    // Female-presenting hunters: unequipping body must swap to default shirt (never leave slot empty)
+    if (viewMode !== 'pet' && !equipped && targetSlot === 'body') {
+      const equippedList = user.cosmetics?.filter((c) => c.equipped) || [];
+      const equippedAvatarItem = equippedList.find((c) => getCosmeticSlot(c.shop_items) === 'avatar');
+      const equippedBaseBodyItem = equippedList.find((c) => getCosmeticSlot(c.shop_items) === 'base_body');
+      const activeSkinItem = equippedAvatarItem || equippedBaseBodyItem;
+
+      if (getEffectiveGender(activeSkinItem?.shop_items, user.gender) === 'female') {
+        const fallback = findFemaleDefaultBodyCosmetic(user.cosmetics);
+        if (!fallback) {
+          playHunterSound('error');
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          showNotification('No default shirt in inventory; body stays equipped.', 'error');
+          return;
+        }
+        if (fallback.id === cosmeticId) {
+          playHunterSound('error');
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          showNotification('Body slot requires coverage.', 'error');
+          return;
+        }
+
+        const previousCosmeticsSwap = user.cosmetics;
+        playHunterSound('click');
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+        const bodyEquippedOtherIds =
+          user.cosmetics
+            ?.filter(
+              (c) =>
+                c.equipped &&
+                c.shop_items?.slot?.toLowerCase() === 'body' &&
+                c.id !== fallback.id
+            )
+            .map((c) => c.id) || [];
+
+        const updatedCosmeticsSwap =
+          user.cosmetics?.map((c) => {
+            if (c.shop_items?.slot?.toLowerCase() !== 'body') return c;
+            if (c.id === fallback.id) return { ...c, equipped: true };
+            return { ...c, equipped: false };
+          }) || [];
+
+        setUser({ ...user, cosmetics: updatedCosmeticsSwap });
+
+        try {
+          if (bodyEquippedOtherIds.length > 0) {
+            const { error: unequipBodyError } = await supabase
+              .from('user_cosmetics')
+              .update({ equipped: false })
+              .in('id', bodyEquippedOtherIds);
+            if (unequipBodyError) throw unequipBodyError;
+          }
+          const { error: equipShirtError } = await supabase
+            .from('user_cosmetics')
+            .update({ equipped: true })
+            .eq('id', fallback.id);
+          if (equipShirtError) throw equipShirtError;
+
+          refreshGameData();
+          const shirtName = fallback.shop_items?.name || 'default shirt';
+          showNotification(`Body slot requires coverage—equipped ${shirtName}.`, 'success');
+        } catch (error) {
+          console.error('Error swapping to default body shirt:', error);
+          playHunterSound('error');
+          setUser({ ...user, cosmetics: previousCosmeticsSwap });
+          showNotification('Failed to update equipment', 'error');
+        }
         return;
       }
     }
