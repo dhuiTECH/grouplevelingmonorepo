@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Exo_2, Orbitron, Rajdhani } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
+import { DEFAULT_OG_IMAGE, SITE_NAME, SITE_URL } from "@/lib/site";
 
 const exo2 = Exo_2({
   subsets: ['latin'],
@@ -25,8 +26,9 @@ const rajdhani = Rajdhani({
 });
 
 export const metadata: Metadata = {
-  title: 'Group Leveling | The Fantasy Walking RPG & Fitness App',
-  description: 'Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hero, and join guilds in the ultimate fitness game.',
+  title: `${SITE_NAME} | The Fantasy Walking RPG & Fitness App`,
+  description:
+    "Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hero, and join guilds in the ultimate fitness game.",
   keywords: [
     'gamified fitness',
     'workout RPG',
@@ -48,18 +50,18 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
-  metadataBase: new URL('https://www.groupleveling.app'),
+  metadataBase: new URL(SITE_URL),
   alternates: {
     canonical: '/',
   },
   openGraph: {
-    title: 'Group Leveling | The Fantasy Walking RPG & Fitness App',
+    title: `${SITE_NAME} | The Fantasy Walking RPG & Fitness App`,
     description: 'Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hero, and join guilds in the ultimate fitness game.',
     url: '/',
-    siteName: 'Group Leveling',
+    siteName: SITE_NAME,
     images: [
       {
-        url: '/og-image.png',
+        url: DEFAULT_OG_IMAGE,
         width: 1200,
         height: 630,
         alt: 'Group Leveling fantasy walking RPG and fitness app',
@@ -70,22 +72,20 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Group Leveling | The Fantasy Walking RPG & Fitness App',
+    title: `${SITE_NAME} | The Fantasy Walking RPG & Fitness App`,
     description: 'Awaken your inner hunter. Track runs, conquer dungeons, level up, and climb the elite rankings in this immersive fitness RPG system.',
-    images: ['/og-image.png'],
+    images: [DEFAULT_OG_IMAGE],
     creator: '@huntersystem',
   },
   robots: {
     index: true,
     follow: true,
-    nocache: true,
     googleBot: {
       index: true,
-      follow: false,
-      noimageindex: true,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
     },
   },
   icons: {

@@ -1,10 +1,28 @@
 import type { Metadata } from "next";
+import { DEFAULT_OG_IMAGE, SITE_NAME } from "@/lib/site";
+
+const title = `FAQ | ${SITE_NAME}`;
+const description =
+  "Frequently asked questions about Group Leveling, the fantasy walking RPG and fitness app. Independent product, not affiliated with Solo Leveling anime or games.";
 
 export const metadata: Metadata = {
-  title: "FAQ | Group Leveling",
-  description:
-    "Frequently asked questions about Group Leveling, the fantasy walking RPG and fitness app. Independent product, not affiliated with Solo Leveling anime or games.",
+  title,
+  description,
   alternates: { canonical: "/faq" },
+  openGraph: {
+    title,
+    description,
+    url: "/faq",
+    siteName: SITE_NAME,
+    type: "website",
+    images: [{ url: DEFAULT_OG_IMAGE, width: 1200, height: 630, alt: title }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+    images: [DEFAULT_OG_IMAGE],
+  },
 };
 
 const faqs = [

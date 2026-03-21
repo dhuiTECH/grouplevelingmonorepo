@@ -1,54 +1,53 @@
 import { MetadataRoute } from "next";
 import { supabaseAdmin } from "@/lib/supabase";
-
-const BASE_URL = "https://www.groupleveling.app";
+import { SITE_URL } from "@/lib/site";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticRoutes: MetadataRoute.Sitemap = [
     {
-      url: `${BASE_URL}/`,
+      url: `${SITE_URL}/`,
       lastModified: new Date(),
       changeFrequency: "daily",
       priority: 1,
     },
     {
-      url: `${BASE_URL}/features`,
+      url: `${SITE_URL}/features`,
       lastModified: new Date(),
       changeFrequency: "monthly",
       priority: 0.85,
     },
     {
-      url: `${BASE_URL}/blog`,
+      url: `${SITE_URL}/blog`,
       lastModified: new Date(),
       changeFrequency: "weekly",
       priority: 0.85,
     },
     {
-      url: `${BASE_URL}/faq`,
+      url: `${SITE_URL}/faq`,
       lastModified: new Date(),
       changeFrequency: "monthly",
       priority: 0.75,
     },
     {
-      url: `${BASE_URL}/about`,
+      url: `${SITE_URL}/about`,
       lastModified: new Date(),
       changeFrequency: "monthly",
       priority: 0.8,
     },
     {
-      url: `${BASE_URL}/join`,
+      url: `${SITE_URL}/join`,
       lastModified: new Date(),
       changeFrequency: "monthly",
       priority: 0.85,
     },
     {
-      url: `${BASE_URL}/privacy-policy`,
+      url: `${SITE_URL}/privacy-policy`,
       lastModified: new Date(),
       changeFrequency: "yearly",
       priority: 0.4,
     },
     {
-      url: `${BASE_URL}/terms-of-service`,
+      url: `${SITE_URL}/terms-of-service`,
       lastModified: new Date(),
       changeFrequency: "yearly",
       priority: 0.4,
@@ -64,7 +63,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     if (!error && posts?.length) {
       blogRoutes = posts.map((p) => ({
-        url: `${BASE_URL}/blog/${p.slug}`,
+        url: `${SITE_URL}/blog/${p.slug}`,
         lastModified: p.updated_at
           ? new Date(p.updated_at)
           : p.published_at

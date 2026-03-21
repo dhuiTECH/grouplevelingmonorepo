@@ -4,12 +4,30 @@ import {
   createPublicServerClient,
   formatSupabaseError,
 } from "@/utils/supabase/public-server";
+import { DEFAULT_OG_IMAGE, SITE_NAME } from "@/lib/site";
+
+const title = `Blog | ${SITE_NAME}`;
+const description =
+  "Updates, fitness RPG tips, and hunter fantasy walking app ideas from the Group Leveling team.";
 
 export const metadata: Metadata = {
-  title: "Blog | Group Leveling",
-  description:
-    "Updates, fitness RPG tips, and hunter fantasy walking app ideas, including Solo Leveling style motivation (unofficial).",
+  title,
+  description,
   alternates: { canonical: "/blog" },
+  openGraph: {
+    title,
+    description,
+    url: "/blog",
+    siteName: SITE_NAME,
+    type: "website",
+    images: [{ url: DEFAULT_OG_IMAGE, width: 1200, height: 630, alt: title }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+    images: [DEFAULT_OG_IMAGE],
+  },
 };
 
 export const revalidate = 120;

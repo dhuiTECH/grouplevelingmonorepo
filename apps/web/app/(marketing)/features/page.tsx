@@ -3,12 +3,30 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { PawPrint, Shield, UtensilsCrossed } from "lucide-react";
 import PhoneFrame from "@/components/marketing/features/PhoneFrame";
+import { DEFAULT_OG_IMAGE, SITE_NAME } from "@/lib/site";
+
+const title = `Features | ${SITE_NAME}`;
+const description =
+  "Walk the real world as your RPG map, collect and evolve pets, style your hero, log meals for buffs, and team up in guilds for boss raids.";
 
 export const metadata: Metadata = {
-  title: "Features | Group Leveling",
-  description:
-    "Walk the real world as your RPG map, collect and evolve pets, style your hero, log meals for buffs, and team up in guilds for boss raids.",
+  title,
+  description,
   alternates: { canonical: "/features" },
+  openGraph: {
+    title,
+    description,
+    url: "/features",
+    siteName: SITE_NAME,
+    type: "website",
+    images: [{ url: DEFAULT_OG_IMAGE, width: 1200, height: 630, alt: title }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+    images: [DEFAULT_OG_IMAGE],
+  },
 };
 
 /** Empty slot inside phone mockups — swap for your own assets later. */
