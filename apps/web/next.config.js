@@ -27,6 +27,15 @@ const nextConfig = {
     "*.repl.co",
     "*.riker.replit.dev",
   ],
+  async redirects() {
+    return [
+      {
+        source: "/solo-leveling-style-fitness-app",
+        destination: "/",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;

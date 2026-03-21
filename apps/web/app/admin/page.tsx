@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { User, Clock, Trophy, LogOut, Plus, Sword, Users, Settings, Edit, Edit2, Trash2, Coins, Loader2, Sparkles, Map, CheckCircle, XCircle, Zap, Check, BookOpen, Search, X, PawPrint, Music2, ScrollText, Globe } from 'lucide-react';
+import { User, Clock, Trophy, LogOut, Plus, Sword, Users, Settings, Edit, Edit2, Trash2, Coins, Loader2, Sparkles, Map, CheckCircle, XCircle, Zap, Check, BookOpen, Search, X, PawPrint, Music2, ScrollText, Globe, Newspaper } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
@@ -24,6 +24,7 @@ import MobsTab from '@/components/admin/MobsTab';
 import PetsTab from '@/components/admin/PetsTab';
 import AvatarBuilderTab from '@/components/admin/AvatarBuilderTab';
 import MusicTab from '@/components/admin/MusicTab';
+import BlogEditorTab from '@/components/admin/BlogEditorTab';
 import dynamic from 'next/dynamic';
 
 const WorldMapEngine = dynamic(
@@ -973,13 +974,24 @@ export default function AdminDashboard() {
               <p className="text-[10px] text-gray-500 mt-1">Logged in as: {currentUser.email}</p>
             )}
           </div>
-          <div className="flex items-center justify-between md:justify-end gap-3 md:gap-4">
+          <div className="flex flex-wrap items-center justify-between md:justify-end gap-3 md:gap-4">
             <Link 
               href="/asset-forge"
               className="px-3 py-2 md:px-4 md:py-2 clip-tech-button bg-purple-700 hover:bg-purple-600 text-white text-xs md:text-sm font-bold flex items-center gap-2 shadow-[0_0_15px_rgba(168,85,247,0.4)]"
             >
               <Sparkles size={16} className="md:w-[18px] md:h-[18px]" /> Asset Generator
             </Link>
+            <button
+              type="button"
+              onClick={() => setActiveTab('blog')}
+              className={`px-3 py-2 md:px-4 md:py-2 clip-tech-button text-white text-xs md:text-sm font-bold flex items-center gap-2 shadow-[0_0_15px_rgba(34,211,238,0.35)] ${
+                activeTab === 'blog'
+                  ? 'bg-cyan-600 ring-2 ring-cyan-400/80'
+                  : 'bg-cyan-900 hover:bg-cyan-700'
+              }`}
+            >
+              <Newspaper size={16} className="md:w-[18px] md:h-[18px]" /> Blog editor
+            </button>
             <div className="text-right">
               <div className="text-xs text-red-400 uppercase">Pending Approvals</div>
               <div className="text-lg md:text-xl font-black text-red-500">{pendingUsers.length}</div>
@@ -1018,7 +1030,7 @@ export default function AdminDashboard() {
         </div>
       </nav>
 
-      <main className={`relative z-10 flex-1 ${activeTab === 'map_generator' ? 'w-full h-full' : 'p-3 md:p-4 max-w-6xl mx-auto'}`}>
+      <main className={`relative z-10 flex-1 ${activeTab === 'map_generator' ? 'w-full h-full' : activeTab === 'blog' ? 'p-3 md:p-4 max-w-7xl mx-auto w-full' : 'p-3 md:p-4 max-w-6xl mx-auto'}`}>
 
         {/* Tab Content */}
         {activeTab === 'approvals' && (
@@ -1652,6 +1664,10 @@ export default function AdminDashboard() {
 
         {activeTab === 'music' && (
           <MusicTab />
+        )}
+
+        {activeTab === 'blog' && (
+          <BlogEditorTab />
         )}
 
         {activeTab === 'map_generator' && (

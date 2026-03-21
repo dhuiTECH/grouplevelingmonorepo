@@ -1,75 +1,82 @@
-import { MetadataRoute } from 'next';
+import { MetadataRoute } from "next";
+import { supabaseAdmin } from "@/lib/supabase";
 
-const BASE_URL = 'https://www.groupleveling.app'; // IMPORTANT: Replace with your actual domain
+const BASE_URL = "https://www.groupleveling.app";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  // --- STATIC ROUTES ---
   const staticRoutes: MetadataRoute.Sitemap = [
     {
       url: `${BASE_URL}/`,
-      lastModified: new Date().toISOString(),
-      changeFrequency: 'daily',
+      lastModified: new Date(),
+      changeFrequency: "daily",
       priority: 1,
     },
     {
+      url: `${BASE_URL}/features`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.85,
+    },
+    {
+      url: `${BASE_URL}/blog`,
+      lastModified: new Date(),
+      changeFrequency: "weekly",
+      priority: 0.85,
+    },
+    {
+      url: `${BASE_URL}/faq`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.75,
+    },
+    {
       url: `${BASE_URL}/about`,
-      lastModified: new Date().toISOString(),
-      changeFrequency: 'monthly',
+      lastModified: new Date(),
+      changeFrequency: "monthly",
       priority: 0.8,
     },
     {
+      url: `${BASE_URL}/join`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.85,
+    },
+    {
       url: `${BASE_URL}/privacy-policy`,
-      lastModified: new Date().toISOString(),
-      changeFrequency: 'yearly',
-      priority: 0.5,
+      lastModified: new Date(),
+      changeFrequency: "yearly",
+      priority: 0.4,
     },
     {
       url: `${BASE_URL}/terms-of-service`,
-      lastModified: new Date().toISOString(),
-      changeFrequency: 'yearly',
-      priority: 0.5,
+      lastModified: new Date(),
+      changeFrequency: "yearly",
+      priority: 0.4,
     },
-    {
-      url: `${BASE_URL}/leaderboard`, // Example: if you have a dedicated leaderboard page
-      lastModified: new Date().toISOString(),
-      changeFrequency: 'daily',
-      priority: 0.9,
-    },
-    // Add other static pages here as needed
   ];
 
-  // --- DYNAMIC ROUTES (PLACEHOLDER EXAMPLES) ---
-  // You would typically fetch data from your database or API to generate these dynamically.
-  // Example: Fetching dynamic leaderboard seasons
-  /*
-  const leaderboardSeasons = await fetchLeaderboardSeasonsFromAPI(); // Implement this function
-  const dynamicLeaderboards: MetadataRoute.Sitemap = leaderboardSeasons.map(
-    (season) => ({
-      url: `${BASE_URL}/leaderboard/${season.id}`,
-      lastModified: new Date(season.updatedAt).toISOString(),
-      changeFrequency: 'daily',
-      priority: 0.7,
-    })
-  );
-  */
+  let blogRoutes: MetadataRoute.Sitemap = [];
+  try {
+    const { data: posts, error } = await supabaseAdmin
+      .from("blog_posts")
+      .select("slug, updated_at, published_at")
+      .eq("published", true);
 
-  // Example: Fetching public user profiles
-  /*
-  const publicUserProfiles = await fetchPublicUserProfilesFromAPI(); // Implement this function
-  const dynamicUserProfiles: MetadataRoute.Sitemap = publicUserProfiles.map(
-    (user) => ({
-      url: `${BASE_URL}/profile/${user.id}`,
-      lastModified: new Date(user.lastActivity).toISOString(), // Or a relevant timestamp
-      changeFrequency: 'weekly',
-      priority: 0.6,
-    })
-  );
-  */
+    if (!error && posts?.length) {
+      blogRoutes = posts.map((p) => ({
+        url: `${BASE_URL}/blog/${p.slug}`,
+        lastModified: p.updated_at
+          ? new Date(p.updated_at)
+          : p.published_at
+            ? new Date(p.published_at)
+            : new Date(),
+        changeFrequency: "weekly" as const,
+        priority: 0.65,
+      }));
+    }
+  } catch {
+    // Missing env or table — skip dynamic blog URLs
+  }
 
-  // Combine all routes
-  return [
-    ...staticRoutes,
-    // ...dynamicLeaderboards, // Uncomment if you implement dynamic leaderboards
-    // ...dynamicUserProfiles, // Uncomment if you implement dynamic user profiles
-  ];
+  return [...staticRoutes, ...blogRoutes];
 }

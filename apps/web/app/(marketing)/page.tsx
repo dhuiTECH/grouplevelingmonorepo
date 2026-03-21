@@ -4,8 +4,9 @@ import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { Smartphone, Loader2 } from "lucide-react";
-import SpriteAnimation from "../components/SpriteAnimation";
-import SystemWindow from "../components/SystemWindow";
+import SpriteAnimation from "@/components/SpriteAnimation";
+import SystemWindow from "@/components/SystemWindow";
+import FeatureCard from "@/components/marketing/FeatureCard";
 
 export default function LandingPage() {
   // Waitlist State
@@ -168,15 +169,12 @@ export default function LandingPage() {
               transition={{ duration: 0.8 }}
               className="max-w-2xl w-full flex flex-col items-center md:items-start mb-2 md:mb-4"
             >
-              {/* Visually hidden H1 for SEO bots to understand the page niche */}
-              <h1 className="sr-only">Group Leveling: The Ultimate Gamified Fitness RPG & Workout Tracker</h1>
-              <h2 className="text-lg md:text-3xl lg:text-[40px] font-black uppercase tracking-tight leading-[1.15] system-glow-text drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">
-                <span className="block">Your Fitness Journey,</span>
-                <span className="block mt-1 md:mt-2">Your RPG Adventure!</span>
+              <h1 className="text-base md:text-3xl lg:text-[36px] font-black tracking-tight leading-[1.15] system-glow-text drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">
+                Your Daily Walk Has Been Converted into an RPG Quest.
+              </h1>
+              <h2 className="mt-1 md:mt-5 text-[10px] md:text-base font-semibold text-white/95 max-w-[95%] md:max-w-xl text-center md:text-left drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-relaxed md:ml-1">
+                Join thousands of heroes already leveling up. Traverse a fantasy world with every step and log your fitness and calories to power your hero&apos;s journey.
               </h2>
-              <p className="mt-1 md:mt-5 text-[10px] md:text-base font-semibold text-white/95 max-w-[95%] md:max-w-xl text-center md:text-left drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-relaxed md:ml-1">
-              Not just another boring fitness app. Track calories, crush weight loss goals, and level up your hero. Join thousands of heroes already leveling up.
-              </p>
             </motion.div>
 
             {/* Bottom Section: Buttons & Waitlist (Desktop Only inside SystemWindow) */}
@@ -219,9 +217,7 @@ export default function LandingPage() {
 
       {/* 
         FEATURE GRID SECTION 
-        - Single wide container style
-        - Top/Bottom borders
-        - Anchor: #features (e.g. /testingpage#features)
+        - Anchor: #features for deep links
       */}
       <section
         id="features"
@@ -434,52 +430,6 @@ function HeroButtons({
             </motion.div>
           </div>
         </div>
-      </div>
-    </motion.div>
-  );
-}
-
-// Reusable Feature Card Component
-function FeatureCard({
-  imageSrc,
-  title,
-  description,
-  delay,
-}: {
-  imageSrc: string;
-  title: string;
-  description: string;
-  delay: number;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 30 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.6, delay }}
-      className="flex flex-col items-center h-full scale-[1.02] origin-center"
-    >
-      {/* Fixed-height image area so all 4 cards align on same baseline */}
-      <div className="relative w-full h-40 sm:h-44 md:h-52 flex-shrink-0 mb-4 transition-transform hover:scale-[1.02] duration-300">
-        <Image
-          src={imageSrc}
-          alt={title}
-          fill
-          className="object-contain drop-shadow-sm"
-        />
-      </div>
-
-      {/* Text – dark blue, centered */}
-      <div className="text-center px-2 flex-grow flex flex-col justify-start">
-        <h3 
-          className="text-lg md:text-xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-blue-400 to-cyan-300 mb-2 min-h-[3rem] flex items-center justify-center italic"
-          style={{ textShadow: "0 0 20px rgba(6,182,212,0.5)" }}
-        >
-          {title}
-        </h3>
-        <p className="text-slate-300 font-semibold text-sm md:text-base leading-snug">
-          {description}
-        </p>
       </div>
     </motion.div>
   );

@@ -25,9 +25,21 @@ const rajdhani = Rajdhani({
 });
 
 export const metadata: Metadata = {
-  title: 'Gamified Fitness RPG & Workout Tracker | Group Leveling',
+  title: 'Group Leveling | The Fantasy Walking RPG & Fitness App',
   description: 'Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hero, and join guilds in the ultimate fitness game.',
-  keywords: ['gamified fitness', 'workout RPG', 'fitness game', 'run tracker RPG', 'weight loss game', 'fitness motivation', 'step tracker game'],
+  keywords: [
+    'gamified fitness',
+    'workout RPG',
+    'walking RPG',
+    'fantasy fitness app',
+    'solo leveling style fitness',
+    'hunter fantasy workout game',
+    'dungeon RPG fitness tracker',
+    'run tracker RPG',
+    'weight loss game',
+    'fitness motivation',
+    'step tracker game',
+  ],
   authors: [{ name: 'Group Leveling' }],
   creator: 'Group Leveling',
   publisher: 'Group Leveling',
@@ -41,16 +53,16 @@ export const metadata: Metadata = {
     canonical: '/',
   },
   openGraph: {
-    title: 'Gamified Fitness RPG & Workout Tracker | Group Leveling',
+    title: 'Group Leveling | The Fantasy Walking RPG & Fitness App',
     description: 'Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hero, and join guilds in the ultimate fitness game.',
     url: '/',
-    siteName: 'Hunter System',
+    siteName: 'Group Leveling',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Hunter System - Level Up Through Fitness',
+        alt: 'Group Leveling fantasy walking RPG and fitness app',
       },
     ],
     locale: 'en_US',
@@ -58,7 +70,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Hunter System | Level Up Through Fitness',
+    title: 'Group Leveling | The Fantasy Walking RPG & Fitness App',
     description: 'Awaken your inner hunter. Track runs, conquer dungeons, level up, and climb the elite rankings in this immersive fitness RPG system.',
     images: ['/og-image.png'],
     creator: '@huntersystem',
@@ -77,11 +89,15 @@ export const metadata: Metadata = {
     },
   },
   icons: {
-    icon: '/favicon.ico',
-    shortcut: '/favicon-16x16.png',
+    icon: [
+      { url: '/favicon.ico', sizes: '48x48' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon-96x96.png', sizes: '96x96', type: 'image/png' },
+    ],
+    shortcut: '/favicon-96x96.png',
     apple: '/apple-touch-icon.png',
   },
-  manifest: '/manifest.json',
+  manifest: '/site.webmanifest',
 };
 
 export default function RootLayout({

@@ -4,13 +4,17 @@ import React from "react";
 interface SystemWindowProps {
   children: React.ReactNode;
   className?: string;
+  /** Shown in the mono header bar (default matches landing hero). */
+  title?: string;
 }
 
-export default function SystemWindow({ children, className = "" }: SystemWindowProps) {
+export default function SystemWindow({ children, className = "", title = "SYSTEM WINDOW" }: SystemWindowProps) {
   const windowShape = "polygon(0 24px, 24px 0, 169px 0, 181px 12px, 100% 12px, 100% calc(100% - 24px), calc(100% - 24px) 100%, 0 100%)";
 
   return (
-    <div className={`relative w-full drop-shadow-[0_0_20px_rgba(6,182,212,0.15)] ${className}`}>
+    <div
+      className={`relative w-full drop-shadow-[0_0_20px_rgba(6,182,212,0.15)] animate-system-window-open ${className}`}
+    >
       <div className="absolute inset-0 bg-gradient-to-br from-[#060b13]/95 to-[#020617]/90 backdrop-blur-xl" style={{ clipPath: windowShape }} />
       <div className="absolute inset-0 pointer-events-none opacity-[0.05] mix-blend-screen" style={{ clipPath: windowShape }}>
         <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
@@ -55,7 +59,12 @@ export default function SystemWindow({ children, className = "" }: SystemWindowP
         <div className="absolute top-[49px] bottom-[43px] left-[5px] w-[1px] bg-[#0891b2]/50" />
       </div>
       <div className="absolute top-[16px] left-[32px] w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] animate-pulse" />
-      <span className="absolute top-[13px] left-[44px] text-[10px] md:text-xs font-mono text-slate-300 tracking-[0.2em] font-bold">SYSTEM WINDOW</span>
+      <span
+        className="absolute top-[13px] left-[44px] right-10 md:right-14 text-[10px] md:text-xs font-mono text-slate-300 tracking-[0.12em] md:tracking-[0.2em] font-bold truncate"
+        title={title}
+      >
+        {title}
+      </span>
       <div className="relative z-10 w-full p-3 md:p-10 pt-10 md:pt-14">{children}</div>
     </div>
   );
