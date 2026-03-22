@@ -62,7 +62,7 @@ export const PartyMembersLayer = memo(PartyMembersLayerInner, (prev, next) => {
   for (let i = 0; i < prev.members.length; i++) {
     const a = prev.members[i];
     const b = next.members[i];
-    if (!b || a.id !== b.id || a.world_x !== b.world_x || a.world_y !== b.world_y) return false;
+    if (!b || a.id !== b.id || a.world_x !== b.world_x || a.world_y !== b.world_y || a.hair_tint_hex !== b.hair_tint_hex) return false;
   }
   return true;
 });

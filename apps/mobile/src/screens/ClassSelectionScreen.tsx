@@ -11,6 +11,7 @@ import { useAudio } from '@/contexts/AudioContext';
 import { playClassVoiceOver, stopClassVoiceOver } from '@/utils/audioPlayer';
 import { debounce } from '@/utils/debounce';
 import { playHunterSound } from '@/utils/audio';
+import { SystemClassSelectionButton } from '@/components/avatar/AvatarSystemUi';
 
 // --- ASSET IMPORTS ---
 const classImages = {
@@ -116,7 +117,9 @@ const ClassSelectionScreen = () => {
     playClassVoiceOver(classId);
   }, 300)).current;
 
-  const { gender, name, avatarConfig } = route.params || {};
+  const { gender: genderParam, name: nameParam, avatarConfig } = route.params || {};
+  const gender = genderParam ?? user?.gender ?? 'Male';
+  const name = nameParam ?? user?.hunter_name ?? user?.name;
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -181,6 +184,11 @@ const ClassSelectionScreen = () => {
         const startingTitle = INITIAL_TITLES[selectedClass] || 'Novice Hunter';
 
         // 🎯 2. UPSERT WITH TITLE & RANK 0 (include avatar tint/silhouette from Avatar screen)
+        // Hardcode starting position to Seoul Node based on ID
+        const SEOUL_NODE_ID = "11c88b0a-27d0-4366-a47e-293ff25ec285";
+        const START_X = 24.00;
+        const START_Y = 64.50;
+
         const { error } = await supabase
             .from('profiles')
             .upsert({
@@ -198,10 +206,16 @@ const ClassSelectionScreen = () => {
                 level: 1,
                 coins: 100,
                 onboarding_completed: true,
+                onboarding_step: 'done',
                 updated_at: new Date().toISOString(),
+
+                // Spawn Point
+                world_x: START_X,
+                world_y: START_Y,
 
                 base_body_silhouette_url: avatarConfig?.base_body_silhouette_url ?? user?.base_body_silhouette_url ?? null,
                 base_body_tint_hex: avatarConfig?.base_body_tint_hex ?? user?.base_body_tint_hex ?? null,
+                hair_tint_hex: avatarConfig?.hair_tint_hex ?? user?.hair_tint_hex ?? null,
             });
 
         if (error) throw error;
@@ -245,16 +259,26 @@ const ClassSelectionScreen = () => {
                         ...user,
                         current_class: selectedClass,
                         onboarding_completed: true,
+                        onboarding_step: 'done',
                         gender: gender || user.gender || 'Male',
                         name: name || user.name || 'Hunter',
-                        avatar: avatarUrl,
+                        hunter_name: name || user.hunter_name || user.name || 'Hunter',
+                        avatar_url: avatarUrl,
                         profilePicture: resolveAvatar(avatarUrl),
                         cosmetics: avatarConfig?.cosmetics || user.cosmetics || [],
                         base_body_silhouette_url: avatarConfig?.base_body_silhouette_url ?? user.base_body_silhouette_url,
                         base_body_tint_hex: avatarConfig?.base_body_tint_hex ?? user.base_body_tint_hex,
+                        hair_tint_hex: avatarConfig?.hair_tint_hex ?? user.hair_tint_hex,
+                        world_x: START_X,
+                        world_y: START_Y,
                     });
                 }
-                navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                const parent = navigation.getParent();
+                if (parent) {
+                  parent.reset({ index: 0, routes: [{ name: 'Home' }] });
+                } else {
+                  navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                }
              }}
         ]);
 
@@ -382,20 +406,15 @@ const ClassSelectionScreen = () => {
         </View>
 
         <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
-            <TouchableOpacity
-                style={[styles.confirmButton, loading && styles.confirmButtonDisabled]}
-                disabled={loading}
-                onPress={handleConfirm}
-            >
-                {loading ? (
-                    <ActivityIndicator color="#fff" />
-                ) : (
-                    <View style={styles.btnInner}>
-                        <Text style={styles.confirmButtonText}>CONFIRM SELECTION</Text>
-                        <Text style={{ color: '#fff', marginLeft: 10 }}>→</Text>
-                    </View>
-                )}
-            </TouchableOpacity>
+            {loading ? (
+                <ActivityIndicator color="#06b6d4" />
+            ) : (
+                <SystemClassSelectionButton 
+                    onPress={handleConfirm}
+                    width={Dimensions.get('window').width * 0.9}
+                    label="CONFIRM SELECTION"
+                />
+            )}
         </View>
 
       </SafeAreaView>
@@ -502,17 +521,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     paddingTop: 10,
   },
-  confirmButton: {
-    width: '90%',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderWidth: 1, borderColor: '#22d3ee',
-    paddingVertical: 15,
-    borderRadius: 2, 
-    alignItems: 'center',
-  },
-  confirmButtonDisabled: { opacity: 0.7 },
-  confirmButtonText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 3 },
-  btnInner: { flexDirection: 'row', alignItems: 'center' },
 });
 
 export default ClassSelectionScreen;

@@ -3,6 +3,7 @@
 import React from 'react';
 import { Settings, X, Loader2, Skull, Settings as SettingsIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import SecureAccountCard from '@/components/SecureAccountCard';
 import { useRouter } from 'next/navigation';
 import LayeredAvatar from './LayeredAvatar';
 import { GlobalTerminal } from '@/components/GlobalTerminal'; // ✅ Chat is back
@@ -134,6 +135,8 @@ export const HunterHeader: React.FC<HunterHeaderProps> = ({
                     <X size={18} />
                   </button>
                 </div>
+
+                <SecureAccountCard hunterEmail={user.email} />
 
                   {/* Settings Grid */}
                 <div className="grid grid-cols-2 gap-2">

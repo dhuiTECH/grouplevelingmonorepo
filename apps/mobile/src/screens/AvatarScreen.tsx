@@ -1,41 +1,42 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { View, Text, Image, ScrollView, TouchableOpacity, ActivityIndicator, Dimensions, Animated, Easing, ImageSourcePropType, StyleSheet, Platform } from "react-native";
+import { View, Text, Image, ScrollView, TouchableOpacity, ActivityIndicator, Dimensions, Animated, Easing, StyleSheet, Platform, type ImageSourcePropType } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { Audio, Video, ResizeMode } from 'expo-av';
-import { ChevronRight, Dices } from 'lucide-react-native';
 import { supabase } from "@/lib/supabase";
 import LayeredAvatar from "@/components/LayeredAvatar";
 import { User } from "@/types/user";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAudio } from '@/contexts/AudioContext';
 import { findFemaleDefaultBodyShopItemIndex } from "@/utils/femaleBodyDefault";
+import {
+  HAIR_CREATOR_SWATCHES,
+  DEFAULT_HAIR_TINT_HEX,
+} from "@repo/avatar-constants";
+import {
+  SystemAvatarCategoryGrid,
+  SystemRandomizeButton,
+  SystemClassSelectionButton,
+  type SystemAvatarCategoryId,
+} from "@/components/avatar/AvatarSystemUi";
 
 // Assets
-const BG_STONE = require("../../assets/stone-bg.jpg");
 const RUNIC_CIRCLE = require("../../assets/runic-circle.png");
-const AVATAR_ICONS = {
-  Base: require("../../assets/Avatarscreenicons/Base.png"),
-  Eyes: require("../../assets/Avatarscreenicons/Eyes.png"),
-  Mouth: require("../../assets/Avatarscreenicons/Mouth.png"),
-  Hair: require("../../assets/Avatarscreenicons/Hair.png"),
-  Face: require("../../assets/Avatarscreenicons/Face.png"),
-  Body: require("../../assets/Avatarscreenicons/Body.png"),
+
+const AVATAR_CATEGORY_ICONS: Record<SystemAvatarCategoryId, ImageSourcePropType> = {
+  base: require("../../assets/Avatarscreenicons/Base.png"),
+  face_eyes: require("../../assets/Avatarscreenicons/Eyes.png"),
+  face_mouth: require("../../assets/Avatarscreenicons/Mouth.png"),
+  hair: require("../../assets/Avatarscreenicons/Hair.png"),
+  face: require("../../assets/Avatarscreenicons/Face.png"),
+  body: require("../../assets/Avatarscreenicons/Body.png"),
 };
 
 // Constants
 const PART_SLOTS = ["face_eyes", "face_mouth", "hair", "face", "body"] as const;
-const SLOT_LABELS: Record<string, string> = {
-  base: "Base",
-  face_eyes: "Eyes",
-  face_mouth: "Mouth",
-  hair: "Hair",
-  face: "Face",
-  body: "Body",
-};
 
 const SKIN_TONES = [
   { hex: "#FFDBAC", label: "Light" },
@@ -50,7 +51,7 @@ const SKIN_TONES = [
 ];
 
 export default function AvatarScreen({ navigation }: any) {
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const { playTrack } = useAudio();
 
   useEffect(() => {
@@ -65,6 +66,7 @@ export default function AvatarScreen({ navigation }: any) {
   const [selectedBaseIndex, setSelectedBaseIndex] = useState(0);
   const [selectedPartIndex, setSelectedPartIndex] = useState<Record<string, number>>({});
   const [skinTint, setSkinTint] = useState("#FFDBAC");
+  const [hairTintHex, setHairTintHex] = useState(DEFAULT_HAIR_TINT_HEX);
 
   // Animation Values
   const spinValue = useRef(new Animated.Value(0)).current;
@@ -76,6 +78,9 @@ export default function AvatarScreen({ navigation }: any) {
 
   const screenWidth = Dimensions.get('window').width;
   const avatarSize = Math.min(screenWidth * 0.9, 400);
+  const categoryGridWidth = screenWidth - 24;
+  const classSelectionWidth = Math.min(screenWidth - 32, 420);
+  const randomizeTileWidth = 84;
 
   // Load Sound
   useEffect(() => {
@@ -306,6 +311,11 @@ export default function AvatarScreen({ navigation }: any) {
     Haptics.selectionAsync();
   };
 
+  const handleHairTintSelect = (hex: string) => {
+    setHairTintHex(hex);
+    Haptics.selectionAsync();
+  };
+
   const handleRandomize = () => {
     if (apiBases.length === 0) return;
 
@@ -355,11 +365,14 @@ export default function AvatarScreen({ navigation }: any) {
 
     // 3. Pick random skin tone
     const randomSkin = SKIN_TONES[Math.floor(Math.random() * SKIN_TONES.length)].hex;
+    const randomHair =
+      HAIR_CREATOR_SWATCHES[Math.floor(Math.random() * HAIR_CREATOR_SWATCHES.length)].hex;
 
     // 4. Update states
     setSelectedBaseIndex(randomBaseIdx);
     setSelectedPartIndex(newPartIndices);
     setSkinTint(randomSkin);
+    setHairTintHex(randomHair);
     
     // Trigger feedback
     triggerSelectionFeedback();
@@ -381,10 +394,12 @@ export default function AvatarScreen({ navigation }: any) {
       const idx = selectedPartIndex[slot] ?? 0;
       const item = partsBySlot[slot]?.[idx];
       if (item?.id) {
+        const shop_items =
+          slot === "hair" ? { ...item, skin_tint_hex: hairTintHex } : item;
         cosmetics.push({
           id: `preview-${slot}`,
           equipped: true,
-          shop_items: item
+          shop_items,
         });
       }
     }
@@ -396,6 +411,7 @@ export default function AvatarScreen({ navigation }: any) {
       base_body_url: baseImage,
       base_body_silhouette_url: baseSilhouette,
       base_body_tint_hex: skinTint,
+      hair_tint_hex: hairTintHex,
       cosmetics: cosmetics as any,
       email: '',
       level: 1,
@@ -414,15 +430,25 @@ export default function AvatarScreen({ navigation }: any) {
       current_mp: 50,
       max_mp: 50,
     } as User;
-  }, [selectedBase, selectedPartIndex, partsBySlot, skinTint]);
+  }, [selectedBase, selectedPartIndex, partsBySlot, skinTint, hairTintHex]);
 
   const handleFinalize = async () => {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (user?.id) {
+      await supabase
+        .from('profiles')
+        .update({
+          onboarding_step: 'class',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+      await refreshProfile();
+    }
     navigation.navigate('ClassSelection', {
       avatarConfig: {
         ...syntheticUser,
         base_body_tint_hex: skinTint,
-      }
+      },
     });
   };
 
@@ -461,14 +487,9 @@ export default function AvatarScreen({ navigation }: any) {
             <Text style={styles.modeText}>MODE: AVATAR_GEN</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <TouchableOpacity 
-              onPress={handleRandomize}
-              style={styles.randomBtn}
-              activeOpacity={0.7}
-            >
-              <Dices size={14} color="#22d3ee" />
-              <Text style={styles.randomText}>RANDOMIZE</Text>
-            </TouchableOpacity>
+            <View style={{ marginBottom: 4 }}>
+              <SystemRandomizeButton onPress={handleRandomize} width={randomizeTileWidth} />
+            </View>
             <Text style={styles.modeText}>LOCAL_NODE: 04</Text>
           </View>
         </View>
@@ -531,8 +552,36 @@ export default function AvatarScreen({ navigation }: any) {
           </View>
 
           {/* Bottom Controls: Categories, Options, Finalize */}
-          <View>
-            {/* Skin Tone Selector (only when Base tab is active) */}
+          <ScrollView
+            style={{ flex: 1, minHeight: 0 }}
+            contentContainerStyle={{ paddingBottom: 12 }}
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Hair color presets (Hair tab) */}
+            {activeCategory === 'hair' && (
+              <View style={{ paddingHorizontal: 20, paddingVertical: 12, marginBottom: 15 }}>
+                <Text style={styles.sectionLabel}>HAIR PIGMENT MATRIX</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingVertical: 10, alignItems: 'center' }}
+                >
+                  {HAIR_CREATOR_SWATCHES.map((tone) => (
+                    <TouchableOpacity
+                      key={tone.hex}
+                      onPress={() => handleHairTintSelect(tone.hex)}
+                      style={[
+                        styles.colorCircle,
+                        { backgroundColor: tone.hex },
+                        hairTintHex === tone.hex && styles.colorCircleActive
+                      ]}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            )}
             {activeCategory === 'base' && (
               <View style={{ paddingHorizontal: 20, paddingVertical: 12, marginBottom: 15 }}>
                 <Text style={styles.sectionLabel}>SKIN TONE RECALIBRATION</Text>
@@ -555,49 +604,16 @@ export default function AvatarScreen({ navigation }: any) {
                 </ScrollView>
               </View>
             )}
-            {/* Category Tabs */}
-            <View className="px-3 py-4 mt-2">
-              <View className="flex-row justify-center gap-4" style={{ marginBottom: 20 }}>
-                <CategoryBtn
-                  label="Base"
-                  iconSource={AVATAR_ICONS.Base}
-                  active={activeCategory === 'base'}
-                  onPress={() => setActiveCategory('base')}
-                />
-                <CategoryBtn
-                  label={SLOT_LABELS['face_eyes']}
-                  iconSource={AVATAR_ICONS.Eyes}
-                  active={activeCategory === 'face_eyes'}
-                  onPress={() => setActiveCategory('face_eyes')}
-                />
-                <CategoryBtn
-                  label={SLOT_LABELS['face_mouth']}
-                  iconSource={AVATAR_ICONS.Mouth}
-                  active={activeCategory === 'face_mouth'}
-                  onPress={() => setActiveCategory('face_mouth')}
-                />
-              </View>
-
-              <View className="flex-row justify-center gap-4 mb-4">
-                <CategoryBtn
-                  label={SLOT_LABELS['hair']}
-                  iconSource={AVATAR_ICONS.Hair}
-                  active={activeCategory === 'hair'}
-                  onPress={() => setActiveCategory('hair')}
-                />
-                <CategoryBtn
-                  label={SLOT_LABELS['face']}
-                  iconSource={AVATAR_ICONS.Face}
-                  active={activeCategory === 'face'}
-                  onPress={() => setActiveCategory('face')}
-                />
-                <CategoryBtn
-                  label={SLOT_LABELS['body']}
-                  iconSource={AVATAR_ICONS.Body}
-                  active={activeCategory === 'body'}
-                  onPress={() => setActiveCategory('body')}
-                />
-              </View>
+            <View className="px-3 py-2 mt-0 items-center">
+              <SystemAvatarCategoryGrid
+                contentWidth={categoryGridWidth}
+                activeCategory={activeCategory}
+                categoryIconSources={AVATAR_CATEGORY_ICONS}
+                onSelect={(id: SystemAvatarCategoryId) => {
+                  Haptics.selectionAsync();
+                  setActiveCategory(id);
+                }}
+              />
             </View>
 
             {/* Options Grid */}
@@ -634,46 +650,14 @@ export default function AvatarScreen({ navigation }: any) {
                 </ScrollView>
             </View>
 
-            {/* Footer / Finalize */}
-            <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 30 }}>
-              <TouchableOpacity
-                onPress={handleFinalize}
-                activeOpacity={0.85}
-                style={styles.finalizeBtn}
-              >
-                <Text style={styles.finalizeText}>CLASS SELECTION</Text>
-                <ChevronRight size={16} color="#fff" />
-              </TouchableOpacity>
+            <View style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 20 }}>
+              <SystemClassSelectionButton onPress={handleFinalize} width={classSelectionWidth} />
             </View>
-          </View>
+          </ScrollView>
         </View>
       </SafeAreaView>
     </View>
   );
-}
-
-function CategoryBtn({ label, iconSource, active, onPress }: { label: string; iconSource: ImageSourcePropType; active: boolean; onPress: () => void }) {
-  return (
-    <TouchableOpacity 
-      onPress={onPress}
-      style={[
-        styles.categoryBtn,
-        active ? styles.categoryBtnActive : styles.categoryBtnInactive
-      ]}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Image
-          source={iconSource}
-          style={[styles.categoryIcon, { opacity: active ? 1 : 0.4 }]}
-          resizeMode="contain"
-        />
-        <Text style={[
-          styles.categoryBtnText,
-          active ? { color: '#fff' } : { color: 'rgba(6, 182, 212, 0.4)' }
-        ]}>{label}</Text>
-      </View>
-    </TouchableOpacity>
-  )
 }
 
 const styles = StyleSheet.create({
@@ -704,33 +688,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     letterSpacing: 2,
     fontSize: 10,
-  },
-  categoryBtn: {
-    minWidth: 100, // Increased width
-    height: 40, // Reduced height
-    marginHorizontal: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderRadius: 4,
-  },
-  categoryBtnActive: {
-    backgroundColor: 'rgba(6, 182, 212, 0.2)',
-    borderColor: '#22d3ee',
-  },
-  categoryBtnInactive: {
-    backgroundColor: 'rgba(10, 16, 26, 0.8)',
-    borderColor: 'rgba(26, 42, 64, 0.5)',
-  },
-  categoryIcon: {
-    width: 30,
-    height: 30,
-  },
-  categoryBtnText: {
-    fontSize: 9,
-    fontFamily: 'Exo2-Regular',
-    fontWeight: 'bold',
-    textTransform: 'uppercase',
   },
   optionCard: {
     width: 80,
@@ -779,42 +736,5 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#fff',
     transform: [{ scale: 1.1 }],
-  },
-  finalizeBtn: {
-    width: '90%',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderWidth: 1,
-    borderColor: '#22d3ee',
-    paddingVertical: 15,
-    borderRadius: 2,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
-  },
-  finalizeText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 3,
-  },
-  randomBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(34, 211, 238, 0.1)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.3)',
-    marginBottom: 4,
-  },
-  randomText: {
-    color: '#22d3ee',
-    fontSize: 9,
-    fontFamily: 'Exo2-Regular',
-    fontWeight: 'bold',
-    letterSpacing: 1,
   },
 });

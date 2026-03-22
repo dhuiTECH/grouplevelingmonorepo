@@ -16,6 +16,7 @@ interface UserAvatarData {
   base_body_url?: string;
   base_body_silhouette_url?: string;
   base_body_tint_hex?: string;
+  hair_tint_hex?: string;
   avatar_url?: string;
 }
 
@@ -161,6 +162,7 @@ export function useMapCharacter(
       base_body_url: user.base_body_url,
       base_body_silhouette_url: user.base_body_silhouette_url,
       base_body_tint_hex: user.base_body_tint_hex,
+      hair_tint_hex: user.hair_tint_hex,
       avatar_url: user.avatar_url,
     };
   }, [avatarKey, user]);

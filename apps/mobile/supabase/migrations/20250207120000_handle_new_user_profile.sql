@@ -16,8 +16,22 @@ BEGIN
   placeholder_name := 'Hunter-' || replace(left(NEW.id::text, 8), '-', '');
   placeholder_email := replace(NEW.id::text, '-', '') || '@placeholder.local';
 
-  INSERT INTO public.profiles (id, hunter_name, email, updated_at)
-  VALUES (NEW.id, placeholder_name, placeholder_email, now())
+  INSERT INTO public.profiles (
+    id, 
+    hunter_name, 
+    email, 
+    updated_at,
+    world_x,
+    world_y
+  )
+  VALUES (
+    NEW.id, 
+    placeholder_name, 
+    placeholder_email, 
+    now(),
+    24.00,
+    64.50
+  )
   ON CONFLICT (id) DO NOTHING;
   RETURN NEW;
 END;

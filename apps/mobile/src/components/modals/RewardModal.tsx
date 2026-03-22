@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useEffect, useId } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { MotiView } from 'moti';
 import Animated, {
@@ -18,15 +18,15 @@ const expIcon = require('../../../assets/expcrystal.png');
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const Scanlines = () => (
+const Scanlines = ({ patternId }: { patternId: string }) => (
   <View style={StyleSheet.absoluteFill} pointerEvents="none">
     <Svg width="100%" height="100%">
       <Defs>
-        <Pattern id="scanlines" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+        <Pattern id={patternId} x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
           <Rect x="0" y="0" width="4" height="1" fill="#00d2ff" fillOpacity="0.05" />
         </Pattern>
       </Defs>
-      <Rect x="0" y="0" width="100%" height="100%" fill="url(#scanlines)" />
+      <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${patternId})`} />
     </Svg>
   </View>
 );
@@ -68,6 +68,7 @@ export const RewardModal: React.FC<RewardModalProps> = ({
   goldBuff,
   expBuff,
 }) => {
+  const scanlinePatternId = `reward-scan-${useId().replace(/:/g, '_')}`;
   const iconRotation = useSharedValue(0);
 
   useEffect(() => {
@@ -84,40 +85,46 @@ export const RewardModal: React.FC<RewardModalProps> = ({
 
   if (!visible) return null;
 
-  const renderRewardItem = ({ item, index }: { item: Reward, index: number }) => (
-    <MotiView
-      from={{ opacity: 0, scale: 0.5, translateY: 20 }}
-      animate={{ opacity: 1, scale: 1, translateY: 0 }}
-      transition={{ type: 'spring', delay: 300 + index * 100 }}
-      style={styles.rewardItem}
-    >
-      <View style={styles.rewardIconContainer}>
-        {item.type === 'coins' || item.type === 'exp' ? (
-          <Image
-            source={item.type === 'coins' ? coinIcon : expIcon}
-            style={styles.rewardIcon}
-            contentFit="contain"
-          />
-        ) : item.type === 'gems' ? (
-          <Gem size={32} color="#00d2ff" />
-        ) : (
-          <Award size={32} color="#00d2ff" />
-        )}
-      </View>
-      <Text style={styles.rewardText}>
-        {item.type === 'stat' ? `${item.stat?.toUpperCase()} +${item.amount}` : `+${item.amount.toLocaleString()}`}
-      </Text>
-      <Text style={styles.rewardLabel}>
-        {item.type === 'stat' ? 'UPGRADE' : item.type.toUpperCase()}
-      </Text>
-    </MotiView>
-  );
+  const renderRewardItem = (item: Reward, index: number) => {
+    const amount = typeof item.amount === 'number' && !Number.isNaN(item.amount) ? item.amount : 0;
+    return (
+      <MotiView
+        key={`${item.type}-${index}`}
+        from={{ opacity: 0, scale: 0.5, translateY: 20 }}
+        animate={{ opacity: 1, scale: 1, translateY: 0 }}
+        transition={{ type: 'spring', delay: 300 + index * 100 }}
+        style={styles.rewardItem}
+      >
+        <View style={styles.rewardIconContainer}>
+          {item.type === 'coins' || item.type === 'exp' ? (
+            <Image
+              source={item.type === 'coins' ? coinIcon : expIcon}
+              style={styles.rewardIcon}
+              contentFit="contain"
+            />
+          ) : item.type === 'gems' ? (
+            <Gem size={32} color="#00d2ff" />
+          ) : (
+            <Award size={32} color="#00d2ff" />
+          )}
+        </View>
+        <Text style={styles.rewardText}>
+          {item.type === 'stat'
+            ? `${item.stat?.toUpperCase()} +${amount}`
+            : `+${amount.toLocaleString()}`}
+        </Text>
+        <Text style={styles.rewardLabel}>
+          {item.type === 'stat' ? 'UPGRADE' : item.type.toUpperCase()}
+        </Text>
+      </MotiView>
+    );
+  };
 
   return (
     <View style={styles.overlay}>
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
       <View style={styles.outerContainer}>
-        <Scanlines />
+        <Scanlines patternId={scanlinePatternId} />
         <MechanicalBorder position="top" />
         <MechanicalBorder position="bottom" />
         
@@ -137,15 +144,9 @@ export const RewardModal: React.FC<RewardModalProps> = ({
           )}
 
           {rewards && rewards.length > 0 && (
-            <FlatList
-              data={rewards}
-              renderItem={renderRewardItem}
-              keyExtractor={(item, index) => `${item.type}-${index}`}
-              numColumns={2}
-              style={styles.rewardsList}
-              contentContainerStyle={styles.rewardsContent}
-              scrollEnabled={false}
-            />
+            <View style={styles.rewardsGrid}>
+              {rewards.map((item, index) => renderRewardItem(item, index))}
+            </View>
           )}
           
           {(goldBuff || expBuff) && (
@@ -176,7 +177,11 @@ export const RewardModal: React.FC<RewardModalProps> = ({
             </View>
           )}
 
-          <TouchableOpacity style={styles.claimButton} onPress={onClose} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.claimButton}
+            onPress={() => requestAnimationFrame(() => onClose())}
+            activeOpacity={0.8}
+          >
             <Text style={styles.claimButtonText}>CLAIM REWARDS</Text>
           </TouchableOpacity>
         </View>
@@ -262,7 +267,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#e6ffff',
-    fontFamily: 'Exo2-Bold',
+    fontFamily: 'Lato-Black',
     letterSpacing: 4,
     textShadowColor: '#00d2ff',
     textShadowOffset: { width: 0, height: 0 },
@@ -278,13 +283,13 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 210, 255, 0.5)',
     textShadowRadius: 8,
   },
-  rewardsList: {
+  rewardsGrid: {
     width: '100%',
     marginBottom: 24,
-  },
-  rewardsContent: {
-    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'center',
+    alignItems: 'flex-start',
   },
   rewardItem: {
     backgroundColor: 'rgba(0, 34, 68, 0.3)',
@@ -319,7 +324,7 @@ const styles = StyleSheet.create({
     color: '#00d2ff',
     fontSize: 9,
     fontWeight: 'bold',
-    fontFamily: 'Exo2-Regular',
+    fontFamily: 'Exo2-Bold',
     letterSpacing: 1,
     marginTop: 2,
   },

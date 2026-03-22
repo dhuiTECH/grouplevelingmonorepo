@@ -116,6 +116,10 @@ export async function stabilizeConnection(formData: FormData) {
 
     console.log('💾 UPSERTING profile (Race-condition proof)...');
 
+    // Default spawn point (Seoul)
+    const START_X = 24.00;
+    const START_Y = 64.50;
+
     // 3. THE FIX: Changed from .insert() to .upsert()
     // This handles the race condition where a Database Trigger might have already created the row.
     const upsertPayload: Record<string, unknown> = {
@@ -152,6 +156,8 @@ export async function stabilizeConnection(formData: FormData) {
         referral_code: newUserReferralCode,
         ...(applyReferralBonus && { referral_used: referralCodeUsed }),
         updated_at: new Date().toISOString(),
+        world_x: START_X,
+        world_y: START_Y,
       }
     if (baseBodyUrl && (baseBodyUrl === '/NoobMan.png' || baseBodyUrl === '/NoobWoman.png')) {
       upsertPayload.base_body_url = baseBodyUrl

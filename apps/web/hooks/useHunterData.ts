@@ -549,6 +549,11 @@ export function useHunterData() {
             });
           }
 
+          const lsDone =
+            typeof window !== 'undefined' &&
+            localStorage.getItem(`onboarding_${profile.id}`) === 'completed';
+          setIsOnboarded(!!profile.onboarding_completed || lsDone);
+
           await fetchProtocol(authUser.id);
           await fetchNutrition(authUser.id);
 
@@ -719,7 +724,7 @@ export function useHunterData() {
 
   useEffect(() => {
     checkAuthAndLoadData();
-  }, []);
+  }, [checkAuthAndLoadData]);
 
   return {
     user,

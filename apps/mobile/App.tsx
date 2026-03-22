@@ -9,7 +9,13 @@ import { Modal, ActivityIndicator, View, Image } from 'react-native';
 import * as Asset from 'expo-asset';
 import { useFonts, Exo2_400Regular, Exo2_700Bold } from '@expo-google-fonts/exo-2';
 
-import { Montserrat_600SemiBold } from '@expo-google-fonts/montserrat';
+import {
+  Montserrat_100Thin,
+  Montserrat_600SemiBold,
+  Montserrat_700Bold,
+  Montserrat_800ExtraBold,
+} from '@expo-google-fonts/montserrat';
+import { Lato_400Regular, Lato_700Bold, Lato_900Black } from '@expo-google-fonts/lato';
 import { AppNavigator } from '@/navigation/AppNavigator';
 import { AppProviders } from '@/contexts/AppProviders';
 import Notification from '@/components/Notification';
@@ -54,19 +60,33 @@ function TutorialRewardFlow({ onRewardModalVisibilityChange }: { onRewardModalVi
     onRewardModalVisibilityChange(showRewardModal);
   }, [showRewardModal]);
 
-  const handleChestComplete = async () => {
+  const handleChestComplete = () => {
     setShowTutorialChest(false);
-    if (user) {
+    const uid = user?.id;
+    if (uid && user) {
       const newCoins = (user.coins || 0) + TUTORIAL_REWARD_COINS;
       setUser({ ...user, coins: newCoins });
-      await supabase.from('profiles').update({ coins: newCoins }).eq('id', user.id);
+      void (async () => {
+        try {
+          const { error } = await supabase
+            .from('profiles')
+            .update({ coins: newCoins })
+            .eq('id', uid);
+          if (error) console.warn('[Tutorial] Chest coin sync:', error.message);
+        } catch (e) {
+          console.warn('[Tutorial] Chest coin sync failed:', e);
+        }
+      })();
     }
-    setShowRewardModal(true);
+    requestAnimationFrame(() => setShowRewardModal(true));
   };
 
   const handleRewardClose = () => {
-    setShowRewardModal(false);
-    completeTutorial();
+    // Defer close + persistence to next frame so touch / Reanimated can finish (avoids hard crashes on Claim)
+    requestAnimationFrame(() => {
+      setShowRewardModal(false);
+      void completeTutorial();
+    });
   };
 
   return (
@@ -106,7 +126,13 @@ export default function App(): React.ReactElement {
   const [fontsLoaded] = useFonts({
     'Exo2-Regular': Exo2_400Regular,
     'Exo2-Bold': Exo2_700Bold,
+    'Montserrat-Thin': Montserrat_100Thin,
     'Montserrat-SemiBold': Montserrat_600SemiBold,
+    'Montserrat-Bold': Montserrat_700Bold,
+    'Montserrat-ExtraBold': Montserrat_800ExtraBold,
+    'Lato-Regular': Lato_400Regular,
+    'Lato-Bold': Lato_700Bold,
+    'Lato-Black': Lato_900Black,
   });
 
   if (!fontsLoaded) {

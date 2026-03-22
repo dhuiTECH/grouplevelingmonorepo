@@ -64,7 +64,9 @@ export default function SignupForm() {
             referral_code: newReferralCode,
             avatar: '/NoobMan.png',
             onboarding_completed: true,
-            status: 'pending'
+            status: 'pending',
+            world_x: 24.00,
+            world_y: 64.50,
           });
 
         if (profileError) throw profileError;

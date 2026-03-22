@@ -49,12 +49,6 @@ export const LoginScreen: React.FC = () => {
       await verifyOtp(email, otp);
       playHunterSound('loginSuccess');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Home' }],
-      });
-      
       return { success: true };
     } catch (error: any) {
       playHunterSound('error');

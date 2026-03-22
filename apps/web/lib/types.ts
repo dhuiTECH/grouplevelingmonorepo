@@ -72,6 +72,8 @@ export interface User {
   id: string;
   name?: string; // For UI display
   hunter_name?: string; // From database
+  /** From auth session when available (e.g. linked providers) */
+  email?: string;
   avatar_url?: string;
   exp: number;
   coins: number;
@@ -98,6 +100,7 @@ export interface User {
   base_body_url?: string;
   base_body_silhouette_url?: string | null;
   base_body_tint_hex?: string | null;
+  hair_tint_hex?: string | null;
   str_stat?: number;
   spd_stat?: number;
   end_stat?: number;

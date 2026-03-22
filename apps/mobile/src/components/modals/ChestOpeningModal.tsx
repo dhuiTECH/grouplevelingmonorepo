@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useId } from 'react';
 import { View, StyleSheet, Image, Text, TouchableWithoutFeedback, Pressable } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -10,7 +10,7 @@ import Animated, {
   withDelay,
   Easing,
   interpolate,
-  Extrapolate,
+  Extrapolation,
 } from 'react-native-reanimated';
 import Svg, { Path, Line, Rect, Defs, Pattern } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
@@ -51,6 +51,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
   chestType,
   onAnimationComplete,
 }) => {
+  const scanlinePatternId = `chest-scan-${useId().replace(/:/g, '_')}`;
   const [phase, setPhase] = useState<'idle' | 'opening' | 'opened'>('idle');
   const [sound, setSound] = useState<Audio.Sound>();
   const shakingSoundRef = useRef<Audio.Sound | null>(null);
@@ -172,7 +173,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     }
   }, [isOpen]);
 
-  const handleOpen = async () => {
+  const runOpenSequence = async () => {
     if (phase !== 'idle') return;
 
     setPhase('opening');
@@ -183,7 +184,9 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
       try {
         await shakingSoundRef.current.stopAsync();
         await shakingSoundRef.current.unloadAsync();
-      } catch (_) {}
+      } catch (_) {
+        /* ignore */
+      }
       shakingSoundRef.current = null;
     }
 
@@ -195,22 +198,21 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
       await glowSound.playAsync();
       glowSound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded && status.didJustFinish) {
-          glowSound.unloadAsync();
+          glowSound.unloadAsync().catch(() => {});
         }
       });
     } catch (error) {
-      console.log('Error playing glowing chest sound:', error);
+      console.warn('[ChestModal] glow sound:', error);
     }
 
-    // Play chest opening sound
     try {
       const { sound: newSound } = await Audio.Sound.createAsync(
-         require('../../../assets/sounds/chestopening.mp3')
+        require('../../../assets/sounds/chestopening.mp3')
       );
       setSound(newSound);
       await newSound.playAsync();
     } catch (error) {
-      console.log('Error playing sound:', error);
+      console.warn('[ChestModal] open sound:', error);
     }
 
     // 1. Violent Charge Up (0 -> 800ms)
@@ -257,47 +259,52 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
 
     // 3. Loot Reveal (Phase 'opened') - Trigger shortly after explosion
     setTimeout(() => {
-        setPhase('opened');
-        phaseShared.value = 2;
-        animateLoot();
+      setPhase('opened');
+      phaseShared.value = 2;
+      animateLoot();
     }, 900);
   };
 
+  /** No withSpring completion callbacks — chaining animations in callbacks is fragile on Reanimated 4 / native. */
   const animateLoot = () => {
-    const floatLoop = () => withRepeat(
+    const floatLoop = () =>
+      withRepeat(
         withSequence(
-            withTiming(-6, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
-            withTiming(0, { duration: 1500, easing: Easing.inOut(Easing.ease) })
-        ), -1, true
-    );
+          withTiming(-6, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
+          withTiming(0, { duration: 1500, easing: Easing.inOut(Easing.ease) })
+        ),
+        -1,
+        true
+      );
 
-    // Item 1: Delay 100ms
     loot1Opacity.value = withDelay(100, withTiming(1, { duration: 600 }));
-    loot1TranslateY.value = withDelay(100, withSpring(0, { damping: 12 }, (finished) => {
-        if (finished) loot1Float.value = floatLoop();
-    }));
+    loot1TranslateY.value = withDelay(100, withSpring(0, { damping: 12 }));
+    loot1Float.value = withDelay(900, floatLoop());
 
-    // Item 2: Delay 250ms
     loot2Opacity.value = withDelay(250, withTiming(1, { duration: 600 }));
-    loot2TranslateY.value = withDelay(250, withSpring(0, { damping: 12 }, (finished) => {
-        if (finished) loot2Float.value = withDelay(250, floatLoop()); // Offset float
-    }));
+    loot2TranslateY.value = withDelay(250, withSpring(0, { damping: 12 }));
+    loot2Float.value = withDelay(1100, floatLoop());
 
-    // Item 3: Delay 400ms
     loot3Opacity.value = withDelay(400, withTiming(1, { duration: 600 }));
-    loot3TranslateY.value = withDelay(400, withSpring(0, { damping: 12 }, (finished) => {
-        if (finished) loot3Float.value = withDelay(500, floatLoop()); // Offset float
-    }));
+    loot3TranslateY.value = withDelay(400, withSpring(0, { damping: 12 }));
+    loot3Float.value = withDelay(1300, floatLoop());
 
-    // Item 4: Delay 550ms
     loot4Opacity.value = withDelay(550, withTiming(1, { duration: 600 }));
-    loot4TranslateY.value = withDelay(550, withSpring(0, { damping: 12 }, (finished) => {
-        if (finished) loot4Float.value = withDelay(750, floatLoop()); // Offset float
-    }));
+    loot4TranslateY.value = withDelay(550, withSpring(0, { damping: 12 }));
+    loot4Float.value = withDelay(1500, floatLoop());
+  };
+
+  const handleOpen = () => {
+    if (phase !== 'idle') return;
+    requestAnimationFrame(() => {
+      void runOpenSequence();
+    });
   };
 
   const handleClaim = () => {
-    onAnimationComplete();
+    requestAnimationFrame(() => {
+      onAnimationComplete();
+    });
   };
 
   // --- Animated Styles ---
@@ -330,10 +337,10 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     transform: [{ scale: flashScale.value }]
   }));
 
+  // Do not animate borderWidth — it triggers native crashes on some Android devices with Reanimated.
   const shockwaveStyle = useAnimatedStyle(() => ({
     opacity: shockwaveOpacity.value,
     transform: [{ scale: shockwaveScale.value }],
-    borderWidth: interpolate(shockwaveScale.value, [0.5, 8], [10, 1])
   }));
 
   const beamStyle = useAnimatedStyle(() => ({
@@ -345,7 +352,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     opacity: loot1Opacity.value,
     transform: [
       { translateY: loot1TranslateY.value + loot1Float.value },
-      { scale: interpolate(loot1TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolate.CLAMP) }
+      { scale: interpolate(loot1TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolation.CLAMP) }
     ]
   }));
 
@@ -353,7 +360,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     opacity: loot2Opacity.value,
     transform: [
       { translateY: loot2TranslateY.value + loot2Float.value },
-      { scale: interpolate(loot2TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolate.CLAMP) }
+      { scale: interpolate(loot2TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolation.CLAMP) }
     ]
   }));
 
@@ -361,7 +368,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     opacity: loot3Opacity.value,
     transform: [
       { translateY: loot3TranslateY.value + loot3Float.value },
-      { scale: interpolate(loot3TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolate.CLAMP) }
+      { scale: interpolate(loot3TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolation.CLAMP) }
     ]
   }));
 
@@ -369,7 +376,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     opacity: loot4Opacity.value,
     transform: [
       { translateY: loot4TranslateY.value + loot4Float.value },
-      { scale: interpolate(loot4TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolate.CLAMP) }
+      { scale: interpolate(loot4TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolation.CLAMP) }
     ]
   }));
 
@@ -412,11 +419,11 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
             <View style={StyleSheet.absoluteFill} pointerEvents="none">
                 <Svg width={MODAL_WIDTH} height={MODAL_HEIGHT}>
                     <Defs>
-                        <Pattern id="scanlines" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+                        <Pattern id={scanlinePatternId} x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
                             <Rect x="0" y="0" width="4" height="1" fill="#00d2ff" fillOpacity="0.05" />
                         </Pattern>
                     </Defs>
-                    <Rect x="0" y="0" width={MODAL_WIDTH} height={MODAL_HEIGHT} fill="url(#scanlines)" />
+                    <Rect x="0" y="0" width={MODAL_WIDTH} height={MODAL_HEIGHT} fill={`url(#${scanlinePatternId})`} />
                 </Svg>
             </View>
 
@@ -665,14 +672,16 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: 'bold',
+    fontFamily: 'Lato-Black',
     textShadowColor: '#FFFFFF',
     textShadowRadius: 4,
+    transform: [{ scaleY: 1.38 }, { translateY: -0.5 }],
   },
   headerTitle: {
     color: '#e6ffff',
     fontSize: 20,
     fontWeight: 'bold',
-    fontFamily: 'Exo2-Bold',
+    fontFamily: 'Lato-Black',
     letterSpacing: 4,
     textShadowColor: '#00d2ff',
     textShadowOffset: { width: 0, height: 0 },
@@ -792,7 +801,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 20,
     fontWeight: 'bold',
-    fontFamily: 'Montserrat-SemiBold',
+    fontFamily: 'Exo2-Bold',
     textShadowColor: 'rgba(255, 255, 255, 0.4)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 8,
@@ -834,7 +843,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: 'bold',
-    fontFamily: 'Montserrat-SemiBold',
+    fontFamily: 'Exo2-Bold',
     letterSpacing: 3,
     textShadowColor: 'rgba(0, 229, 255, 0.8)',
     textShadowOffset: { width: 0, height: 0 },

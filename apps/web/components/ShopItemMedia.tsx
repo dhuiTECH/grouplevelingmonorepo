@@ -137,7 +137,7 @@ export const ShopItemMedia = ({
             alt={item.name}
             className="absolute inset-0 w-full h-full object-contain z-10"
             style={{ 
-              mixBlendMode: (item.slot === 'hand_grip' || item.slot === 'base_body') ? 'multiply' : 'normal' 
+              mixBlendMode: (item.slot === 'hand_grip' || item.slot === 'base_body' || item.slot === 'hair') ? 'multiply' : 'normal' 
             }}
             onError={(e) => { e.currentTarget.style.display = 'none'; }}
           />

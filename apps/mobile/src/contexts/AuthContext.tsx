@@ -1,6 +1,8 @@
 import React, { useEffect, createContext, useContext, useState, ReactNode } from 'react';
+import { Platform } from 'react-native';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
@@ -39,6 +41,8 @@ interface AuthContextType {
   setUser: (user: User | null) => void;
   checkProfileExists: (identifier: string) => Promise<any>;
   refreshProfile: () => Promise<void>;
+  signInAsGuest: () => Promise<void>;
+  linkAccount: (provider: 'google' | 'apple') => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -107,6 +111,9 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
           current_class: profile.current_class,
           gender: profile.gender,
           onboarding_completed: profile.onboarding_completed,
+          onboarding_step:
+            (profile as { onboarding_step?: User['onboarding_step'] }).onboarding_step ??
+            (profile.onboarding_completed ? 'done' : 'basics'),
           tutorial_completed: profile.tutorial_completed,
           cosmetics: profile.cosmetics || [],
           submittedIds: [],
@@ -126,16 +133,17 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
           last_reset: profile.last_reset,
           base_body_silhouette_url: profile.base_body_silhouette_url,
           base_body_tint_hex: profile.base_body_tint_hex,
+          hair_tint_hex: profile.hair_tint_hex,
           current_ap: profile.current_ap || 3,
           max_ap: profile.max_ap || 3,
-          world_x: profile.world_x ?? 0,
-          world_y: profile.world_y ?? 0,
+          world_x: profile.world_x ?? 24.00,
+          world_y: profile.world_y ?? 64.50,
           steps_banked: profile.steps_banked ?? 0,
           last_sync_time: profile.last_sync_time,
         } as User);
 
         // Save fresh coords to local storage
-        saveLocalCoords(profile.world_x ?? 0, profile.world_y ?? 0);
+        saveLocalCoords(profile.world_x ?? 24.00, profile.world_y ?? 64.50);
       }
     } catch (err) {
       console.error('Fatal error refreshing profile:', err);
@@ -183,6 +191,10 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
               return {
                 id: session.user.id,
                 email: session.user.email || '',
+                name:
+                  session.user.user_metadata?.display_name ||
+                  session.user.user_metadata?.full_name ||
+                  'Hunter',
                 world_x: x,
                 world_y: y,
                 level: 1,
@@ -239,6 +251,9 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
               current_class: profile.current_class,
               gender: profile.gender,
               onboarding_completed: profile.onboarding_completed,
+              onboarding_step:
+                (profile as { onboarding_step?: User['onboarding_step'] }).onboarding_step ??
+                (profile.onboarding_completed ? 'done' : 'basics'),
               tutorial_completed: profile.tutorial_completed,
               cosmetics: profile.cosmetics || [],
               submittedIds: [],
@@ -260,14 +275,14 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
               base_body_tint_hex: profile.base_body_tint_hex,
               current_ap: profile.current_ap || 3,
               max_ap: profile.max_ap || 3,
-              world_x: profile.world_x ?? 0,
-              world_y: profile.world_y ?? 0,
+              world_x: profile.world_x ?? 24.00,
+              world_y: profile.world_y ?? 64.50,
               steps_banked: profile.steps_banked ?? 0,
               last_sync_time: profile.last_sync_time,
             } as User);
 
             // Sync fresh coords to local storage
-            saveLocalCoords(profile.world_x ?? 0, profile.world_y ?? 0);
+            saveLocalCoords(profile.world_x ?? 24.00, profile.world_y ?? 64.50);
           }
         } catch (err) {
           console.error('Fatal error in getInitialSession:', err);
@@ -323,6 +338,9 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
               current_class: profile.current_class,
                 gender: profile.gender,
                 onboarding_completed: profile.onboarding_completed,
+                onboarding_step:
+                  (profile as { onboarding_step?: User['onboarding_step'] }).onboarding_step ??
+                  (profile.onboarding_completed ? 'done' : 'basics'),
                 tutorial_completed: profile.tutorial_completed,
                 cosmetics: profile.cosmetics || [],
                 submittedIds: [],
@@ -333,8 +351,8 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
                 max_hp: maxHP,
                 current_mp: syncedMP,
                 max_mp: maxMP,
-                world_x: profile.world_x ?? 0,
-                world_y: profile.world_y ?? 0,
+                world_x: profile.world_x ?? 24.00,
+                world_y: profile.world_y ?? 64.50,
                 steps_banked: profile.steps_banked ?? 0,
                 last_sync_time: profile.last_sync_time,
                 profilePicture: resolveAvatar(profile.avatar),
@@ -346,12 +364,17 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
                 last_reset: profile.last_reset,
                 base_body_silhouette_url: profile.base_body_silhouette_url,
                 base_body_tint_hex: profile.base_body_tint_hex,
+                hair_tint_hex: profile.hair_tint_hex,
                 current_ap: profile.current_ap || 3,
                 max_ap: profile.max_ap || 3,
+                world_x: profile.world_x ?? 24.00,
+                world_y: profile.world_y ?? 64.50,
+                steps_banked: profile.steps_banked ?? 0,
+                last_sync_time: profile.last_sync_time,
               } as User);
 
               // Sync fresh coords to local storage
-              saveLocalCoords(profile.world_x ?? 0, profile.world_y ?? 0);
+              saveLocalCoords(profile.world_x ?? 24.00, profile.world_y ?? 64.50);
              }
           } catch (err) {
             console.error('Fatal error in onAuthStateChange:', err);
@@ -458,8 +481,81 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
     return profileByName;
   };
 
+  const signInAsGuest = async (): Promise<void> => {
+    const { data, error } = await supabase.auth.signInAnonymously();
+    if (error) throw error;
+    if (data.session?.user) setSupabaseUser(data.session.user);
+    await refreshProfile();
+  };
+
+  const linkAccount = async (provider: 'google' | 'apple'): Promise<void> => {
+    if (provider === 'apple') {
+      if (Platform.OS !== 'ios') {
+        throw new Error('Apple Sign-In is only available on iOS.');
+      }
+      const available = await AppleAuthentication.isAvailableAsync();
+      if (!available) {
+        throw new Error('Apple Sign-In is not available on this device.');
+      }
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) {
+        throw new Error('Apple did not return an identity token.');
+      }
+      const { error } = await supabase.auth.linkIdentity({
+        provider: 'apple',
+        token: credential.identityToken,
+      });
+      if (error) throw error;
+      await refreshProfile();
+      return;
+    }
+
+    const redirectTo = Linking.createURL('auth/callback');
+    const { data, error } = await supabase.auth.linkIdentity({
+      provider: 'google',
+      options: {
+        redirectTo,
+        skipBrowserRedirect: true,
+      },
+    });
+    if (error) throw error;
+
+    if (data?.url) {
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type === 'success' && result.url) {
+        const { queryParams } = Linking.parse(result.url);
+        const access_token = queryParams?.access_token as string;
+        const refresh_token = queryParams?.refresh_token as string;
+        if (access_token && refresh_token) {
+          await supabase.auth.setSession({ access_token, refresh_token });
+        }
+      }
+    }
+    await refreshProfile();
+  };
+
   return (
-    <AuthContext.Provider value={{ user, supabaseUser, isLoading, signInWithOtp, signInWithGoogle, verifyOtp, logout, setUser, checkProfileExists, refreshProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        supabaseUser,
+        isLoading,
+        signInWithOtp,
+        signInWithGoogle,
+        verifyOtp,
+        logout,
+        setUser,
+        checkProfileExists,
+        refreshProfile,
+        signInAsGuest,
+        linkAccount,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

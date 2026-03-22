@@ -1002,6 +1002,9 @@ export default function App() {
         }
       >
         <OnboardingView 
+          isAuthenticated={isAuthenticated}
+          isOnboarded={isOnboarded}
+          initialUser={user}
           onAuthenticated={(profile) => {
             // This ensures page.tsx knows the user logged in
             setUser({

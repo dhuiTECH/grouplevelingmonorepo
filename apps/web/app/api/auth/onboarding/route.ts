@@ -266,7 +266,9 @@ export async function POST(request: NextRequest) {
         status: 'pending',
         onboarding_completed: true,
         referral_code: referralCode,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        world_x: 24.00,
+        world_y: 64.50,
       }
     if (baseBodyUrl && (baseBodyUrl === '/NoobMan.png' || baseBodyUrl === '/NoobWoman.png')) {
       insertPayload.base_body_url = baseBodyUrl
