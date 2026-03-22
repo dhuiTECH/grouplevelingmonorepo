@@ -186,8 +186,8 @@ const ClassSelectionScreen = () => {
         // 🎯 2. UPSERT WITH TITLE & RANK 0 (include avatar tint/silhouette from Avatar screen)
         // Hardcode starting position to Seoul Node based on ID
         const SEOUL_NODE_ID = "11c88b0a-27d0-4366-a47e-293ff25ec285";
-        const START_X = 24.00;
-        const START_Y = 64.50;
+        const START_X = 24;
+        const START_Y = 64;
 
         const { error } = await supabase
             .from('profiles')

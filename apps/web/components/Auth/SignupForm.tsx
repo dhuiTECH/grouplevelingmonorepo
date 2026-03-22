@@ -65,8 +65,8 @@ export default function SignupForm() {
             avatar: '/NoobMan.png',
             onboarding_completed: true,
             status: 'pending',
-            world_x: 24.00,
-            world_y: 64.50,
+            world_x: 24,
+            world_y: 64,
           });
 
         if (profileError) throw profileError;

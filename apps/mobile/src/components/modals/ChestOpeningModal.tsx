@@ -452,11 +452,13 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
             {/* HEADER */}
             <View style={styles.headerContainer}>
                 <View style={styles.headerRow}>
-                    <View style={styles.titleBox}>
-                        <View style={styles.exclamationIcon}>
+                    <View style={styles.iconSquareFrame}>
+                        <View style={styles.exclamationCircle}>
                             <Text style={styles.exclamationText}>!</Text>
                         </View>
-                        <Text style={styles.headerTitle}>
+                    </View>
+                    <View style={styles.titleTextFrame}>
+                        <Text style={styles.headerTitle} numberOfLines={2}>
                             {phase === 'opened' ? "CACHE OPENED" : "CHEST FOUND"}
                         </Text>
                     </View>
@@ -638,54 +640,74 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    alignSelf: 'center',
+    marginBottom: 16,
+    gap: 8,
   },
-  titleBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 210, 255, 0.5)',
-    backgroundColor: 'rgba(0, 102, 255, 0.2)',
-    paddingHorizontal: 24,
-    paddingVertical: 8,
-    shadowColor: '#00d2ff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.3,
-    shadowRadius: 15,
-  },
-  exclamationIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  iconSquareFrame: {
+    width: 44,
+    height: 44,
     borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-    backgroundColor: 'transparent',
+    borderColor: 'rgba(0, 255, 255, 0.75)',
+    backgroundColor: 'rgba(2, 12, 32, 0.92)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#FFFFFF',
+    shadowColor: '#00ffff',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 8,
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  exclamationCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#ffffff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
   },
   exclamationText: {
     color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
     fontFamily: 'Lato-Black',
-    textShadowColor: '#FFFFFF',
-    textShadowRadius: 4,
-    transform: [{ scaleY: 1.38 }, { translateY: -0.5 }],
+    fontSize: 18,
+    fontWeight: '800',
+    lineHeight: 22,
+    textShadowColor: '#a5f3fc',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
+    transform: [{ scaleY: 1.38 }, { translateY: -1 }],
+  },
+  titleTextFrame: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 255, 255, 0.75)',
+    backgroundColor: 'rgba(2, 12, 32, 0.92)',
+    shadowColor: '#00ffff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    elevation: 8,
+    flexShrink: 1,
   },
   headerTitle: {
-    color: '#e6ffff',
-    fontSize: 20,
+    color: '#ffffff',
+    fontSize: 18,
     fontWeight: 'bold',
     fontFamily: 'Lato-Black',
-    letterSpacing: 4,
-    textShadowColor: '#00d2ff',
+    letterSpacing: 2,
+    textAlign: 'center',
+    textShadowColor: '#22d3ee',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
+    textShadowRadius: 12,
     textTransform: 'uppercase',
   },
   subText: {

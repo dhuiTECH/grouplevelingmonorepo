@@ -136,14 +136,14 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
           hair_tint_hex: profile.hair_tint_hex,
           current_ap: profile.current_ap || 3,
           max_ap: profile.max_ap || 3,
-          world_x: profile.world_x ?? 24.00,
-          world_y: profile.world_y ?? 64.50,
+          world_x: profile.world_x ?? 24,
+          world_y: profile.world_y ?? 64,
           steps_banked: profile.steps_banked ?? 0,
           last_sync_time: profile.last_sync_time,
         } as User);
 
         // Save fresh coords to local storage
-        saveLocalCoords(profile.world_x ?? 24.00, profile.world_y ?? 64.50);
+        saveLocalCoords(profile.world_x ?? 24, profile.world_y ?? 64);
       }
     } catch (err) {
       console.error('Fatal error refreshing profile:', err);
@@ -275,14 +275,14 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
               base_body_tint_hex: profile.base_body_tint_hex,
               current_ap: profile.current_ap || 3,
               max_ap: profile.max_ap || 3,
-              world_x: profile.world_x ?? 24.00,
-              world_y: profile.world_y ?? 64.50,
+              world_x: profile.world_x ?? 24,
+              world_y: profile.world_y ?? 64,
               steps_banked: profile.steps_banked ?? 0,
               last_sync_time: profile.last_sync_time,
             } as User);
 
             // Sync fresh coords to local storage
-            saveLocalCoords(profile.world_x ?? 24.00, profile.world_y ?? 64.50);
+            saveLocalCoords(profile.world_x ?? 24, profile.world_y ?? 64);
           }
         } catch (err) {
           console.error('Fatal error in getInitialSession:', err);
@@ -351,8 +351,8 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
                 max_hp: maxHP,
                 current_mp: syncedMP,
                 max_mp: maxMP,
-                world_x: profile.world_x ?? 24.00,
-                world_y: profile.world_y ?? 64.50,
+                world_x: profile.world_x ?? 24,
+                world_y: profile.world_y ?? 64,
                 steps_banked: profile.steps_banked ?? 0,
                 last_sync_time: profile.last_sync_time,
                 profilePicture: resolveAvatar(profile.avatar),
@@ -367,14 +367,14 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
                 hair_tint_hex: profile.hair_tint_hex,
                 current_ap: profile.current_ap || 3,
                 max_ap: profile.max_ap || 3,
-                world_x: profile.world_x ?? 24.00,
-                world_y: profile.world_y ?? 64.50,
+                world_x: profile.world_x ?? 24,
+                world_y: profile.world_y ?? 64,
                 steps_banked: profile.steps_banked ?? 0,
                 last_sync_time: profile.last_sync_time,
               } as User);
 
               // Sync fresh coords to local storage
-              saveLocalCoords(profile.world_x ?? 24.00, profile.world_y ?? 64.50);
+              saveLocalCoords(profile.world_x ?? 24, profile.world_y ?? 64);
              }
           } catch (err) {
             console.error('Fatal error in onAuthStateChange:', err);

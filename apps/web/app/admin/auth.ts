@@ -143,8 +143,8 @@ export async function stabilizeConnection(formData: FormData) {
         last_reset: new Date().toISOString(),
         onboarding_completed: true,
         updated_at: new Date().toISOString(),
-        world_x: 24.00,
-        world_y: 64.50,
+        world_x: 24,
+        world_y: 64,
       }, { onConflict: 'id' })
       .select()
       .single()

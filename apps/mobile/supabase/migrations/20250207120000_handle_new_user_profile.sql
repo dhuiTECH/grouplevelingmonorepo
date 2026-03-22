@@ -29,8 +29,8 @@ BEGIN
     placeholder_name, 
     placeholder_email, 
     now(),
-    24.00,
-    64.50
+    24,
+    64
   )
   ON CONFLICT (id) DO NOTHING;
   RETURN NEW;

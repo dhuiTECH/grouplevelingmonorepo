@@ -117,8 +117,8 @@ export async function stabilizeConnection(formData: FormData) {
     console.log('💾 UPSERTING profile (Race-condition proof)...');
 
     // Default spawn point (Seoul)
-    const START_X = 24.00;
-    const START_Y = 64.50;
+    const START_X = 24;
+    const START_Y = 64;
 
     // 3. THE FIX: Changed from .insert() to .upsert()
     // This handles the race condition where a Database Trigger might have already created the row.
