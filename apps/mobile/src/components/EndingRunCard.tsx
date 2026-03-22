@@ -81,7 +81,7 @@ export const EndingRunCard = forwardRef(({
   }));
 
   // Format Data
-  const distanceKm = (runData.distance / 1000).toFixed(2) + ' km';
+  const distanceKm = (Math.ceil((runData.distance / 1000) * 10) / 10).toFixed(1) + ' km';
   
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
