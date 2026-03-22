@@ -15,7 +15,7 @@ const marketingJsonLd = {
       name: SITE_NAME,
       url: `${SITE_URL}/`,
       description:
-        "Gamified fantasy walking RPG and fitness app, track activity, earn XP, and level your hero.",
+        "Gamified fantasy walking RPG and fitness app, track activity, earn XP, and level your hunter.",
       publisher: { "@type": "Organization", name: SITE_NAME },
     },
   ],

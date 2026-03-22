@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
@@ -85,7 +86,20 @@ export default function SiteNav() {
 
   return (
     <header className="sticky top-0 z-[100] border-b border-white/10 bg-black/95 backdrop-blur-md">
-      <div className="relative mx-auto flex w-full max-w-6xl items-center justify-center px-4 py-2 md:px-6 md:py-3">
+      <div className="relative mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-2 md:px-6 md:py-3">
+        {/* Left: Logo */}
+        <Link href="/" className="flex items-center gap-2 z-[101]">
+          <div className="relative w-[34px] h-[34px] md:w-[42px] md:h-[42px]">
+            <Image
+              src="/website/groupleveling-logo.png"
+              alt="Logo"
+              fill
+              className="object-contain drop-shadow-[0_0_8px_rgba(255,255,255,0.4)]"
+            />
+          </div>
+        </Link>
+
+        {/* Center: Desktop Navigation */}
         <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
           {links.map(({ href, label, match }) => (
             <NavLink
@@ -98,9 +112,10 @@ export default function SiteNav() {
           ))}
         </nav>
 
+        {/* Right: Mobile Hamburger Button */}
         <button
           type="button"
-          className="absolute right-4 flex h-10 w-10 items-center justify-center rounded-md border border-white/15 text-white md:hidden"
+          className="relative flex h-10 w-10 items-center justify-center rounded-md border border-white/15 text-white md:hidden"
           aria-expanded={open}
           aria-controls="mobile-nav"
           aria-label={open ? "Close menu" : "Open menu"}

@@ -161,19 +161,19 @@ export default function LandingPageClient() {
 
         {/* Hero Content (UI Layer) */}
         <div className="relative z-40 container mx-auto px-4 h-full flex flex-col justify-between items-center md:items-start pt-28 pb-16 md:pb-8 md:justify-center md:pt-20 text-center md:text-left">
-          <SystemWindow className="max-w-2xl mt-2 md:mt-12">
+          <SystemWindow className="max-w-2xl mt-2 md:mt-12 self-start">
             {/* Top Section: Title */}
             <motion.div
               initial={{ opacity: 0, x: -50 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.8 }}
-              className="max-w-2xl w-full flex flex-col items-center md:items-start mb-2 md:mb-4"
+              className="max-w-2xl w-full flex flex-col items-start mb-2 md:mb-4 text-left pl-3 md:pl-0"
             >
               <h1 className="text-base md:text-3xl lg:text-[36px] font-black tracking-tight leading-[1.15] system-glow-text drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">
-                Your Daily Walk Has Been Converted into an RPG Quest.
+                Your Daily Walk Converted into an RPG Quest.
               </h1>
-              <h2 className="mt-1 md:mt-5 text-[10px] md:text-base font-semibold text-white/95 max-w-[95%] md:max-w-xl text-center md:text-left drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-relaxed md:ml-1">
-                Join thousands of heroes already leveling up. Traverse a fantasy world with every step and log your fitness and calories to power your hero&apos;s journey.
+              <h2 className="mt-1 md:mt-5 text-[10px] md:text-base font-semibold text-white/95 max-w-[95%] md:max-w-xl text-left drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-relaxed md:ml-1">
+                Traverse a fantasy world with every step and log your fitness and calories to power your hunter&apos;s journey. Join thousands of hunters already leveling up.
               </h2>
             </motion.div>
 

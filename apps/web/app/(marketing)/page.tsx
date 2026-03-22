@@ -4,7 +4,7 @@ import { DEFAULT_OG_IMAGE, SITE_NAME } from "@/lib/site";
 
 const title = `${SITE_NAME} | The Fantasy Walking RPG & Fitness App`;
 const description =
-  "Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hero, and join guilds in the ultimate fitness game.";
+  "Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hunter, and join guilds in the ultimate fitness game.";
 
 export const metadata: Metadata = {
   title,

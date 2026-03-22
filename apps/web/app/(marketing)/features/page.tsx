@@ -15,7 +15,7 @@ import { DEFAULT_OG_IMAGE, SITE_NAME } from "@/lib/site";
 
 const title = `Features | ${SITE_NAME}`;
 const description =
-  "Walk the real world as your RPG map, collect and evolve pets, style your hero, log meals for buffs, and team up in guilds for boss raids.";
+  "Walk the real world as your RPG map, collect and evolve pets, style your hunter, log meals for buffs, and team up in guilds for boss raids.";
 
 export const metadata: Metadata = {
   title,

@@ -37,7 +37,7 @@ export const metadata: Metadata = {
 const faqs = [
   {
     q: "What is Group Leveling?",
-    a: "Group Leveling is an independent gamified fitness RPG: your real-world activity (steps, workouts, nutrition logging) fuels progression for your hero. It is not affiliated with the Solo Leveling anime, manhwa, or official games.",
+    a: "Group Leveling is an independent gamified fitness RPG: your real-world activity (steps, workouts, nutrition logging) fuels progression for your hunter. It is not affiliated with the Solo Leveling anime, manhwa, or official games.",
   },
   {
     q: "Is Group Leveling related to Solo Leveling?",

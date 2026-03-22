@@ -60,7 +60,7 @@ export default function SystemWindow({ children, className = "", title = "SYSTEM
       </div>
       <div className="absolute top-[16px] left-[32px] w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] animate-pulse" />
       <span
-        className="absolute top-[13px] left-[44px] right-10 md:right-14 text-[10px] md:text-xs font-mono text-slate-300 tracking-[0.12em] md:tracking-[0.2em] font-bold truncate"
+        className="absolute top-[13px] left-[44px] right-10 md:right-14 text-[10px] md:text-xs font-mono text-slate-300 tracking-[0.12em] md:tracking-[0.2em] font-bold truncate text-left"
         title={title}
       >
         {title}
