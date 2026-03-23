@@ -9,7 +9,7 @@ export const marketingWideClass = "mx-auto max-w-7xl";
 
 /** Matches hero line “Your Daily Walk…”: cyan glow + subtle depth (see `.system-glow-text` in globals.css). */
 export const marketingTitleClass =
-  "font-[family-name:var(--font-orbitron)] text-3xl font-black tracking-tight text-white md:text-4xl system-glow-text drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]";
+  "font-[family-name:var(--font-orbitron)] text-2xl font-black tracking-tight text-white md:text-3xl lg:text-4xl system-glow-text drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]";
 
 export const marketingLeadClass =
   "mt-4 max-w-2xl text-base leading-relaxed text-slate-400";

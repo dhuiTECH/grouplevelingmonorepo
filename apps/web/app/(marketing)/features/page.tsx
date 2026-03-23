@@ -49,7 +49,7 @@ function PhSlot({ className = "" }: { className?: string }) {
 
 function Headline({ line1, accent }: { line1: string; accent: string }) {
   return (
-    <h2 className="font-sans text-5xl font-black leading-[0.9] tracking-tighter text-white md:text-6xl lg:text-7xl">
+    <h2 className="font-sans text-3xl font-black leading-[0.9] tracking-tighter text-white md:text-5xl lg:text-7xl">
       {line1}
       <br />
       <span className="text-gl-primary gl-glow-text">{accent}</span>
@@ -94,14 +94,14 @@ export default function FeaturesPage() {
       </div>
 
       <div
-        className={`${marketingWideClass} space-y-32 px-6 pb-24 pt-10 text-slate-200 md:space-y-48 md:px-12`}
+        className={`${marketingWideClass} space-y-24 px-6 pb-24 pt-10 text-slate-200 md:space-y-48 md:px-12`}
       >
         {/* 1 — Walk to Explore */}
         <section
           aria-labelledby="feat-walk-heading"
-          className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2 lg:gap-20"
+          className="grid grid-cols-1 items-center gap-8 lg:grid-cols-2 lg:gap-20"
         >
-          <div className="order-2 space-y-10 lg:order-1">
+          <div className="order-2 space-y-6 lg:order-1 lg:space-y-10">
             <div className="space-y-4">
               <SectionLabel accent="primary">Gameplay Basics</SectionLabel>
               <div id="feat-walk-heading">
@@ -221,7 +221,7 @@ export default function FeaturesPage() {
         {/* 2 — Catch & Evolve Pets */}
         <section
           aria-labelledby="feat-pets-heading"
-          className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2 lg:gap-20"
+          className="grid grid-cols-1 items-center gap-8 lg:grid-cols-2 lg:gap-20"
         >
           <div className="order-1 flex justify-center lg:order-1">
             <PhoneFrame>
@@ -282,7 +282,7 @@ export default function FeaturesPage() {
               </div>
             </PhoneFrame>
           </div>
-          <div className="order-2 space-y-10 text-right lg:order-2 lg:text-left">
+          <div className="order-2 space-y-6 text-right lg:order-2 lg:space-y-10 lg:text-left">
             <div className="space-y-4">
               <div className="flex items-center justify-end gap-4 lg:justify-start">
                 <span className="h-px w-12 bg-gl-primary" aria-hidden />
@@ -318,7 +318,7 @@ export default function FeaturesPage() {
         {/* 3 — Style Your Hero */}
         <section
           aria-labelledby="feat-hero-heading"
-          className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2 lg:gap-20"
+          className="grid grid-cols-1 items-center gap-8 lg:grid-cols-2 lg:gap-20"
         >
           <div className="order-1 flex justify-center lg:order-1">
             <PhoneFrame>
@@ -363,7 +363,7 @@ export default function FeaturesPage() {
               </div>
             </PhoneFrame>
           </div>
-          <div className="order-2 space-y-10 text-right lg:order-2 lg:text-left">
+          <div className="order-2 space-y-6 text-right lg:order-2 lg:space-y-10 lg:text-left">
             <div className="space-y-4">
               <div className="flex items-center justify-end gap-4 lg:justify-start">
                 <span className="h-px w-12 bg-gl-primary" aria-hidden />
@@ -416,7 +416,7 @@ export default function FeaturesPage() {
         {/* 4 — Eat to Level Up */}
         <section
           aria-labelledby="feat-eat-heading"
-          className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2 lg:gap-20"
+          className="grid grid-cols-1 items-center gap-8 lg:grid-cols-2 lg:gap-20"
         >
           <div className="order-1 flex justify-center lg:order-1">
             <PhoneFrame>
@@ -485,7 +485,7 @@ export default function FeaturesPage() {
               </div>
             </PhoneFrame>
           </div>
-          <div className="order-2 space-y-10 text-right lg:order-2 lg:text-left">
+          <div className="order-2 space-y-6 text-right lg:order-2 lg:space-y-10 lg:text-left">
             <div className="space-y-4">
               <div className="flex items-center justify-end gap-4 lg:justify-start">
                 <span className="h-px w-12 bg-gl-secondary" aria-hidden />
@@ -494,7 +494,7 @@ export default function FeaturesPage() {
                 </span>
               </div>
               <div id="feat-eat-heading">
-                <h2 className="font-sans text-5xl font-black leading-[0.9] tracking-tighter text-white md:text-6xl lg:text-7xl">
+                <h2 className="font-sans text-3xl font-black leading-[0.9] tracking-tighter text-white md:text-5xl lg:text-7xl">
                   EAT TO
                   <br />
                   <span className="text-gl-secondary gl-glow-text">LEVEL UP</span>
@@ -525,13 +525,13 @@ export default function FeaturesPage() {
         {/* 5 — Team Up & Quest */}
         <section
           aria-labelledby="feat-team-heading"
-          className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2 lg:gap-20"
+          className="grid grid-cols-1 items-center gap-8 lg:grid-cols-2 lg:gap-20"
         >
-          <div className="order-2 space-y-10 lg:order-1">
+          <div className="order-2 space-y-6 lg:order-1 lg:space-y-10">
             <div className="space-y-4">
               <SectionLabel accent="primary">Multiplayer Mode</SectionLabel>
               <div id="feat-team-heading">
-                <h2 className="font-sans text-5xl font-black leading-[0.9] tracking-tighter text-white md:text-6xl lg:text-7xl">
+                <h2 className="font-sans text-3xl font-black leading-[0.9] tracking-tighter text-white md:text-5xl lg:text-7xl">
                   TEAM UP &amp;
                   <br />
                   <span className="text-gl-primary gl-glow-text">QUEST</span>
