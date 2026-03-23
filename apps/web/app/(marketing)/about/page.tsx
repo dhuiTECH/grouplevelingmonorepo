@@ -11,9 +11,9 @@ import {
   marketingTitleClass,
 } from "@/components/marketing/marketingDoc";
 
-const title = `About | ${SITE_NAME}`;
+const title = `About | ${SITE_NAME} - Gamified Walking & Fitness App`;
 const description =
-  "Group Leveling is an independent fantasy walking RPG and fitness app. Learn our mission, mechanics, and how we differ from official Solo Leveling games.";
+  "Group Leveling is an independent RPG fitness app and gamified step tracker. Learn our mission, mechanics, and how we turn your workouts into real-world leveling.";
 
 export const metadata: Metadata = {
   title,
@@ -39,7 +39,7 @@ export default function AboutPage() {
   return (
     <main className={marketingMainClass}>
       <div className={marketingContainerClass}>
-        <h1 className={marketingTitleClass}>About</h1>
+        <h1 className={marketingTitleClass}>About Group Leveling</h1>
         <p className={marketingLeadClass}>
           Who we are, what we ship, and how we fit into hunter-fantasy fitness as an{" "}
           <strong className="font-semibold text-slate-200">independent</strong> product

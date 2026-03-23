@@ -16,9 +16,9 @@ import {
   marketingTitleClass,
 } from "@/components/marketing/marketingDoc";
 
-const title = `Blog | ${SITE_NAME}`;
+const title = `Blog | ${SITE_NAME} - RPG Fitness News`;
 const description =
-  "Updates, fitness RPG tips, and launch news from the Group Leveling team.";
+  "Updates, fitness RPG tips, and launch news from the Group Leveling team. Learn how to level up in real life.";
 
 export const metadata: Metadata = {
   title,
@@ -60,10 +60,10 @@ export default async function BlogIndexPage() {
   return (
     <main className={marketingMainClass}>
       <div className={marketingContainerClass}>
-        <h1 className={marketingTitleClass}>Blog</h1>
+        <h1 className={marketingTitleClass}>Hunter System Blog</h1>
         <p className={marketingLeadClass}>
-          Updates from the team: how we turn steps, workouts, and meals into RPG
-          progression, not affiliated with the Solo Leveling brand.
+          Updates from the team: how we turn steps, workouts, and meals into an RPG
+          progression fitness app, not affiliated with the Solo Leveling brand.
         </p>
 
         {list.length === 0 ? (

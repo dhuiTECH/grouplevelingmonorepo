@@ -10,9 +10,9 @@ import {
   marketingTitleClass,
 } from "@/components/marketing/marketingDoc";
 
-const title = `FAQ | ${SITE_NAME}`;
+const title = `FAQ | ${SITE_NAME} - Gamified Fitness App Questions`;
 const description =
-  "Frequently asked questions about Group Leveling, the fantasy walking RPG and fitness app. Independent product, not affiliated with Solo Leveling anime or games.";
+  "Frequently asked questions about Group Leveling, the gamified walking and RPG fitness app. Learn how the step tracker and leveling system works.";
 
 export const metadata: Metadata = {
   title,
@@ -78,11 +78,11 @@ export default function FaqPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <div className={marketingContainerClass}>
-        <h1 className={marketingTitleClass}>FAQ</h1>
+        <h1 className={marketingTitleClass}>Fitness App FAQ</h1>
         <p className={marketingLeadClass}>
           Straight answers about the app. We&apos;re an{" "}
-          <strong className="font-semibold text-slate-200">independent</strong> fitness
-          RPG, not the official Solo Leveling brand.
+          <strong className="font-semibold text-slate-200">independent</strong> RPG fitness
+          app, not the official Solo Leveling brand.
         </p>
         <dl className="mt-10 space-y-8">
           {faqs.map((item) => (
