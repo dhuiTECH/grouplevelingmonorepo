@@ -42,8 +42,7 @@ export default function AboutPage() {
         <h1 className={marketingTitleClass}>About Group Leveling</h1>
         <p className={marketingLeadClass}>
           Who we are, what we ship, and how we fit into hunter-fantasy fitness as an{" "}
-          <strong className="font-semibold text-slate-200">independent</strong> product
-          (not affiliated with the Solo Leveling anime, games, or brand).
+          <strong className="font-semibold text-slate-200">independent</strong> product.
         </p>
 
         <div className={`${marketingDividerClass} space-y-10`}>
@@ -69,11 +68,9 @@ export default function AboutPage() {
           </section>
 
           <section className="border-b border-white/10 pb-10">
-            <h2 className={marketingSectionTitleClass}>Third-party IP</h2>
+            <h2 className={marketingSectionTitleClass}>Independent IP</h2>
             <p className={`mt-3 ${marketingBodyClass}`}>
-              We are <strong className="font-semibold text-slate-200">not</strong>{" "}
-              affiliated with the Solo Leveling anime, manhwa, or licensed games.
-              We&apos;re a separate product for anyone who likes that vibe and wants
+              We are an <strong className="font-semibold text-slate-200">independent</strong> product for anyone who likes the hunter-fantasy vibe and wants
               progression they earn outside the screen.
             </p>
           </section>

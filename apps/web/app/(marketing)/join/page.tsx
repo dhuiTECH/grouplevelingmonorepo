@@ -114,7 +114,7 @@ function JoinPageContent() {
           Waitlist, referral rewards, and launch bonuses for the iOS and Android app.
           We&apos;re an{" "}
           <strong className="font-semibold text-slate-200">independent</strong> fitness
-          RPG, not the official Solo Leveling brand.
+          RPG.
         </p>
 
         <div className="mt-10">

@@ -130,7 +130,7 @@ export default function FeaturesPage() {
           How Group Leveling turns real walks, meals, and workouts into loot, XP, pets,
           and guild co-op, an{" "}
           <strong className="font-semibold text-slate-200">independent</strong> fitness
-          RPG, not the Solo Leveling brand.
+          RPG.
         </p>
       </div>
 

@@ -63,7 +63,7 @@ export default async function BlogIndexPage() {
         <h1 className={marketingTitleClass}>Hunter System Blog</h1>
         <p className={marketingLeadClass}>
           Updates from the team: how we turn steps, workouts, and meals into an RPG
-          progression fitness app, not affiliated with the Solo Leveling brand.
+          progression fitness app.
         </p>
 
         {list.length === 0 ? (

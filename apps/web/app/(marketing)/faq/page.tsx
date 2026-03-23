@@ -37,11 +37,7 @@ export const metadata: Metadata = {
 const faqs = [
   {
     q: "What is Group Leveling?",
-    a: "Group Leveling is an independent gamified fitness RPG: your real-world activity (steps, workouts, nutrition logging) fuels progression for your hunter. It is not affiliated with the Solo Leveling anime, manhwa, or official games.",
-  },
-  {
-    q: "Is Group Leveling related to Solo Leveling?",
-    a: "No. We are fans of hunter-fantasy and dungeon-RPG vibes, but Group Leveling is a separate fitness product. Any mention of similar themes is for genre comparison only.",
+    a: "Group Leveling is an independent gamified fitness RPG: your real-world activity (steps, workouts, nutrition logging) fuels progression for your hunter.",
   },
   {
     q: "How does the RPG progression work?",
@@ -82,7 +78,7 @@ export default function FaqPage() {
         <p className={marketingLeadClass}>
           Straight answers about the app. We&apos;re an{" "}
           <strong className="font-semibold text-slate-200">independent</strong> RPG fitness
-          app, not the official Solo Leveling brand.
+          app.
         </p>
         <dl className="mt-10 space-y-8">
           {faqs.map((item) => (
