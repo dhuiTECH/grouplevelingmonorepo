@@ -164,9 +164,10 @@ export default function LandingPageClient() {
           <SystemWindow className="max-w-2xl mt-2 md:mt-12 self-start">
             {/* Top Section: Title */}
             <motion.div
-              initial={{ opacity: 0, x: -50 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.8 }}
+              initial={{ opacity: 0, scaleY: 0.1 }}
+              animate={{ opacity: 1, scaleY: 1 }}
+              transition={{ duration: 0.6, delay: 0.1, ease: [0.2, 0.9, 0.2, 1] }}
+              style={{ transformOrigin: "top" }}
               className="max-w-2xl w-full flex flex-col items-start mb-2 md:mb-4 text-left pl-3 md:pl-0"
             >
               <h1 className="text-base md:text-3xl lg:text-[36px] font-black tracking-tight leading-[1.15] system-glow-text drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">
@@ -307,9 +308,10 @@ function HeroButtons({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 50 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.8, delay: 0.2 }}
+      initial={{ opacity: 0, scaleY: 0.1 }}
+      animate={{ opacity: 1, scaleY: 1 }}
+      transition={{ duration: 0.6, delay: 0.3, ease: [0.2, 0.9, 0.2, 1] }}
+      style={{ transformOrigin: "top" }}
       className="flex flex-col items-center md:items-start gap-6 w-full"
     >
       <div className="flex flex-col items-center md:items-start justify-center gap-6 md:gap-8 w-full">
