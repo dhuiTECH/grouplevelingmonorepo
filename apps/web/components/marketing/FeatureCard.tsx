@@ -32,12 +32,12 @@ export default function FeatureCard({
       </div>
 
       <div className="flex flex-grow flex-col justify-start px-2 text-center">
-        <h3
+        <h2
           className="mb-2 flex min-h-[3rem] items-center justify-center bg-gradient-to-r from-cyan-300 via-blue-400 to-cyan-300 bg-clip-text text-lg font-black uppercase italic tracking-widest text-transparent md:text-xl"
           style={{ textShadow: "0 0 20px rgba(6,182,212,0.5)" }}
         >
           {title}
-        </h3>
+        </h2>
         <p className="text-sm font-semibold leading-snug text-slate-300 md:text-base">
           {description}
         </p>

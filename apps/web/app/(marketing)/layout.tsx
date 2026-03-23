@@ -18,6 +18,12 @@ const marketingJsonLd = {
         "Gamified fantasy walking RPG and fitness app, track activity, earn XP, and level your hunter.",
       publisher: { "@type": "Organization", name: SITE_NAME },
     },
+    {
+      "@type": "SoftwareApplication",
+      name: "Group Leveling",
+      applicationCategory: ["HealthApplication", "GameApplication"],
+      operatingSystem: "Any",
+    },
   ],
 };
 

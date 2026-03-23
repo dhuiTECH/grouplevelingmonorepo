@@ -26,9 +26,9 @@ const rajdhani = Rajdhani({
 });
 
 export const metadata: Metadata = {
-  title: `${SITE_NAME} | The Fantasy Walking RPG & Fitness App`,
+  title: `${SITE_NAME} | RPG Fitness App & Walking Game.`,
   description:
-    "Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hunter, and join guilds in the ultimate fitness game.",
+    "Experience leveling up in real life with Group Leveling. Turn your daily steps into an RPG quest walking adventure with manhwa-style calorie tracking and fitness rewards.",
   keywords: [
     'gamified fitness',
     'workout RPG',
@@ -55,8 +55,8 @@ export const metadata: Metadata = {
     canonical: '/',
   },
   openGraph: {
-    title: `${SITE_NAME} | The Fantasy Walking RPG & Fitness App`,
-    description: 'Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hunter, and join guilds in the ultimate fitness game.',
+    title: `${SITE_NAME} | RPG Fitness App & Walking Game.`,
+    description: 'Experience leveling up in real life with Group Leveling. Turn your daily steps into an RPG quest walking adventure with manhwa-style calorie tracking and fitness rewards.',
     url: '/',
     siteName: SITE_NAME,
     images: [
@@ -72,8 +72,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: `${SITE_NAME} | The Fantasy Walking RPG & Fitness App`,
-    description: 'Awaken your inner hunter. Track runs, conquer dungeons, level up, and climb the elite rankings in this immersive fitness RPG system.',
+    title: `${SITE_NAME} | RPG Fitness App & Walking Game.`,
+    description: 'Experience leveling up in real life with Group Leveling. Turn your daily steps into an RPG quest walking adventure with manhwa-style calorie tracking and fitness rewards.',
     images: [DEFAULT_OG_IMAGE],
     creator: '@huntersystem',
   },

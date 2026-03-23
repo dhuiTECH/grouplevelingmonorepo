@@ -93,7 +93,7 @@ export default function LandingPageClient() {
             />
             <img
               src="/website/hero-banner.webp"
-              alt="Group Leveling Hero"
+              alt="Manhwa style fitness hunter leveling up"
               className="absolute inset-0 w-full h-full object-cover object-center md:object-top"
               style={{ zIndex: 0 }}
             />
@@ -170,12 +170,17 @@ export default function LandingPageClient() {
               style={{ transformOrigin: "top" }}
               className="max-w-2xl w-full flex flex-col items-start mb-2 md:mb-4 text-left pl-3 md:pl-0"
             >
-              <h1 className="text-base md:text-3xl lg:text-[36px] font-black tracking-tight leading-[1.15] system-glow-text drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">
-                Your Daily Walk Converted <br /> into an RPG Quest.
-              </h1>
-              <h2 className="mt-1 md:mt-5 text-[10px] md:text-base font-semibold text-white/95 max-w-[95%] md:max-w-xl text-left drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-relaxed md:ml-1">
+              <hgroup className="w-full">
+                <h1 className="text-[10px] md:text-xs font-bold text-cyan-400 uppercase tracking-widest mb-1 md:mb-2 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                  Gamified Fitness & RPG Walking App
+                </h1>
+                <h2 className="text-base md:text-3xl lg:text-[36px] font-black tracking-tight leading-[1.15] system-glow-text drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">
+                  Your Daily Walk Converted <br /> into an RPG Quest.
+                </h2>
+              </hgroup>
+              <p className="mt-1 md:mt-5 text-[10px] md:text-base font-semibold text-white/95 max-w-[95%] md:max-w-xl text-left drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-relaxed md:ml-1">
                 Traverse a fantasy world with every step and log your fitness and calories to power your hunter&apos;s journey. Join thousands of hunters already leveling up.
-              </h2>
+              </p>
             </motion.div>
 
             {/* Bottom Section: Buttons & Waitlist (Desktop Only inside SystemWindow) */}
@@ -229,7 +234,7 @@ export default function LandingPageClient() {
             {/* CARD 1: Track & Convert */}
             <FeatureCard
               imageSrc="/website/feature-track.png"
-              title="Track & Convert"
+              title="Gamified Calorie & Step Tracking"
               description="Track/Journal Your Daily Steps, Activity, Gym, Running turn into Rewards, Gold and XP!"
               delay={0.1}
             />
@@ -237,7 +242,7 @@ export default function LandingPageClient() {
             {/* CARD 2: Diet & Level Up */}
             <FeatureCard
               imageSrc="/website/feature-diet.png"
-              title="Diet & Level Up"
+              title="Real-Life Hunter Quests & Rewards"
               description="You Can Lose Weight Logging Nutrition And Stay Consistent With AI Analysis for Rewards!"
               delay={0.2}
             />
@@ -384,7 +389,7 @@ function HeroButtons({
                 <div className="w-6 h-6 relative shrink-0">
                   <Image
                     src="/website/applelogo.png"
-                    alt="Apple Logo"
+                    alt="Download Group Leveling RPG Fitness App on App Store"
                     fill
                     className="object-contain"
                   />
@@ -410,7 +415,7 @@ function HeroButtons({
                 <div className="w-6 h-6 relative shrink-0">
                   <Image
                     src="/website/playstorelogo.png"
-                    alt="Play Store Logo"
+                    alt="Download Group Leveling RPG Fitness App on Google Play"
                     fill
                     className="object-contain"
                   />

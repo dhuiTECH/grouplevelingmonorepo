@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import LandingPageClient from "./LandingPageClient";
 import { DEFAULT_OG_IMAGE, SITE_NAME } from "@/lib/site";
 
-const title = `${SITE_NAME} | The Fantasy Walking RPG & Fitness App`;
+const title = `${SITE_NAME} | RPG Fitness App & Walking Game.`;
 const description =
-  "Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hunter, and join guilds in the ultimate fitness game.";
+  "Experience leveling up in real life with Group Leveling. Turn your daily steps into an RPG quest walking adventure with manhwa-style calorie tracking and fitness rewards.";
 
 export const metadata: Metadata = {
   title,
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title,
     description:
-      "Awaken your inner hunter. Track runs, conquer dungeons, level up, and climb the elite rankings in this immersive fitness RPG system.",
+      "Experience leveling up in real life with Group Leveling. Turn your daily steps into an RPG quest walking adventure with manhwa-style calorie tracking and fitness rewards.",
     images: [DEFAULT_OG_IMAGE],
     creator: "@huntersystem",
   },
