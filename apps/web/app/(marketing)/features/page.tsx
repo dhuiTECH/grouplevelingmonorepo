@@ -13,7 +13,7 @@ import {
 } from "@/components/marketing/marketingDoc";
 import { DEFAULT_OG_IMAGE, SITE_NAME } from "@/lib/site";
 
-const title = `Features | ${SITE_NAME}`;
+const title = `App Features | ${SITE_NAME} - RPG Fitness & Walking Game`;
 const description =
   "Walk the real world as your RPG map, collect and evolve pets, style your hunter, log meals for buffs, and team up in guilds for boss raids.";
 
@@ -49,11 +49,11 @@ function PhSlot({ className = "" }: { className?: string }) {
 
 function Headline({ line1, accent }: { line1: string; accent: string }) {
   return (
-    <h2 className="font-sans text-3xl font-black leading-[0.9] tracking-tighter text-white md:text-5xl lg:text-7xl">
+    <div className="font-sans text-3xl font-black leading-[0.9] tracking-tighter text-white md:text-5xl lg:text-7xl">
       {line1}
       <br />
       <span className="text-gl-primary gl-glow-text">{accent}</span>
-    </h2>
+    </div>
   );
 }
 
@@ -71,20 +71,61 @@ function SectionLabel({
   return (
     <div className="flex items-center gap-4">
       <span className={`h-px w-12 ${bar}`} aria-hidden />
-      <span
+      <h2
         className={`font-sans font-bold ${text} text-[10px] uppercase tracking-[0.4em]`}
       >
         {children}
-      </span>
+      </h2>
     </div>
   );
 }
 
 export default function FeaturesPage() {
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Gamified Step Tracking",
+        description: "The real world is your game map. Track steps with our gamified pedometer to earn loot, explore, fight mobs and unlock powerful skills."
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: "Virtual Pet System",
+        description: "Find loyal companions on your walks. Rare pets grow stronger as you reach your step goals and help you in battles."
+      },
+      {
+        "@type": "ListItem",
+        position: 3,
+        name: "Avatar & Stat Building",
+        description: "Unlock gear as you get stronger. Collect legendary outfits that show everyone how far you've come."
+      },
+      {
+        "@type": "ListItem",
+        position: 4,
+        name: "Nutrition & Calorie Tracker",
+        description: "Use our integrated calorie tracker to log meals, get buffs, and boost your stats. Your nutrition is fuel for your character's power."
+      },
+      {
+        "@type": "ListItem",
+        position: 5,
+        name: "Guilds & Social Fitness",
+        description: "Don't go it alone. Join local Guilds to crush fitness goals with friends and defeat massive bosses by staying active together."
+      }
+    ]
+  };
+
   return (
     <main className={`${marketingMainClass} font-sans selection:bg-cyan-500/30 selection:text-white`}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <div className={marketingContainerClass}>
-        <h1 className={marketingTitleClass}>Features</h1>
+        <h1 className={marketingTitleClass}>RPG Fitness App Features</h1>
         <p className={marketingLeadClass}>
           How Group Leveling turns real walks, meals, and workouts into loot, XP, pets,
           and guild co-op, an{" "}
@@ -103,14 +144,14 @@ export default function FeaturesPage() {
         >
           <div className="order-2 space-y-6 lg:order-1 lg:space-y-10">
             <div className="space-y-4">
-              <SectionLabel accent="primary">Gameplay Basics</SectionLabel>
+              <SectionLabel accent="primary">Gamified Step Tracking</SectionLabel>
               <div id="feat-walk-heading">
                 <Headline line1="WALK TO" accent="EXPLORE" />
               </div>
             </div>
             <p className="max-w-2xl text-base leading-relaxed text-slate-400">
-              The real world is your game map.{" "}
-              <span className="font-semibold text-cyan-300">Track steps</span> to earn
+              The real world is your game map. Use our{" "}
+              <span className="font-semibold text-cyan-300">gamified pedometer</span> to track steps, earn
               loot, explore, fight mobs and unlock powerful skills.
             </p>
             <div className="grid grid-cols-2 gap-6">
@@ -286,9 +327,9 @@ export default function FeaturesPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-end gap-4 lg:justify-start">
                 <span className="h-px w-12 bg-gl-primary" aria-hidden />
-                <span className="font-sans font-bold text-gl-primary text-[10px] uppercase tracking-[0.4em]">
-                  Companion System
-                </span>
+                <h2 className="font-sans font-bold text-gl-primary text-[10px] uppercase tracking-[0.4em]">
+                  Virtual Pet System
+                </h2>
               </div>
               <div id="feat-pets-heading">
                 <Headline line1="CATCH &" accent="EVOLVE PETS" />
@@ -367,16 +408,16 @@ export default function FeaturesPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-end gap-4 lg:justify-start">
                 <span className="h-px w-12 bg-gl-primary" aria-hidden />
-                <span className="font-sans font-bold text-gl-primary text-[10px] uppercase tracking-[0.4em]">
-                  Customization
-                </span>
+                <h2 className="font-sans font-bold text-gl-primary text-[10px] uppercase tracking-[0.4em]">
+                  Avatar & Stat Building
+                </h2>
               </div>
               <div id="feat-hero-heading">
                 <Headline line1="STYLE YOUR" accent="HERO" />
               </div>
             </div>
             <p className="ml-auto max-w-2xl text-base leading-relaxed text-slate-400 lg:ml-0">
-              Unlock gear as you get stronger. Collect legendary outfits that
+              Build your character by walking. Unlock gear as you get stronger and collect legendary outfits that
               show everyone how far you&apos;ve come.
             </p>
             <div className="ml-auto grid max-w-lg grid-cols-2 gap-6 lg:ml-0">
@@ -489,20 +530,16 @@ export default function FeaturesPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-end gap-4 lg:justify-start">
                 <span className="h-px w-12 bg-gl-secondary" aria-hidden />
-                <span className="font-sans font-bold text-gl-secondary text-[10px] uppercase tracking-[0.4em]">
-                  Power Up
-                </span>
+                <h2 className="font-sans font-bold text-gl-secondary text-[10px] uppercase tracking-[0.4em]">
+                  Nutrition & Calorie Tracker
+                </h2>
               </div>
               <div id="feat-eat-heading">
-                <h2 className="font-sans text-3xl font-black leading-[0.9] tracking-tighter text-white md:text-5xl lg:text-7xl">
-                  EAT TO
-                  <br />
-                  <span className="text-gl-secondary gl-glow-text">LEVEL UP</span>
-                </h2>
+                <Headline line1="EAT TO" accent="LEVEL UP" />
               </div>
             </div>
             <p className="ml-auto max-w-2xl text-base leading-relaxed text-slate-400 lg:ml-0">
-              Log meals to get buffs and boost your stats. Your nutrition is
+              Use our integrated calorie tracker to log meals, get buffs, and boost your stats. Your nutrition is
               fuel for your character&apos;s power.
             </p>
             <div className="gl-system-border ml-auto flex max-w-lg items-start gap-6 bg-gl-surface-high p-6 lg:ml-0">
@@ -529,13 +566,9 @@ export default function FeaturesPage() {
         >
           <div className="order-2 space-y-6 lg:order-1 lg:space-y-10">
             <div className="space-y-4">
-              <SectionLabel accent="primary">Multiplayer Mode</SectionLabel>
+              <SectionLabel accent="primary">Guilds & Social Fitness</SectionLabel>
               <div id="feat-team-heading">
-                <h2 className="font-sans text-3xl font-black leading-[0.9] tracking-tighter text-white md:text-5xl lg:text-7xl">
-                  TEAM UP &amp;
-                  <br />
-                  <span className="text-gl-primary gl-glow-text">QUEST</span>
-                </h2>
+                <Headline line1="TEAM UP &" accent="QUEST" />
               </div>
             </div>
             <p className="max-w-2xl text-base leading-relaxed text-slate-400">
@@ -647,27 +680,8 @@ export default function FeaturesPage() {
 
       <footer className="border-t border-white/10 bg-slate-900/90 py-12">
         <div className={marketingContainerClass}>
-          <div className="mb-8 flex flex-wrap items-center gap-3 text-sm text-slate-500">
-            <Link
-              href="/privacy-policy"
-              className="text-cyan-400 hover:text-cyan-300"
-            >
-              Privacy
-            </Link>
-            <span aria-hidden>·</span>
-            <Link
-              href="/terms-of-service"
-              className="text-cyan-400 hover:text-cyan-300"
-            >
-              Terms
-            </Link>
-            <span aria-hidden>·</span>
-            <Link href="/faq" className="text-cyan-400 hover:text-cyan-300">
-              FAQ
-            </Link>
-          </div>
           <MarketingSubfooter />
-          <p className="mt-6 text-sm text-slate-600">
+          <p className="mt-6 text-[10px] uppercase tracking-widest font-bold text-slate-600 opacity-60">
             © {new Date().getFullYear()} Group Leveling. All rights reserved.
           </p>
         </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
@@ -284,8 +285,13 @@ export default function LandingPageClient() {
               Y
             </div>
           </div>
-          <p className="text-slate-400 text-sm">
-            © 2024 Group Leveling. All Rights Reserved.
+          <div className="flex space-x-4 mb-4 text-[10px] uppercase tracking-widest font-bold text-slate-500">
+            <Link href="/privacy-policy" className="hover:text-cyan-400 transition-colors">Privacy</Link>
+            <span aria-hidden>·</span>
+            <Link href="/terms-of-service" className="hover:text-cyan-400 transition-colors">Terms</Link>
+          </div>
+          <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold opacity-60">
+            © {new Date().getFullYear()} Group Leveling. All Rights Reserved.
           </p>
         </div>
       </footer>

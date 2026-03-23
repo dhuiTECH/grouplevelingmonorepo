@@ -8,6 +8,8 @@ const links = [
   { href: "/faq", label: "FAQ" },
   { href: "/about", label: "About" },
   { href: "/join", label: "Join" },
+  { href: "/privacy-policy", label: "Privacy" },
+  { href: "/terms-of-service", label: "Terms" },
 ] as const;
 
 export default function MarketingSubfooter() {
