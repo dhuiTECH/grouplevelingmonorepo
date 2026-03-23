@@ -171,8 +171,8 @@ export default function LandingPageClient() {
               style={{ transformOrigin: "top" }}
               className="max-w-2xl w-full flex flex-col items-start mb-2 md:mb-4 text-left pl-3 md:pl-0"
             >
-              <h1 className="text-base md:text-3xl lg:text-[36px] font-black tracking-tight leading-[1.15] system-glow-text drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">
-                Gamified Fitness & <br /> RPG Walking App
+              <h1 className="text-base md:text-3xl lg:text-[36px] font-black tracking-tight leading-[1.15] system-glow-text drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] whitespace-nowrap">
+                Gamified Fitness & RPG Walking App
               </h1>
               <p className="mt-1 md:mt-5 text-[10px] md:text-base font-semibold text-white/95 max-w-[95%] md:max-w-xl text-left drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-relaxed md:ml-1">
                 Traverse a fantasy world with every step and log your fitness and calories to power your hunter&apos;s journey. Join thousands of hunters already leveling up.
