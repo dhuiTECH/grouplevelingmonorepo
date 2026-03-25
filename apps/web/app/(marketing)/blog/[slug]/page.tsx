@@ -107,34 +107,45 @@ export default async function BlogPostPage({ params }: Props) {
       <article className={marketingContainerClass}>
         <Link
           href="/blog"
-          className="text-sm font-semibold text-cyan-400 hover:text-cyan-300"
+          className="text-sm font-semibold text-cyan-400 hover:text-cyan-300 mb-6 inline-block"
         >
-          All posts
+          &larr; All posts
         </Link>
-        <h1 className={`mt-6 ${marketingTitleClass}`}>{post.title}</h1>
-        {post.published_at && (
-          <p className={`mt-3 ${marketingMutedClass}`}>
-            {new Date(post.published_at).toLocaleDateString(undefined, {
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            })}
-          </p>
-        )}
-        {post.og_image && (
-          <div className="mt-8 overflow-hidden rounded-2xl border border-white/10 shadow-lg">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img 
-              src={post.og_image} 
-              alt={post.title} 
-              className="w-full h-auto object-cover" 
-            />
+        
+        <div className="flex flex-col md:flex-row gap-8 items-center md:items-start mb-10 bg-white/5 p-6 md:p-8 rounded-3xl border border-white/10">
+          <div className="flex-1">
+            <h1 className={marketingTitleClass}>{post.title}</h1>
+            
+            {post.published_at && (
+              <p className={`mt-4 ${marketingMutedClass}`}>
+                {new Date(post.published_at).toLocaleDateString(undefined, {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
+            )}
+            
+            {post.excerpt && (
+              <p className={`mt-6 ${marketingBodyClass} text-lg leading-relaxed text-gray-300`}>
+                {post.excerpt}
+              </p>
+            )}
           </div>
-        )}
-        {post.excerpt && (
-          <p className={`mt-6 ${marketingBodyClass}`}>{post.excerpt}</p>
-        )}
-        <div className="mt-10 border-t border-white/10 pt-10">
+          
+          {post.og_image && (
+            <div className="w-full md:w-1/3 flex-shrink-0 overflow-hidden rounded-2xl border border-white/10 shadow-lg bg-black/50 aspect-video md:aspect-square">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img 
+                src={post.og_image} 
+                alt={post.title} 
+                className="w-full h-full object-cover" 
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-white/10 pt-10">
           <BlogMarkdown content={post.body || ""} />
         </div>
         <MarketingSubfooter />
