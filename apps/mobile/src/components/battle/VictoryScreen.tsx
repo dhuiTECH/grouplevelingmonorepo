@@ -225,11 +225,23 @@ export function VictoryScreen({
           <View style={styles.contentPadding}>
             {/* Header Block */}
             <View style={styles.headerBlock}>
-              <View style={styles.headerBox}>
-                <View style={styles.exclamationCircle}>
-                  <Text style={styles.exclamationText}>!</Text>
+              <View style={styles.headerRow}>
+                <View style={styles.iconSquareFrame}>
+                  <View style={styles.iconCircle}>
+                    <Text style={styles.exclamationText}>!</Text>
+                  </View>
                 </View>
-                <Text style={styles.victoryTitle}>VICTORY</Text>
+                <View style={styles.titleTextFrame}>
+                  <Text style={styles.victoryTitle}>VICTORY</Text>
+                </View>
+              </View>
+              <View style={styles.headerBottomLine}>
+                <LinearGradient
+                  colors={['transparent', '#00d2ff', 'transparent']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
               </View>
               
               <View style={styles.credentialsBlock}>
@@ -415,52 +427,94 @@ const styles = StyleSheet.create({
     zIndex: 70,
   },
   headerBlock: {
+    width: '100%',
     alignItems: 'center',
+    paddingBottom: 15,
+    marginBottom: 25,
+    position: 'relative',
+    paddingHorizontal: 8,
   },
-  headerBox: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 102, 255, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 210, 255, 0.5)',
-    paddingHorizontal: 24,
-    paddingVertical: 8,
+    justifyContent: 'center',
     gap: 12,
+    flexShrink: 1,
+    maxWidth: '100%',
+  },
+  headerBottomLine: {
+    position: 'absolute',
+    bottom: -1,
+    left: '10%',
+    width: '80%',
+    height: 1,
     shadowColor: '#00d2ff',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.3,
-    shadowRadius: 15,
+    shadowOpacity: 1,
+    shadowRadius: 8,
   },
-  exclamationCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  iconSquareFrame: {
+    width: 36,
+    height: 36,
     borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-    backgroundColor: 'transparent',
+    borderColor: 'rgba(0, 255, 255, 0.75)',
+    backgroundColor: 'rgba(2, 12, 32, 0.92)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#FFFFFF',
+    shadowColor: '#00ffff',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 8,
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  iconCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    shadowColor: '#ffffff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
   },
   exclamationText: {
     color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-    textShadowColor: '#FFFFFF',
-    textShadowRadius: 4,
+    fontWeight: '800',
+    fontSize: 14,
+    textShadowColor: '#ffffff',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 5,
+    fontFamily: 'Montserrat-Bold',
+    includeFontPadding: false,
+  },
+  titleTextFrame: {
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 255, 255, 0.75)',
+    backgroundColor: 'rgba(2, 12, 32, 0.92)',
+    shadowColor: '#00ffff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    flexShrink: 1,
   },
   victoryTitle: {
     color: '#e6ffff',
-    fontSize: 20,
-    fontWeight: 'bold',
-    fontFamily: 'Exo2-Bold',
-    letterSpacing: 4,
-    textShadowColor: '#00d2ff',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Montserrat-Bold',
+    letterSpacing: 2,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0, 210, 255, 0.8)',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
+    textShadowRadius: 15,
     textTransform: 'uppercase',
   },
   credentialsBlock: {

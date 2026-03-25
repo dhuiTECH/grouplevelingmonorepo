@@ -71,7 +71,7 @@ export default function BlogEditorTab() {
           currentBody.substring(end);
         newCursorPos = start + options.wrap.before.length;
       } else {
-        const prefix = options?.block ? (start === 0 ? "" : "\n") : "";
+        const prefix = options?.block ? (start === 0 ? "" : "\n\n") : "";
         newContent =
           currentBody.substring(0, start) +
           prefix +

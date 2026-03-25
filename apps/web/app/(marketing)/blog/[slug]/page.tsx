@@ -121,6 +121,16 @@ export default async function BlogPostPage({ params }: Props) {
             })}
           </p>
         )}
+        {post.og_image && (
+          <div className="mt-8 overflow-hidden rounded-2xl border border-white/10 shadow-lg">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img 
+              src={post.og_image} 
+              alt={post.title} 
+              className="w-full h-auto object-cover" 
+            />
+          </div>
+        )}
         {post.excerpt && (
           <p className={`mt-6 ${marketingBodyClass}`}>{post.excerpt}</p>
         )}

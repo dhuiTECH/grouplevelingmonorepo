@@ -166,8 +166,7 @@ export const HunterLogModal: React.FC<HunterLogModalProps> = ({
 
           /* Header area */
           .header {
-              display: flex; align-items: center; justify-content: center; gap: 15px;
-              border-bottom: 1px solid rgba(0, 210, 255, 0.3);
+              display: flex; align-items: center; justify-content: center; gap: 12px;
               padding-bottom: 15px;
               margin-bottom: 25px;
               position: relative;
@@ -179,27 +178,39 @@ export const HunterLogModal: React.FC<HunterLogModalProps> = ({
           }
           
           .icon-square {
-              width: 20px; height: 20px;
-              border: 1.5px solid #ffffff;
+              width: 36px; height: 36px;
+              border: 1.5px solid rgba(0, 255, 255, 0.75);
+              background-color: rgba(2, 12, 32, 0.92);
               border-radius: 2px;
               display: flex; justify-content: center; align-items: center;
-              box-shadow: 0 0 10px rgba(255, 255, 255, 0.5), 0 0 4px rgba(255, 255, 255, 0.3);
+              box-shadow: 0 0 14px rgba(0, 255, 255, 0.45);
           }
           .icon-circle {
-              width: 16px; height: 16px;
+              width: 26px; height: 26px;
               border: 1.5px solid #ffffff; border-radius: 50%;
               background: transparent;
               display: flex; justify-content: center; align-items: center;
-              color: #ffffff; font-weight: 700; font-size: 14px;
+              color: #ffffff; font-weight: 800; font-size: 14px;
               box-shadow: 0 0 10px rgba(255, 255, 255, 0.6);
               text-shadow: 0 0 5px #ffffff;
           }
 
+          .title-frame {
+              min-height: 36px;
+              display: flex; justify-content: center; align-items: center;
+              padding: 4px 12px;
+              border: 1.5px solid rgba(0, 255, 255, 0.75);
+              background-color: rgba(2, 12, 32, 0.92);
+              box-shadow: 0 0 14px rgba(0, 255, 255, 0.45);
+          }
+
           .title {
               font-family: 'Montserrat', sans-serif;
-              color: #e6ffff; font-size: 26px; font-weight: 600; letter-spacing: 4px;
+              color: #e6ffff; font-size: 16px; font-weight: 600; letter-spacing: 2px;
               text-shadow: 0 0 15px rgba(0, 210, 255, 0.8), 0 0 5px rgba(0, 210, 255, 0.5);
               text-transform: uppercase;
+              text-align: center;
+              margin: 0;
           }
 
           /* Rewards Area */
@@ -314,7 +325,9 @@ export const HunterLogModal: React.FC<HunterLogModalProps> = ({
                   <div class="icon-square">
                       <div class="icon-circle">!</div>
                   </div>
-                  <div class="title">${title}</div>
+                  <div class="title-frame">
+                      <div class="title">${title}</div>
+                  </div>
               </div>
 
               <div class="message">

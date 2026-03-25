@@ -27,7 +27,7 @@ type Props = {
  */
 export function SoloLevelingPanelFrame({ title, children }: Props) {
   const { width: winW } = useWindowDimensions();
-  const W = Math.min(winW - 24, 380);
+  const W = Math.min(winW - 36, 380); // Ensure it fits safely within KeyboardAvoidingView padding (16 on each side)
   const [frameH, setFrameH] = useState(360);
   const titlePulse = useRef(new Animated.Value(1)).current;
   const openScaleY = useRef(new Animated.Value(0.035)).current;
@@ -89,97 +89,72 @@ export function SoloLevelingPanelFrame({ title, children }: Props) {
       style={[styles.outer, { width: W, transform: [{ scaleY: openScaleY }] }]}
     >
       <View style={[styles.hudFrame, { width: W }]} onLayout={onHudLayout}>
+        <ExpoLinearGradient
+          colors={['rgba(2, 6, 15, 0.95)', 'rgba(8, 18, 35, 0.95)']}
+          style={styles.hudBackground}
+        />
+
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
           <Svg width={W} height={frameH}>
             <Defs>
               <Pattern id="slScanlines" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
-                <Rect x="0" y="0" width="4" height="1" fill="#00d2ff" fillOpacity={0.05} />
+                <Rect x="0" y="0" width="4" height="1" fill="#00e5ff" fillOpacity={0.03} />
               </Pattern>
             </Defs>
             <Rect x="0" y="0" width={W} height={frameH} fill="url(#slScanlines)" />
           </Svg>
         </View>
 
-        <View style={[styles.sideAccent, { left: 0 }]} />
-        <View style={[styles.sideAccent, { right: 0 }]} />
-
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          <Svg width={W} height={frameH}>
-            <Path
-              d="M 15 35 L 15 15 L 35 15"
-              fill="none"
-              stroke="#00d2ff"
-              strokeWidth="2"
-              opacity={0.8}
-            />
-            <Path
-              d={`M ${W - 15} 35 L ${W - 15} 15 L ${W - 35} 15`}
-              fill="none"
-              stroke="#00d2ff"
-              strokeWidth="2"
-              opacity={0.8}
-            />
-            <Path
-              d={`M 15 ${frameH - 35} L 15 ${frameH - 15} L 35 ${frameH - 15}`}
-              fill="none"
-              stroke="#00d2ff"
-              strokeWidth="2"
-              opacity={0.8}
-            />
-            <Path
-              d={`M ${W - 15} ${frameH - 35} L ${W - 15} ${frameH - 15} L ${W - 35} ${frameH - 15}`}
-              fill="none"
-              stroke="#00d2ff"
-              strokeWidth="2"
-              opacity={0.8}
-            />
-            <Line x1="0" y1={frameH / 2} x2="6" y2={frameH / 2} stroke="#00d2ff" strokeWidth="2" />
-            <Line x1={W} y1={frameH / 2} x2={W - 6} y2={frameH / 2} stroke="#00d2ff" strokeWidth="2" />
-          </Svg>
+        {/* Glow Bars (Top & Bottom) */}
+        <View style={styles.glowBarTop}>
+          <ExpoLinearGradient
+            colors={['transparent', '#005c99', '#00e5ff', '#ffffff', '#00e5ff', '#005c99', 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
+        <View style={styles.glowBarBottom}>
+          <ExpoLinearGradient
+            colors={['transparent', '#005c99', '#00e5ff', '#ffffff', '#00e5ff', '#005c99', 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
         </View>
 
-        <View style={styles.headerBlock}>
-          <Animated.View
-            style={[
-              styles.headerRow,
-              { opacity: titlePulse, maxWidth: W - 48 },
-            ]}
-          >
-            {/* Solo Leveling style: separate square (icon) + rectangle (title), not one combined box */}
-            <View style={styles.iconSquareFrame}>
-              <View style={styles.exclamationCircle}>
-                <Text style={styles.exclamationText}>!</Text>
+        {/* Inner Box with Brackets */}
+        <View style={styles.innerBox}>
+          <View style={[styles.corner, styles.tl]} />
+          <View style={[styles.corner, styles.tr]} />
+          <View style={[styles.corner, styles.bl]} />
+          <View style={[styles.corner, styles.br]} />
+
+          <View style={styles.headerBlock}>
+            <Animated.View style={[styles.headerRow, { opacity: titlePulse }]}>
+              <View style={styles.iconSquareFrame}>
+                <View style={styles.iconCircle}>
+                  <Text style={styles.iconText}>!</Text>
+                </View>
               </View>
+              <View style={styles.titleTextFrame}>
+                <Text style={styles.headerTitle} numberOfLines={2}>
+                  {title}
+                </Text>
+              </View>
+            </Animated.View>
+            <View style={styles.headerBottomLine}>
+              <ExpoLinearGradient
+                colors={['transparent', '#00d2ff', 'transparent']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFill}
+              />
             </View>
-            <View style={[styles.titleTextFrame, { maxWidth: W - 48 - ICON_FRAME - ROW_GAP }]}>
-              <Text style={styles.headerTitle} numberOfLines={2}>
-                {title}
-              </Text>
-            </View>
-          </Animated.View>
+          </View>
+
+          <View style={styles.body}>{children}</View>
         </View>
-
-        <View style={styles.body}>{children}</View>
-      </View>
-
-      <View style={[styles.mechBorderTop, { width: W }]} pointerEvents="none">
-        <ExpoLinearGradient
-          colors={['transparent', '#00d2ff', '#e6ffff', '#00d2ff', 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={[styles.mechInnerLine, styles.mechInnerLineTop]} />
-      </View>
-
-      <View style={[styles.mechBorderBottom, { width: W }]} pointerEvents="none">
-        <ExpoLinearGradient
-          colors={['transparent', '#00d2ff', '#e6ffff', '#00d2ff', 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={[styles.mechInnerLine, styles.mechInnerLineBot]} />
       </View>
     </Animated.View>
   );
@@ -191,75 +166,95 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   hudFrame: {
-    backgroundColor: 'rgba(4, 12, 28, 0.95)',
-    borderColor: 'rgba(0, 210, 255, 0.3)',
+    backgroundColor: 'transparent',
+    overflow: 'visible', // Ensure glow bars spill out
+  },
+  hudBackground: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8, 18, 35, 0.95)',
     borderWidth: 1,
-    borderRadius: 2,
-    overflow: 'hidden',
-    shadowColor: '#0066ff',
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+    shadowColor: '#00e5ff',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 30,
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
     elevation: 10,
   },
-  sideAccent: {
+  glowBarTop: {
     position: 'absolute',
-    top: 40,
-    bottom: 40,
-    width: 1,
-    backgroundColor: 'rgba(0, 210, 255, 0.4)',
-    shadowColor: '#00d2ff',
+    top: -2,
+    left: '-5%',
+    width: '110%',
+    height: 5,
+    zIndex: 20,
+    shadowColor: '#00e5ff',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
-    shadowRadius: 10,
-    zIndex: 10,
+    shadowRadius: 15,
   },
-  mechBorderTop: {
+  glowBarBottom: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 8,
+    bottom: -2,
+    left: '-5%',
+    width: '110%',
+    height: 5,
     zIndex: 20,
+    shadowColor: '#00e5ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 15,
   },
-  mechBorderBottom: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 8,
-    zIndex: 20,
+  innerBox: {
+    margin: 6,
+    paddingHorizontal: 20,
+    paddingTop: 25,
+    paddingBottom: 25,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.15)',
+    position: 'relative',
   },
-  mechInnerLine: {
+  corner: {
     position: 'absolute',
-    left: '5%',
-    right: '5%',
+    width: 15,
+    height: 15,
+    borderColor: 'rgba(0, 210, 255, 0.8)',
+    borderWidth: 0,
+  },
+  tl: { top: -1, left: -1, borderTopWidth: 2, borderLeftWidth: 2 },
+  tr: { top: -1, right: -1, borderTopWidth: 2, borderRightWidth: 2 },
+  bl: { bottom: -1, left: -1, borderBottomWidth: 2, borderLeftWidth: 2 },
+  br: { bottom: -1, right: -1, borderBottomWidth: 2, borderRightWidth: 2 },
+  
+  headerBlock: {
+    width: '100%',
+    alignItems: 'center',
+    paddingBottom: 15,
+    marginBottom: 25,
+    position: 'relative',
+    paddingHorizontal: 8, // slight padding so it doesn't rub walls
+  },
+  headerBottomLine: {
+    position: 'absolute',
+    bottom: -1,
+    left: '10%',
+    width: '80%',
     height: 1,
-    backgroundColor: '#00d2ff',
     shadowColor: '#00d2ff',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
     shadowRadius: 8,
   },
-  mechInnerLineTop: { top: 3 },
-  mechInnerLineBot: { bottom: 3 },
-  headerBlock: {
-    width: '100%',
-    alignItems: 'center',
-    paddingTop: 28,
-    paddingHorizontal: 24,
-  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'center',
-    marginBottom: 4,
-    gap: ROW_GAP,
+    gap: 12,
+    flexShrink: 1, // ensure it doesn't break out of bounds
+    maxWidth: '100%', // Prevent expanding beyond the header block
   },
   iconSquareFrame: {
-    width: ICON_FRAME,
-    height: ICON_FRAME,
+    width: 36,
+    height: 36,
     borderWidth: 1.5,
     borderColor: 'rgba(0, 255, 255, 0.75)',
     backgroundColor: 'rgba(2, 12, 32, 0.92)',
@@ -271,35 +266,34 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 8,
   },
-  exclamationCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+  iconCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
     shadowColor: '#ffffff',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
+    shadowOpacity: 0.6,
     shadowRadius: 10,
   },
-  exclamationText: {
-    color: '#FFFFFF',
-    fontFamily: 'Lato-Black',
-    fontSize: 18,
+  iconText: {
+    color: '#ffffff',
     fontWeight: '800',
-    lineHeight: 22,
-    textShadowColor: '#a5f3fc',
+    fontSize: 14,
+    textShadowColor: '#ffffff',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
-    transform: [{ scaleY: 1.38 }, { translateY: -1 }],
+    textShadowRadius: 5,
+    fontFamily: 'Montserrat-Bold',
+    includeFontPadding: false,
   },
   titleTextFrame: {
-    minHeight: ICON_FRAME,
+    minHeight: 36,
     justifyContent: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 4,
     borderWidth: 1.5,
     borderColor: 'rgba(0, 255, 255, 0.75)',
@@ -308,25 +302,21 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.45,
     shadowRadius: 14,
-    elevation: 8,
-    flexShrink: 1,
+    flexShrink: 1, // lets title shrink if it needs to
   },
   headerTitle: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    fontFamily: 'Lato-Black',
-    letterSpacing: 2,
+    color: '#e6ffff',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Montserrat-Bold',
+    letterSpacing: 2, // reduced letter spacing to help it fit
     textAlign: 'center',
-    textShadowColor: '#22d3ee',
+    textShadowColor: 'rgba(0, 210, 255, 0.8)',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 12,
+    textShadowRadius: 15,
     textTransform: 'uppercase',
   },
   body: {
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 28,
     width: '100%',
   },
 });

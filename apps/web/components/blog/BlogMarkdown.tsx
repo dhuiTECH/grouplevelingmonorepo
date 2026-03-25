@@ -2,8 +2,12 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 
 export default function BlogMarkdown({ content }: { content: string }) {
+  // Ensure headings have a blank line before them so they don't get parsed as paragraph text
+  const fixedContent = content.replace(/([^\n])\n(#+ )/g, "$1\n\n$2");
+
   return (
     <div
       className="max-w-none space-y-4 text-[15px] leading-relaxed text-slate-200
@@ -21,7 +25,12 @@ export default function BlogMarkdown({ content }: { content: string }) {
       [&_td]:border [&_td]:border-white/10 [&_td]:px-3 [&_td]:py-2
       [&_img]:mx-auto [&_img]:my-8 [&_img]:max-w-full [&_img]:rounded-xl [&_img]:border [&_img]:border-white/10 [&_img]:shadow-lg"
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <ReactMarkdown 
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw]}
+      >
+        {fixedContent}
+      </ReactMarkdown>
     </div>
   );
 }

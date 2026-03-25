@@ -174,7 +174,8 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
   // Constants
   const activeActorId = turnQueue[queueIndex];
   const activeActorType = activeActorId === 'ENEMY' ? ACTOR_TYPE.ENEMY : (activeActorId?.startsWith('pet-') ? ACTOR_TYPE.PET : ACTOR_TYPE.PLAYER);
-  const activeChar = party.find(p => p.id === activeActorId) || party[activeIndex] || party[0];
+  // UI active character is always what's selected, rather than the logical turn actor (like pets/enemies)
+  const activeChar = party[activeIndex] || party[0];
   const isPlayerTurnPhase = currentPhase === PHASE.ACTIVE && activeActorType === ACTOR_TYPE.PLAYER && activeActorId === user?.id;
   const currentAbility = activeChar?.abilities?.find((a: any) => a.id === selectedAbilityId);
   const basicAbility = activeChar?.abilities?.find((a: any) => a.id.endsWith('_basic') || a.id === 'generic_attack') ?? activeChar?.abilities?.[0];
@@ -625,27 +626,42 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
     Vibration.vibrate(100);
   };
 
-  const startPlayerTurn = () => {
+  const startPlayerTurn = (nextActorId: string) => {
     setCurrentPhase(PHASE.ACTIVE);
     setEnemyTargetId(null);
     setChainCount(0);
     setPlannedAbilities([]);
     setSelectedAbilityId(null);
 
-    // Set active index to the character whose turn it is
-    const activeIdx = party.findIndex(p => p.id === activeActorId);
-    if (activeIdx !== -1) {
-      setActiveIndex(activeIdx);
-    }
+    setParty(prev => {
+      // Set active index to the character whose turn it is
+      // Don't shift UI focus to pets since they auto-attack instantly, and don't shift to ENEMY
+      let uiActiveIdx = prev.findIndex(p => p.id === nextActorId);
+      if (uiActiveIdx === -1 || nextActorId === 'ENEMY' || nextActorId?.startsWith('pet-')) {
+        // Fall back to the local player
+        uiActiveIdx = prev.findIndex(p => p.id === user?.id);
+        if (uiActiveIdx === -1) uiActiveIdx = 0;
+      }
+      setActiveIndex(uiActiveIdx);
 
-    // Only update AP for the active player
-    setParty(prev => prev.map(p => p.id === activeActorId
-      ? { ...p, ap: Math.min(p.maxAP, p.ap + 1), atkBuff: Math.max(0, p.atkBuff - 1) }
-      : p
-    ));
+      // Only update AP for the active player
+      return prev.map(p => p.id === nextActorId
+        ? { ...p, ap: Math.min(p.maxAP, p.ap + 1), atkBuff: Math.max(0, p.atkBuff - 1) }
+        : p
+      );
+    });
     setEnemy((prev: any) => {
       if (!prev) return null;
       return { ...prev, defDebuff: Math.max(0, (prev.defDebuff ?? 0) - 1) };
+    });
+  };
+
+  const advanceTurn = () => {
+    setQueueIndex(prev => {
+      const nextIdx = prev + 1;
+      const nextActorId = turnQueue[nextIdx];
+      setTimeout(() => startPlayerTurn(nextActorId), 0);
+      return nextIdx;
     });
   };
 
@@ -851,8 +867,7 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
       }
 
       setTimeout(() => {
-        setQueueIndex(prev => prev + 1);
-        startPlayerTurn();
+        advanceTurn();
         isProcessingActionsRef.current = false;
       }, 100);
     } catch (e) {
@@ -881,8 +896,7 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
     setChainCount(0);
     
     setTimeout(() => {
-        setQueueIndex(prev => prev + 1);
-        startPlayerTurn();
+        advanceTurn();
         isProcessingActionsRef.current = false;
     }, 300);
   };
@@ -1070,8 +1084,7 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
     }
 
     setTimeout(() => {
-        setQueueIndex(prev => prev + 1);
-        startPlayerTurn();
+        advanceTurn();
     }, 1800);
   };
 
@@ -1203,8 +1216,7 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
         setEnemyTargetId(target.id);
         setTimeout(() => startEnemyAttack(), 350);
     } else {
-        setQueueIndex(prev => prev + 1);
-        startPlayerTurn();
+        advanceTurn();
     }
   };
 
@@ -1311,8 +1323,7 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
     if (petTurnStartedRef.current) return;
     const pet = party.find((p: any) => p.type === 'pet');
     if (!pet || !enemy) {
-      setQueueIndex(prev => prev + 1);
-      startPlayerTurn();
+      advanceTurn();
       return;
     }
     petTurnStartedRef.current = true;
@@ -1348,8 +1359,7 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
       // Advance turn after the impact
       setTimeout(() => {
         if (!battleEndedRef.current) {
-          setQueueIndex(prev => prev + 1);
-          startPlayerTurn();
+          advanceTurn();
         }
         petTurnStartedRef.current = false;
       }, 400);

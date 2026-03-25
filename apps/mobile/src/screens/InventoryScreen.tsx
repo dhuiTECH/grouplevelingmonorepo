@@ -23,7 +23,7 @@ import { useAudio } from '@/contexts/AudioContext';
 // Import existing icons
 import { LockIcon } from '@/components/icons/LockIcon';
 import { XIcon } from '@/components/icons/XIcon';
-import { Edit2, Shield } from 'lucide-react-native';
+import { Edit2 } from 'lucide-react-native';
 
 // Custom components and types
 import { User, ShopItem, UserCosmetic } from '@/types/user';
@@ -791,7 +791,7 @@ export const InventoryScreen: React.FC = () => {
                   }}
                   style={styles.avatarButton}
                 >
-                  <Shield size={20} color="#06b6d4" />
+                  <Image source={require('../../assets/equipped.png')} style={styles.avatarButtonIcon} contentFit="contain" />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => {
