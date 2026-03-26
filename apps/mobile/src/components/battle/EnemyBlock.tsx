@@ -1,35 +1,85 @@
-import React, { type RefObject } from 'react';
-import { View, Text, Animated, StyleSheet, Dimensions } from 'react-native';
+import React, { type RefObject, useEffect } from 'react';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, Easing, withSpring } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import { EnemyHPBar } from './EnemyHPBar';
 import { COLORS } from './battleTheme';
+import { useBattleStore } from '@/store/useBattleStore';
+import { PHASE } from '@/store/useBattleStore';
 
 interface EnemyBlockProps {
-  enemy: any;
-  visualEnemyHp: number;
-  currentPhase: string;
-  phaseEnemyStrike: string;
-  enemyLungeAnim: Animated.Value;
   enemyFigureRef: RefObject<View | null>;
   setEnemyFigureCenter: (center: { x: number; y: number }) => void;
-  enemySpriteActive: boolean;
   action?: 'idle' | 'walk' | 'enter';
   onEnterComplete?: () => void;
 }
 
 export function EnemyBlock({
-  enemy,
-  visualEnemyHp,
-  currentPhase,
-  phaseEnemyStrike,
-  enemyLungeAnim,
   enemyFigureRef,
   setEnemyFigureCenter,
-  enemySpriteActive,
   action = 'idle',
   onEnterComplete,
 }: EnemyBlockProps) {
+  const enemy = useBattleStore(state => state.enemy);
+  const currentPhase = useBattleStore(state => state.currentPhase);
+  const lastDamageEvent = useBattleStore(state => state.lastDamageEvent);
+  
+  // Local state for visual HP to allow smooth bars
+  const [visualEnemyHp, setVisualEnemyHp] = React.useState(enemy?.hp || 0);
+
+  useEffect(() => {
+    if (enemy?.hp !== undefined) {
+      setVisualEnemyHp(prev => {
+        if (enemy.hp > prev || prev === 0) return enemy.hp;
+        return enemy.hp; // Update directly for now, HPBar component handles internal smoothing
+      });
+    }
+  }, [enemy?.hp]);
+
+  // Reanimated values
+  const lungeY = useSharedValue(0);
+  const scale = useSharedValue(1);
+
+  // Trigger lunge or hit animations based on damage events
+  useEffect(() => {
+    if (!lastDamageEvent) return;
+
+    // Enemy is attacking
+    if (lastDamageEvent.casterCharId === 'ENEMY' || (lastDamageEvent.targetId !== 'ENEMY' && !lastDamageEvent.casterCharId)) {
+      lungeY.value = withSequence(
+        withTiming(50, { duration: 150, easing: Easing.out(Easing.cubic) }),
+        withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) })
+      );
+    }
+    // Enemy is hit
+    else if (lastDamageEvent.targetId === 'ENEMY') {
+      // Small flinch
+      lungeY.value = withSequence(
+        withTiming(-10, { duration: 100 }),
+        withTiming(0, { duration: 100 })
+      );
+    }
+  }, [lastDamageEvent?.timestamp]);
+
+  // Scale up during enemy strike phase
+  useEffect(() => {
+    if (currentPhase === PHASE.ENEMY_STRIKE) {
+      scale.value = withSpring(1.1);
+    } else {
+      scale.value = withSpring(1);
+    }
+  }, [currentPhase]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: lungeY.value },
+      { scale: scale.value }
+    ]
+  }));
+
+  if (!enemy) return null;
+
   return (
     <View style={styles.enemyBlockWrap}>
       <View style={styles.enemySection}>
@@ -44,16 +94,14 @@ export function EnemyBlock({
         />
       </View>
       <Animated.View
-        ref={enemyFigureRef}
-        style={[
-          styles.enemyFigure,
-          currentPhase === phaseEnemyStrike && styles.enemyAttacking,
-          { transform: [{ translateY: enemyLungeAnim }] },
-        ]}
+        ref={enemyFigureRef as any} // Reanimated interop
+        style={[styles.enemyFigure, animatedStyle]}
         onLayout={() => {
-          enemyFigureRef.current?.measureInWindow((x: number, y: number, width: number, height: number) => {
-            setEnemyFigureCenter({ x: x + width / 2, y: y + height / 2 });
-          });
+          if (enemyFigureRef.current && (enemyFigureRef.current as any).measureInWindow) {
+            (enemyFigureRef.current as any).measureInWindow((x: number, y: number, width: number, height: number) => {
+              setEnemyFigureCenter({ x: x + width / 2, y: y + height / 2 });
+            });
+          }
         }}
       >
         {enemy?.metadata ? (

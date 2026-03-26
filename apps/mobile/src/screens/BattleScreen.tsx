@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Animated, SafeAreaView, Platform, StatusBar, Image as RNImage, type ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, Animated, SafeAreaView, StatusBar, Image as RNImage, type ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -34,6 +34,8 @@ import { VictoryScreen } from '@/components/battle/VictoryScreen';
 import { DefeatModal } from '@/components/modals/DefeatModal';
 import { BattleSettingsModal } from '@/components/battle/BattleSettingsModal';
 import { BattleInventoryModal } from '@/components/battle/BattleInventoryModal';
+import { BattleEffectsLayer } from '@/components/battle/vfx/BattleEffectsLayer';
+import { DamageNumberLayer } from '@/components/battle/vfx/DamageNumberLayer';
 import { ImpactEffects } from '@/components/battle/ImpactEffects';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -135,45 +137,7 @@ export default function BattleScreen() {
     fetchShopItems();
   }, []);
 
-  const enemyLungeAnim = useRef(new Animated.Value(0)).current;
-  const partyLungeAnims = useRef<Record<string, Animated.Value>>({});
   const partyOpacity = useRef(new Animated.Value(0)).current;
-
-  // Ensure lunge anims exist for all party members
-  useEffect(() => {
-    party.forEach(char => {
-      if (!partyLungeAnims.current[char.id]) {
-        partyLungeAnims.current[char.id] = new Animated.Value(0);
-      }
-    });
-  }, [party]);
-
-  // Trigger lunge animations on damage events
-  useEffect(() => {
-    if (!lastDamageEvent) return;
-    const { casterCharId, targetId } = lastDamageEvent;
-    
-    // Enemy attacks (lunge down)
-    if (casterCharId === 'ENEMY' || (targetId !== 'ENEMY' && !casterCharId)) {
-      Animated.sequence([
-        Animated.timing(enemyLungeAnim, { toValue: 50, duration: 150, useNativeDriver: true }),
-        Animated.timing(enemyLungeAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
-      ]).start();
-    } 
-    // Party attacks (lunge up)
-    else if (casterCharId) {
-      // Ensure anim value exists before using
-      if (!partyLungeAnims.current[casterCharId]) {
-        partyLungeAnims.current[casterCharId] = new Animated.Value(0);
-      }
-      
-      const anim = partyLungeAnims.current[casterCharId];
-      Animated.sequence([
-        Animated.timing(anim, { toValue: -50, duration: 150, useNativeDriver: true }),
-        Animated.timing(anim, { toValue: 0, duration: 300, useNativeDriver: true }),
-      ]).start();
-    }
-  }, [lastDamageEvent, enemyLungeAnim]);
 
   // Use the new hook for battle music
   useBattleMusic(enemy, !loading);
@@ -245,124 +209,12 @@ export default function BattleScreen() {
   }, [currentPhase, enemySpriteActive, enemyCycleDuration]);
 
   // --- Particles System ---
-  const [particles, setParticles] = useState<any[]>([]);
-  const [shockwaves, setShockwaves] = useState<any[]>([]);
-  const prevQteTargetsRef = useRef<any[]>([]);
+  // Replaced with BattleEffectsLayer
 
   const enemyFigureRef = useRef<View>(null);
   const gameFrameRef = useRef<View>(null);
   const [enemyFigureCenter, setEnemyFigureCenter] = useState<{ x: number; y: number } | null>(null);
   const [gameFrameOrigin, setGameFrameOrigin] = useState<{ x: number; y: number } | null>(null);
-
-  // 1. Detect Hit/Miss to spawn particles
-  // (Swipe logic moved to QTEButton)
-
-  useEffect(() => {
-      qteTargets.forEach(target => {
-          const prev = prevQteTargetsRef.current.find(t => t.id === target.id);
-          if (!prev) return;
-          
-          // Detect Status Change
-          if (prev.status !== 'hit' && target.status === 'hit') {
-              spawnParticles(target.x, target.y, '#22d3ee');
-              spawnShockwave(target.x, target.y, '#22d3ee');
-          } else if (prev.status !== 'perfect' && target.status === 'perfect') {
-              spawnParticles(target.x, target.y, '#fbbf24'); // Gold for Perfect
-              spawnShockwave(target.x, target.y, '#fbbf24');
-          } else if (prev.status !== 'miss' && target.status === 'miss') {
-              spawnParticles(target.x, target.y, '#ef4444');
-              spawnShockwave(target.x, target.y, '#ef4444');
-          }
-      });
-      prevQteTargetsRef.current = qteTargets;
-  }, [qteTargets]);
-
-  const spawnParticles = (xPct: number, yPct: number, color: string) => {
-      const x = (xPct / 100) * SCREEN_WIDTH;
-      const y = (yPct / 100) * SCREEN_HEIGHT;
-      const newParts: any[] = [];
-      const count = color === '#fbbf24' ? 12 : 8;
-      const baseSpeed = color === '#fbbf24' ? 20 : 12;
-
-      for(let i=0; i<count; i++) {
-          const angle = Math.random() * Math.PI * 2;
-          const speed = Math.random() * baseSpeed + 5;
-          newParts.push({
-              id: Math.random().toString(),
-              x,
-              y,
-              vx: Math.cos(angle) * speed,
-              vy: Math.sin(angle) * speed,
-              life: 1.0,
-              color,
-              size: Math.random() * 10 + 5 
-          });
-      }
-      setParticles(prev => [...prev, ...newParts]);
-  };
-
-  const spawnShockwave = (xPct: number, yPct: number, color: string) => {
-      const x = (xPct / 100) * SCREEN_WIDTH;
-      const y = (yPct / 100) * SCREEN_HEIGHT;
-      setShockwaves(prev => [...prev, {
-          id: Math.random().toString(),
-          x,
-          y,
-          scale: 0.1,
-          opacity: 1.0,
-          color
-      }]);
-  };
-
-  // 2. Animation Loop — use requestAnimationFrame with throttle for fewer re-renders
-  const particleRafRef = useRef<number | null>(null);
-  const lastParticleTickRef = useRef(0);
-  useEffect(() => {
-      if (particles.length === 0 && shockwaves.length === 0) {
-        lastParticleTickRef.current = 0;
-        return;
-      }
-
-      const tick = (now: number) => {
-        if (now - lastParticleTickRef.current < 32) {
-          particleRafRef.current = requestAnimationFrame(tick);
-          return;
-        }
-        lastParticleTickRef.current = now;
-
-        setParticles(prevParticles => {
-          const nextParticles = prevParticles.length > 0 ? prevParticles.map(p => ({
-            ...p,
-            x: p.x + p.vx,
-            y: p.y + p.vy,
-            vx: p.vx * 0.88,
-            vy: p.vy * 0.88,
-            life: p.life - 0.06
-          })).filter(p => p.life > 0) : prevParticles;
-
-          setShockwaves(prevShockwaves => {
-            const nextShockwaves = prevShockwaves.length > 0 ? prevShockwaves.map(s => ({
-              ...s,
-              scale: s.scale + 0.2,
-              opacity: s.opacity - 0.07
-            })).filter(s => s.opacity > 0) : prevShockwaves;
-
-            // Only update shockwaves if they actually changed
-            return nextShockwaves === prevShockwaves ? prevShockwaves : nextShockwaves;
-          });
-
-          // Only update particles if they actually changed
-          return nextParticles === prevParticles ? prevParticles : nextParticles;
-        });
-
-        particleRafRef.current = requestAnimationFrame(tick);
-      };
-
-      particleRafRef.current = requestAnimationFrame(tick);
-      return () => {
-        if (particleRafRef.current) cancelAnimationFrame(particleRafRef.current);
-      };
-  }, [particles.length > 0 || shockwaves.length > 0]);
 
   // Damage Number Handling
   const [damageNumbers, setDamageNumbers] = useState<any[]>([]);
@@ -525,7 +377,7 @@ export default function BattleScreen() {
 
   // Timer management to allow "fire-and-forget" damage numbers that persist across rapid clicks
   // while still preventing duplicates for the same event (e.g. when config loads)
-  const damageTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const damageTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const lastScheduledEventTimestampRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -970,14 +822,8 @@ export default function BattleScreen() {
           {/* --- BATTLEFIELD --- */}
           <View style={styles.battlefield}>
               <EnemyBlock
-                enemy={enemy}
-                visualEnemyHp={visualEnemyHp}
-                currentPhase={currentPhase}
-                phaseEnemyStrike={PHASE.ENEMY_STRIKE}
-                enemyLungeAnim={enemyLungeAnim}
                 enemyFigureRef={enemyFigureRef}
                 setEnemyFigureCenter={setEnemyFigureCenter}
-                enemySpriteActive={enemySpriteActive}
                 action={enemyAction}
                 onEnterComplete={() => setEnemyAction('idle')}
               />
@@ -1004,7 +850,6 @@ export default function BattleScreen() {
                 setActiveIndex={setActiveIndex}
                 isPlayerTurnPhase={isPlayerTurnPhase}
                 visualPartyHps={visualPartyHps}
-                partyLungeAnims={partyLungeAnims}
                 partyOpacity={partyOpacity}
                 petSpriteActive={petSpriteActive}
                 user={user}
@@ -1124,46 +969,8 @@ export default function BattleScreen() {
         />
       ))}
 
-      {/* Shockwaves Layer */}
-      {shockwaves.map(s => (
-          <View 
-              key={s.id}
-              style={{
-                  position: 'absolute',
-                  left: s.x - 100, 
-                  top: s.y - 100,
-                  width: 200,
-                  height: 200,
-                  borderRadius: 100,
-                  borderWidth: 10,
-                  borderColor: s.color,
-                  opacity: s.opacity,
-                  zIndex: 1450, // Below particles
-                  transform: [{ scale: s.scale }]
-              }}
-              pointerEvents="none"
-          />
-      ))}
-
-      {/* Particles Layer */}
-      {particles.map(p => (
-          <View 
-              key={p.id}
-              style={{
-                  position: 'absolute',
-                  left: p.x - p.size/2,
-                  top: p.y - p.size/2,
-                  width: p.size,
-                  height: p.size,
-                  borderRadius: p.size/2,
-                  backgroundColor: p.color,
-                  opacity: p.life,
-                  zIndex: 1500, // Below damage numbers, above QTE
-                  transform: [{ scale: p.life }]
-              }}
-              pointerEvents="none"
-          />
-      ))}
+      <DamageNumberLayer enemyFigureCenter={enemyFigureCenter} />
+      <BattleEffectsLayer />
 
       {/* Overlays centered on device screen */}
       {successFlash && !sequenceFeedback && (
