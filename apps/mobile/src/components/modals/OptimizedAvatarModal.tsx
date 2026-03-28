@@ -1,7 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Modal, View, TouchableOpacity, Text, Dimensions, StyleSheet, ScrollView, NativeSyntheticEvent, NativeScrollEvent, ActivityIndicator } from 'react-native';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+import * as Haptics from 'expo-haptics';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Share2, UserPlus } from 'lucide-react-native';
 import { PlayerCallingCard } from '@/components/PlayerCallingCard';
 import { LayeredAvatar } from '@/components/LayeredAvatar';
 import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
@@ -9,6 +13,8 @@ import { User } from '@/types/user';
 import { UserPet } from '@/types/pet';
 import { supabase } from '@/lib/supabase';
 import { useGameData } from '@/hooks/useGameData';
+import { api as socialApi } from '@/api/social';
+import { useNotification } from '@/contexts/NotificationContext';
 
 interface OptimizedAvatarModalProps {
   visible: boolean;
@@ -28,13 +34,19 @@ export const OptimizedAvatarModal: React.FC<OptimizedAvatarModalProps> = ({
   const [activeIndex, setActiveIndex] = useState(0);
   const [petAction, setPetAction] = useState<'idle' | 'enter'>('idle');
   const scrollViewRef = useRef<ScrollView>(null);
+  const shotRef = useRef<ViewShot>(null);
   const { shopItems } = useGameData();
+  const { showNotification } = useNotification();
+
+  const [isSharing, setIsSharing] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
 
   useEffect(() => {
     if (user?.id && visible) {
       fetchUserPets(user.id);
       setActiveIndex(0); // Reset to avatar on open
       setPetAction('idle');
+      setRequestSent(false);
     }
   }, [user?.id, visible]);
 
@@ -78,6 +90,40 @@ export const OptimizedAvatarModal: React.FC<OptimizedAvatarModalProps> = ({
     }
   };
 
+  const handleShare = async () => {
+    if (!isOwnCard || activeIndex !== 0) return;
+    setIsSharing(true);
+    try {
+      const uri = await shotRef.current?.capture?.();
+      if (uri && (await Sharing.isAvailableAsync())) {
+        await Sharing.shareAsync(uri);
+      }
+    } catch (e) {
+      console.error('Share avatar failed:', e);
+      showNotification('Could not share avatar', 'error');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const handleFriendRequest = async () => {
+    if (!currentUser?.id || !user?.id || requestSent) return;
+    try {
+      await socialApi.sendFriendRequest(currentUser.id, user.id);
+      setRequestSent(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showNotification('Sync request sent!', 'success');
+    } catch (error: unknown) {
+      console.error('Friend request failed:', error);
+      const err = error as { message?: string; code?: string };
+      const message =
+        err?.message?.includes('duplicate') || err?.code === '23505'
+          ? 'Request already sent or already friends'
+          : err?.message || 'Failed to send sync request';
+      showNotification(message, 'error');
+    }
+  };
+
   if (!user) return null;
 
   const windowWidth = Dimensions.get('window').width;
@@ -100,6 +146,7 @@ export const OptimizedAvatarModal: React.FC<OptimizedAvatarModalProps> = ({
       statusBarTranslucent
     >
       <BlurView intensity={50} tint="dark" style={styles.backdrop}>
+        <View style={styles.modalColumn}>
         <View style={[styles.modalContent, { width: avatarSize, height: avatarSize, borderWidth: 0 }]}>
           
           {/* Header with Calling Card and Close Button */}
@@ -121,7 +168,8 @@ export const OptimizedAvatarModal: React.FC<OptimizedAvatarModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Swipeable Container */}
+          {/* Swipeable Container — ViewShot captures avatar/pets only (no header / referral / close) */}
+          <ViewShot ref={shotRef} options={{ format: 'png', quality: 0.9 }} style={styles.viewShotFill}>
           <View style={styles.swiperContainer}>
             <ScrollView
               ref={scrollViewRef}
@@ -196,7 +244,50 @@ export const OptimizedAvatarModal: React.FC<OptimizedAvatarModalProps> = ({
               </View>
             )}
           </View>
+          </ViewShot>
 
+        </View>
+
+        {isOwnCard && activeIndex === 0 && (
+          <TouchableOpacity
+            style={[styles.footerActionButton, styles.shareActionButton]}
+            onPress={handleShare}
+            disabled={isSharing}
+            activeOpacity={0.85}
+          >
+            {isSharing ? (
+              <ActivityIndicator color="#0f172a" />
+            ) : (
+              <>
+                <Share2 size={18} color="#0f172a" />
+                <Text style={styles.footerActionTextShare}>SHARE AVATAR</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {!isOwnCard && currentUser?.id && (
+          <TouchableOpacity
+            style={[
+              styles.footerActionButton,
+              styles.friendActionButton,
+              requestSent && styles.footerActionButtonDisabled,
+            ]}
+            onPress={handleFriendRequest}
+            disabled={requestSent}
+            activeOpacity={0.85}
+          >
+            <UserPlus size={18} color={requestSent ? '#64748b' : '#22d3ee'} />
+            <Text
+              style={[
+                styles.footerActionTextFriend,
+                requestSent && styles.footerActionTextDisabled,
+              ]}
+            >
+              {requestSent ? 'REQUEST SENT' : 'ADD FRIEND'}
+            </Text>
+          </TouchableOpacity>
+        )}
         </View>
       </BlurView>
     </Modal>
@@ -209,6 +300,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.95)',
+  },
+  modalColumn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  viewShotFill: {
+    flex: 1,
   },
   modalContent: {
     position: 'relative',
@@ -306,6 +407,45 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
     letterSpacing: 1,
     textTransform: 'uppercase',
+  },
+  footerActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    minWidth: 220,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  shareActionButton: {
+    backgroundColor: '#22d3ee',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.5)',
+  },
+  friendActionButton: {
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    borderWidth: 1,
+    borderColor: '#22d3ee',
+  },
+  footerActionButtonDisabled: {
+    borderColor: 'rgba(100, 116, 139, 0.5)',
+    opacity: 0.85,
+  },
+  footerActionTextShare: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  footerActionTextFriend: {
+    color: '#22d3ee',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  footerActionTextDisabled: {
+    color: '#64748b',
   },
 });
 
