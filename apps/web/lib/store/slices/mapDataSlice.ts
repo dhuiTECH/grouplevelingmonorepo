@@ -9,6 +9,7 @@ import {
   buildLibByUrl,
   serializeTileForChunkPersistence,
 } from '../chunkSync';
+import { rebuildTileIndexes } from '../tileIndex';
 
 const CHUNK_SIZE = 16;
 
@@ -22,12 +23,14 @@ export const createMapDataSlice: StateCreator<
   MapDataSlice
 > = (set, get) => ({
   tiles: [],
+  tileIdsByCellKey: {},
+  tileIdsByChunkKey: {},
   nodes: [],
   customTiles: [],
   isLoadingTiles: false,
   spawnPoint: null,
 
-  setTiles: (tiles) => set({ tiles }),
+  setTiles: (tiles) => set({ tiles, ...rebuildTileIndexes(tiles) }),
   setNodes: (nodes) => set({ nodes }),
   setCustomTiles: (customTiles) => set({ customTiles }),
 
@@ -161,7 +164,7 @@ export const createMapDataSlice: StateCreator<
             });
           }
         });
-        set({ tiles: allTiles });
+        set({ tiles: allTiles, ...rebuildTileIndexes(allTiles) });
       }
     } catch (err) {
       console.error('Critical error in loadTilesFromSupabase:', err);
@@ -409,12 +412,13 @@ export const createMapDataSlice: StateCreator<
 
       if (hasAnyMatches) {
         if (hasStructural) {
-          set(s => ({
-            tiles: s.tiles.map(t => {
+          set(s => {
+            const newTiles = s.tiles.map(t => {
               if (!t.imageUrl || t.imageUrl.split('?')[0] !== baseTileUrl) return t;
               return { ...t, ...structuralPatch };
-            }),
-          }));
+            });
+            return { tiles: newTiles, ...rebuildTileIndexes(newTiles) };
+          });
         }
 
         const chunkKeys = new Set<string>();
@@ -501,9 +505,11 @@ export const createMapDataSlice: StateCreator<
 
   setSpawnPoint: (x, y) => set({ spawnPoint: { x, y } }),
 
-  addTile: (tile) => set((state) => ({
-    tiles: [...state.tiles.filter(t => t.x !== tile.x || t.y !== tile.y), tile]
-  })),
+  addTile: (tile) =>
+    set((state) => {
+      const newTiles = [...state.tiles.filter(t => t.x !== tile.x || t.y !== tile.y), tile];
+      return { tiles: newTiles, ...rebuildTileIndexes(newTiles) };
+    }),
 
   addTileSimple: async (x: number, y: number, type: string, imageUrl: string, isSpritesheet?: boolean, frameCount?: number, frameWidth?: number, frameHeight?: number, animationSpeed?: number, layer?: number, offsetX?: number, offsetY?: number, isWalkable?: boolean, snapToGrid?: boolean, isAutoFill?: boolean, isAutoTile?: boolean, bitmask?: number, elevation?: number, hasFoam?: boolean, foamBitmask?: number, smartType?: string, rotation?: number, blockCol?: number, blockRow?: number, edgeBlocks?: number, flipX?: boolean) => {
     const chunkX = Math.floor(x / CHUNK_SIZE);
@@ -552,10 +558,10 @@ export const createMapDataSlice: StateCreator<
       if (existingIdx !== -1) {
         const newTiles = [...state.tiles];
         newTiles[existingIdx] = newTile;
-        return { tiles: newTiles };
-      } else {
-        return { tiles: [...state.tiles, newTile] };
+        return { tiles: newTiles, ...rebuildTileIndexes(newTiles) };
       }
+      const newTiles = [...state.tiles, newTile];
+      return { tiles: newTiles, ...rebuildTileIndexes(newTiles) };
     });
 
     // 2. Debounced sync to Supabase
@@ -592,7 +598,8 @@ export const createMapDataSlice: StateCreator<
         return !newTilesKeySet.has(key);
       });
 
-      return { tiles: [...filteredExisting, ...processedNewTiles] };
+      const merged = [...filteredExisting, ...processedNewTiles];
+      return { tiles: merged, ...rebuildTileIndexes(merged) };
     });
 
     // 2. Trigger debounced sync for all affected chunks
@@ -628,9 +635,10 @@ export const createMapDataSlice: StateCreator<
       return null; // Nothing to remove
     }
 
-    set((state) => ({
-      tiles: state.tiles.filter(t => t.id !== removedTile!.id)
-    }));
+    set((state) => {
+      const newTiles = state.tiles.filter(t => t.id !== removedTile!.id);
+      return { tiles: newTiles, ...rebuildTileIndexes(newTiles) };
+    });
 
     // Debounced sync to Supabase
     triggerChunkSync(chunkX, chunkY, get);
@@ -651,9 +659,10 @@ export const createMapDataSlice: StateCreator<
     const chunkX = Math.floor(x / CHUNK_SIZE);
     const chunkY = Math.floor(y / CHUNK_SIZE);
 
-    set((state) => ({
-      tiles: state.tiles.filter(t => t.id !== id)
-    }));
+    set((state) => {
+      const newTiles = state.tiles.filter(t => t.id !== id);
+      return { tiles: newTiles, ...rebuildTileIndexes(newTiles) };
+    });
 
     // Debounced sync to Supabase
     triggerChunkSync(chunkX, chunkY, get);
@@ -667,15 +676,14 @@ export const createMapDataSlice: StateCreator<
     const oldY = tile.y;
 
     // 1. Update local state
-    set((state) => ({
-      tiles: state.tiles.map(t => t.id === tileId ? { 
-        ...t, 
-        x: newX, 
-        y: newY, 
-        offsetX: newOffsetX, 
-        offsetY: newOffsetY 
-      } : t)
-    }));
+    set((state) => {
+      const newTiles = state.tiles.map(t =>
+        t.id === tileId
+          ? { ...t, x: newX, y: newY, offsetX: newOffsetX, offsetY: newOffsetY }
+          : t,
+      );
+      return { tiles: newTiles, ...rebuildTileIndexes(newTiles) };
+    });
 
     // Sync to Supabase: handle potentially moving across chunks
     const oldChunkX = Math.floor(oldX / CHUNK_SIZE);
@@ -757,7 +765,8 @@ export const createMapDataSlice: StateCreator<
         }
         return t;
       });
-      return hasChanges ? { tiles: newTiles } : state;
+      if (!hasChanges) return state;
+      return { tiles: newTiles, ...rebuildTileIndexes(newTiles) };
     });
 
     // 3. Trigger debounced sync for touched chunks
@@ -1042,10 +1051,11 @@ export const createMapDataSlice: StateCreator<
         currentNodes = currentNodes.filter(n => !nodesToRemoveSet.has(n.id));
       }
 
-      return { 
+      return {
         tiles: currentTiles,
+        ...rebuildTileIndexes(currentTiles),
         nodes: currentNodes,
-        undoStack: undoEntry ? [...state.undoStack, undoEntry] : state.undoStack
+        undoStack: undoEntry ? [...state.undoStack, undoEntry] : state.undoStack,
       };
     });
 

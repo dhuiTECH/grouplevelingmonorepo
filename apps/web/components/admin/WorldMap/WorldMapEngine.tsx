@@ -32,8 +32,11 @@ import { StampPreview } from './components/StampPreview';
 import { MapToolbar } from './components/MapToolbar';
 import { MapHotbar } from './components/MapHotbar';
 
-const WORLD_SIZE = 100000; 
+const WORLD_SIZE = 100000;
 const TILE_SIZE = 48;
+/** Prevents zoom-out past sub-pixel tiles (brown void). ~1px tile at typical viewports. */
+const MAP_EDITOR_MIN_SCALE = 0.018;
+const MAP_EDITOR_MAX_SCALE = 10;
 
 export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [] }) => {
   const transformComponentRef = useRef<ReactZoomPanPinchRef>(null);
@@ -212,7 +215,7 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
 
     const scaleX = containerW / contentWidth;
     const scaleY = containerH / contentHeight;
-    const targetScale = Math.max(0.0001, Math.min(scaleX, scaleY, 0.8));
+    const targetScale = Math.max(MAP_EDITOR_MIN_SCALE, Math.min(scaleX, scaleY, 0.8));
 
     const centerX = ((minX + maxX + 1) / 2) * TILE_SIZE + WORLD_SIZE / 2;
     const centerY = ((minY + maxY + 1) / 2) * TILE_SIZE + WORLD_SIZE / 2;
@@ -222,6 +225,22 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
 
     transformComponentRef.current.setTransform(targetPosX, targetPosY, targetScale, animate ? 400 : 0, 'easeOut');
   }, [viewport.width, viewport.height]);
+
+  const handleToolbarZoomIn = useCallback(() => {
+    const inst = transformComponentRef.current;
+    if (!inst) return;
+    const { positionX, positionY, scale } = inst.instance.transformState;
+    const next = Math.min(MAP_EDITOR_MAX_SCALE, scale * 1.2);
+    inst.setTransform(positionX, positionY, next, 180, 'easeOut');
+  }, []);
+
+  const handleToolbarZoomOut = useCallback(() => {
+    const inst = transformComponentRef.current;
+    if (!inst) return;
+    const { positionX, positionY, scale } = inst.instance.transformState;
+    const next = Math.max(MAP_EDITOR_MIN_SCALE, scale / 1.2);
+    inst.setTransform(positionX, positionY, next, 180, 'easeOut');
+  }, []);
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -477,8 +496,8 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
 
       <div className="flex-1 relative flex flex-col min-w-0">
         <MapToolbar
-          onZoomIn={() => transformComponentRef.current?.zoomIn()}
-          onZoomOut={() => transformComponentRef.current?.zoomOut()}
+          onZoomIn={handleToolbarZoomIn}
+          onZoomOut={handleToolbarZoomOut}
           onZoomFit={zoomToFit}
           isSpacePressed={isSpacePressed}
         />
@@ -512,8 +531,8 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
           <TransformWrapper 
             ref={transformComponentRef} 
             initialScale={0.5} 
-            minScale={0.0001} 
-            maxScale={10} 
+            minScale={MAP_EDITOR_MIN_SCALE} 
+            maxScale={MAP_EDITOR_MAX_SCALE} 
             centerOnInit={false}
             initialPositionX={-(WORLD_SIZE / 2 * 0.5) + (viewport.width / 2)}
             initialPositionY={-(WORLD_SIZE / 2 * 0.5) + (viewport.height / 2)}
@@ -531,7 +550,7 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
               }
             }}
             limitToBounds={false} 
-            wheel={{ step: 0.08 }} 
+            wheel={{ step: 0.14 }} 
             doubleClick={{ disabled: true }}
             panning={{ 
               disabled: !isSpacePressed && (selectedTool !== 'select' || isDraggingTile),

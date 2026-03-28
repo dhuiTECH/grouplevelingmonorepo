@@ -1,5 +1,6 @@
 // apps/web/components/admin/WorldMap/hooks/tools/useCollisionTool.ts
-import { useMapStore } from '@/lib/store/mapStore';
+import { useMapStore, Tile } from '@/lib/store/mapStore';
+import { rebuildTileIndexes } from '@/lib/store/tileIndex';
 
 const TILE_SIZE = 48;
 const COLLISION_LAYER = -2;
@@ -19,8 +20,13 @@ export const useCollisionTool = () => {
     if (!isMove) {
       if (forceErase) drawingModeRef.current = 'removing';
       else {
-        const tilesAtPos = state.tiles.filter(t => t.x === gx && t.y === gy);
-        drawingModeRef.current = tilesAtPos.some(t => t.isWalkable === false) ? 'removing' : 'adding';
+        const indexReady = state.tiles.length === 0 || Object.keys(state.tileIdsByCellKey).length > 0;
+        const tileById = new Map(state.tiles.map((t) => [t.id, t]));
+        const ids = indexReady ? state.tileIdsByCellKey[`${gx},${gy}`] : undefined;
+        const tilesAtPos = ids
+          ? ids.map((id) => tileById.get(id)).filter((t): t is Tile => !!t)
+          : state.tiles.filter((t) => t.x === gx && t.y === gy);
+        drawingModeRef.current = tilesAtPos.some((t) => t.isWalkable === false) ? 'removing' : 'adding';
       }
     }
 
@@ -28,8 +34,18 @@ export const useCollisionTool = () => {
     const undoEntries: any[] = [];
     const touchedChunks = new Set<string>();
 
-    const brushAreaKeys = new Set(brushArea.map(p => `${gx + p.dx},${gy + p.dy}`));
-    const tilesInBrushArea = state.tiles.filter(t => brushAreaKeys.has(`${t.x},${t.y}`));
+    const indexReady = state.tiles.length === 0 || Object.keys(state.tileIdsByCellKey).length > 0;
+    const tileById = new Map(state.tiles.map((t) => [t.id, t]));
+    const candidateIds = new Set<string>();
+    if (indexReady) {
+      for (const p of brushArea) {
+        const list = state.tileIdsByCellKey[`${gx + p.dx},${gy + p.dy}`];
+        if (list) list.forEach((id) => candidateIds.add(id));
+      }
+    }
+    const tilesInBrushArea: Tile[] = indexReady
+      ? [...candidateIds].map((id) => tileById.get(id)).filter((t): t is Tile => !!t)
+      : state.tiles.filter((t) => brushArea.some((p) => t.x === gx + p.dx && t.y === gy + p.dy));
     
     const tileIdsToRemove = new Set<string>();
     const tilesToUpdate = new Map<string, Partial<any>>(); // id -> changes
@@ -128,7 +144,11 @@ export const useCollisionTool = () => {
         finalTiles = [...finalTiles, ...newTilesToAppend];
       }
 
-      useMapStore.setState({ tiles: finalTiles, undoStack: [...state.undoStack, ...undoEntries] });
+      useMapStore.setState({
+        tiles: finalTiles,
+        ...rebuildTileIndexes(finalTiles),
+        undoStack: [...state.undoStack, ...undoEntries],
+      });
       // Ensure collision changes are persisted to Supabase by syncing touched chunks
       useMapStore.getState().syncChunks(Array.from(touchedChunks));
     }

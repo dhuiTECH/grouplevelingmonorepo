@@ -1,8 +1,15 @@
 import { useMapStore, UndoEntry } from '@/lib/store/mapStore';
 import { supabase } from '@/lib/supabase';
+import { rebuildTileIndexes } from '@/lib/store/tileIndex';
 
 export const useMapClipboard = () => {
-  const { undoStack, setUndoStack, addTileSimple, removeTileById, removeNode, addNode, batchAddTiles, tiles } = useMapStore();
+  const undoStack = useMapStore((s) => s.undoStack);
+  const setUndoStack = useMapStore((s) => s.setUndoStack);
+  const addTileSimple = useMapStore((s) => s.addTileSimple);
+  const removeTileById = useMapStore((s) => s.removeTileById);
+  const removeNode = useMapStore((s) => s.removeNode);
+  const addNode = useMapStore((s) => s.addNode);
+  const batchAddTiles = useMapStore((s) => s.batchAddTiles);
 
   const processUndoEntry = async (entry: UndoEntry) => {
     const { action, x, y, layer, previousTile, nodeData, previousFullTiles, addedTileId, subActions } = entry;
@@ -18,7 +25,7 @@ export const useMapClipboard = () => {
     }
 
     if (action === 'autofill' && previousFullTiles) {
-      useMapStore.setState({ tiles: previousFullTiles });
+      useMapStore.setState({ tiles: previousFullTiles, ...rebuildTileIndexes(previousFullTiles) });
       
       const chunkCoords = new Set<string>();
       const GRID_RADIUS = 30; 
@@ -75,12 +82,13 @@ export const useMapClipboard = () => {
       } else {
         const chunkX = Math.floor(safeX / 16); 
         const chunkY = Math.floor(safeY / 16);
-        useMapStore.setState((state) => ({
-          tiles: state.tiles.filter(t => {
+        useMapStore.setState((state) => {
+          const newTiles = state.tiles.filter((t) => {
             if (addedTileId) return t.id !== addedTileId;
             return !(t.x === safeX && t.y === safeY && (t.layer || 0) === layer);
-          })
-        }));
+          });
+          return { tiles: newTiles, ...rebuildTileIndexes(newTiles) };
+        });
         
         const { data: existingChunk } = await supabase.from('map_chunks').select('tile_data').eq('chunk_x', chunkX).eq('chunk_y', chunkY).maybeSingle();
         if (existingChunk?.tile_data) {

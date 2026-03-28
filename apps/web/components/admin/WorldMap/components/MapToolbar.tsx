@@ -87,7 +87,7 @@ export const MapToolbar = React.memo(
             <button
               onClick={onZoomFit}
               className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"
-              title="Zoom to Fit (F)"
+              title="Fit entire map in view (F or 0)"
             >
               <Maximize size={16} />
             </button>

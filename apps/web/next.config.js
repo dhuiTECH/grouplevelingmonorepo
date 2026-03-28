@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  transpilePackages: ['@repo/avatar-constants'],
+  transpilePackages: ['@repo/avatar-constants', '@repo/map-autotile'],
   images: {
     remotePatterns: [
       {

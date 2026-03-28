@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, ChevronLeft, ChevronRight, Zap, Droplets } from 'lucide-react';
-import { BLOB_12x4_MAP, MASK_TO_ID } from './mapUtils';
+import { GODOT_MASK_TO_ATLAS_CELL } from './mapUtils';
 
 interface DebugOverlayProps {
   winluSheetUrl: string | null;
@@ -117,14 +117,12 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
               ))}
             </div>
 
-            {/* Blob Index Overlay */}
-            {Object.entries(BLOB_12x4_MAP).map(([idStr, [col, row]]) => {
-              const id = parseInt(idStr);
-              const maskEntry = Object.entries(MASK_TO_ID).find(([_, mappedId]) => mappedId === id);
-              const maskVal = maskEntry ? maskEntry[0] : '?';
+            {/* Blob Index Overlay — bitmask → atlas cell from Godot winlu.tres */}
+            {Object.entries(GODOT_MASK_TO_ATLAS_CELL).map(([maskStr, [col, row]]) => {
+              const mask = parseInt(maskStr, 10);
               return (
                 <div
-                  key={id}
+                  key={maskStr}
                   className="absolute flex items-center justify-center pointer-events-none"
                   style={{
                     left: `${col * TILE_SIZE}px`,
@@ -136,8 +134,10 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
                   }}
                 >
                   <div className={`${type === 'standard' ? 'bg-blue-600/90' : 'bg-cyan-600/90'} text-white text-[12px] font-bold px-1.5 py-0.5 rounded flex flex-col items-center justify-center`}>
-                    <span>{id}</span>
-                    <span className="text-[8px] font-normal opacity-80">mask: {maskVal}</span>
+                    <span>{mask}</span>
+                    <span className="text-[8px] font-normal opacity-80">
+                      {col},{row}
+                    </span>
                   </div>
                 </div>
               );

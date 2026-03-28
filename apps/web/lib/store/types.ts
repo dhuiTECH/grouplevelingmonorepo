@@ -181,6 +181,10 @@ export interface HistorySlice {
 
 export interface MapDataSlice {
   tiles: Tile[];
+  /** `${gridX},${gridY}` → tile ids at that cell (all layers / offsets). */
+  tileIdsByCellKey: Record<string, string[]>;
+  /** `${chunkX},${chunkY}` → tile ids whose origin lies in that chunk. */
+  tileIdsByChunkKey: Record<string, string[]>;
   nodes: MapNode[];
   customTiles: CustomTile[];
   isLoadingTiles: boolean;

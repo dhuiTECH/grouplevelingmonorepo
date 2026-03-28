@@ -4,7 +4,8 @@ import { Application, extend, useTick } from '@pixi/react';
 import * as PIXI from 'pixi.js';
 import { useMapStore, useTickStore, Tile, CustomTile } from '@/lib/store/mapStore';
 import { useCursorStore } from '@/lib/store/cursorStore';
-import { getPixiTextureCoords, getLiquidTextureCoords, getTileIdFromMask } from './mapUtils';
+import { getPixiTextureCoords, getLiquidTextureCoords, getAtlasCellFromMask } from './mapUtils';
+import { TILE_INDEX_CHUNK_SIZE } from '@/lib/store/tileIndex';
 
 // Register PixiJS components for use in JSX
 extend({
@@ -154,7 +155,7 @@ const PixiTile = React.memo(React.forwardRef<PIXI.Sprite, any>(({
       {debugInfo && (
         <PixiContainer x={width / 2} y={height / 2} alpha={0.9} pointerEvents="none">
           <PixiText 
-            text={`${debugInfo.id}\n(m:${debugInfo.mask})`} 
+            text={`${debugInfo.atlas[0]},${debugInfo.atlas[1]}\n(m:${debugInfo.mask})`} 
             anchor={0.5} 
             style={debugStyle}
           />
@@ -394,7 +395,7 @@ const SmartPixiTile = React.memo(({
   const y = tile.y * TILE_SIZE + worldSize / 2 + (tile.offsetY || 0) - (displayHeight - TILE_SIZE);
 
   const debugInfo = (showDebugNumbers && tile.isAutoTile) ? {
-    id: getTileIdFromMask(tile.bitmask || 0),
+    atlas: getAtlasCellFromMask(tile.bitmask || 0),
     mask: tile.bitmask || 0
   } : null;
 
@@ -458,8 +459,16 @@ const PixiScene: React.FC<PixiSceneProps> = ({
   showWalkabilityOverlay, cullBox, setCullBox
 }) => {
   const containerRef = useRef<PIXI.Container>(null);
+  const worldUnderlayRef = useRef<PIXI.Graphics>(null);
   const walkabilityOverlayRef = useRef<PIXI.Graphics>(null);
   const selectionRef = useRef<PIXI.Graphics>(null);
+
+  useEffect(() => {
+    const g = worldUnderlayRef.current;
+    if (!g) return;
+    g.clear();
+    g.rect(0, 0, worldSize, worldSize).fill(0x6b705c);
+  }, [worldSize]);
 
   // Each Pixi tick: sync transform ref → container (no React state, no re-render)
   useTick(() => {
@@ -559,7 +568,8 @@ const PixiScene: React.FC<PixiSceneProps> = ({
   }, [selection, worldSize, transformRef]);
 
   return (
-    <PixiContainer ref={containerRef}>
+    <PixiContainer ref={containerRef} sortableChildren>
+      <PixiGraphics ref={worldUnderlayRef} zIndex={-500000} />
       {tileElements}
       {/* Ensure overlays always render above tiles */}
       <PixiGraphics ref={walkabilityOverlayRef} zIndex={999998} />
@@ -575,6 +585,7 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
 }) => {
   const customTiles = useMapStore(state => state.customTiles);
   const tiles = useMapStore(state => state.tiles);
+  const tileIdsByChunkKey = useMapStore((state) => state.tileIdsByChunkKey);
   const isFoamEnabled = useMapStore(state => state.isFoamEnabled);
   const autoTileSheetUrl = useMapStore(state => state.autoTileSheetUrl);
   const dirtSheetUrl = useMapStore(state => state.dirtSheetUrl);
@@ -607,14 +618,11 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
   // Culling box — updated lazily by PixiScene's useTick, not on every transform change
   const [cullBox, setCullBox] = useState({ minX: -999999, minY: -999999, maxX: 999999, maxY: 999999 });
 
-  // Camera frustum culling + JS depth sort
-  const visibleTiles = useMemo(() => {
-    const { minX, minY, maxX, maxY } = cullBox;
-
-    const visible = tiles.filter(tile => {
+  const tileIntersectsCull = useCallback(
+    (tile: Tile, minX: number, minY: number, maxX: number, maxY: number) => {
       const normalizedTileUrl = normalizeUrl(tile.imageUrl);
       const customTile = customTileLookup.get(normalizedTileUrl);
-      
+
       const isFrozenSmart = !tile.isAutoTile && !!tile.smartType && tile.bitmask !== undefined;
       const isSmartSize = (tile.isAutoTile || isFrozenSmart) && (tile.layer || 0) === 0;
       const displayWidth = isSmartSize ? TILE_SIZE : (customTile?.frameWidth || tile.frameWidth || TILE_SIZE);
@@ -633,9 +641,51 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
         tileWorldY + displayHeight >= minY &&
         tileWorldY <= maxY
       );
-    });
+    },
+    [customTileLookup, worldSize],
+  );
 
-    // Deterministic draw order without Pixi sortableChildren:
+  // Camera frustum culling + JS depth sort (chunk index narrows candidates when available)
+  const visibleTiles = useMemo(() => {
+    const { minX, minY, maxX, maxY } = cullBox;
+
+    const indexReady = tiles.length === 0 || Object.keys(tileIdsByChunkKey).length > 0;
+    const tileById = new Map(tiles.map((t) => [t.id, t]));
+
+    let candidateTiles: Tile[];
+    if (indexReady) {
+      const minGx = Math.floor((minX - worldSize / 2) / TILE_SIZE) - 2;
+      const maxGx = Math.ceil((maxX - worldSize / 2) / TILE_SIZE) + 2;
+      const minGy = Math.floor((minY - worldSize / 2) / TILE_SIZE) - 2;
+      const maxGy = Math.ceil((maxY - worldSize / 2) / TILE_SIZE) + 2;
+
+      const minCx = Math.floor(minGx / TILE_INDEX_CHUNK_SIZE) - 1;
+      const maxCx = Math.floor(maxGx / TILE_INDEX_CHUNK_SIZE) + 1;
+      const minCy = Math.floor(minGy / TILE_INDEX_CHUNK_SIZE) - 1;
+      const maxCy = Math.floor(maxGy / TILE_INDEX_CHUNK_SIZE) + 1;
+
+      // Initial cullBox is a huge sentinel; iterating every chunk in that range would freeze the tab (~M iterations).
+      const chunkCells = (maxCx - minCx + 1) * (maxCy - minCy + 1);
+      const MAX_CHUNK_CELLS_TO_SCAN = 16384;
+
+      if (chunkCells > MAX_CHUNK_CELLS_TO_SCAN) {
+        candidateTiles = tiles;
+      } else {
+        const candidateIds = new Set<string>();
+        for (let cy = minCy; cy <= maxCy; cy++) {
+          for (let cx = minCx; cx <= maxCx; cx++) {
+            const list = tileIdsByChunkKey[`${cx},${cy}`];
+            if (list) list.forEach((id) => candidateIds.add(id));
+          }
+        }
+        candidateTiles = [...candidateIds].map((id) => tileById.get(id)).filter((t): t is Tile => !!t);
+      }
+    } else {
+      candidateTiles = tiles;
+    }
+
+    const visible = candidateTiles.filter((tile) => tileIntersectsCull(tile, minX, minY, maxX, maxY));
+
     return visible.sort((a, b) => {
       const layerA = a.layer || 0;
       const layerB = b.layer || 0;
@@ -643,7 +693,7 @@ export const PixiMapCanvas = React.memo<PixiMapCanvasProps>(({
       if (layerA > 0) return (a.y + (a.offsetY || 0) / TILE_SIZE) - (b.y + (b.offsetY || 0) / TILE_SIZE);
       return 0;
     });
-  }, [tiles, customTileLookup, cullBox, worldSize]);
+  }, [tiles, tileIdsByChunkKey, cullBox, worldSize, tileIntersectsCull]);
 
   const tileElements = useMemo(() => {
     return visibleTiles.map(tile => (
