@@ -182,8 +182,8 @@ export const generateAsset = async ({
         }
     };
     
-    // imageSize is supported by 3-pro-image-preview and 3.1-flash-image (Nano Banana 2)
-    if (model === 'gemini-3-pro-image-preview' || model === 'gemini-3.1-flash-image') {
+    // imageSize is supported by 3-pro-image-preview and 3.1-flash-image-preview (Nano Banana 2)
+    if (model === 'gemini-3-pro-image-preview' || model === 'gemini-3.1-flash-image-preview') {
         // Map 512 to 1K for the API because API doesn't support 512 natively.
         // We will resize on client side.
         config.imageConfig.imageSize = resolution === '512' ? '1K' : resolution;
