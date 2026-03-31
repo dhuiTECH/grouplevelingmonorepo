@@ -103,8 +103,11 @@ export const ShopItemMedia = ({
     const showLineArtLayer =
       !!imageSrc &&
       (imageSrc !== silhouetteUrl || item.slot === 'hair');
+    const tintOverflow =
+      item.slot === 'hand_grip' || item.slot === 'weapon' ? 'visible' : 'hidden' as const;
+
     return (
-      <View style={[style, tintStyles.stack]}>
+      <View style={[style, tintStyles.stack, { overflow: tintOverflow }]}>
         <Image
           source={{ uri: silhouetteUrl }}
           style={StyleSheet.absoluteFill}

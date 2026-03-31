@@ -19,13 +19,14 @@ import * as Haptics from 'expo-haptics';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAudio } from '@/contexts/AudioContext';
 import { Settings } from 'lucide-react-native';
-import { playHunterSound } from '@/utils/audio';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useTutorial } from '@/context/TutorialContext';
 import { useDailyStepsProgress } from '@/hooks/useDailyStepsProgress';
 import { useDungeons } from '@/hooks/useDungeons';
+import { useGameData } from '@/hooks/useGameData';
 
 import { HunterHeader } from '@/components/HunterHeader';
+import { ClearedGatesSection } from '@/components/ClearedGatesSection';
 import { StatusWindowModal } from '@/components/modals/StatusWindowModal';
 import VitalitySection from '@/components/VitalitySection';
 import TrainingWidget from '@/components/TrainingWidget';
@@ -46,6 +47,8 @@ const HomeScreen: React.FC = () => {
   const { step, targetRef } = useTutorial();
   const { stepsToday } = useDailyStepsProgress();
   const { dungeons, loading: dungeonsLoading } = useDungeons();
+  const { shopItems } = useGameData();
+  const [clearedGatesRefresh, setClearedGatesRefresh] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const isResetDue = useWeeklyReset(user);
   const [showWeeklyResetModal, setShowWeeklyResetModal] = useState(false);
@@ -154,6 +157,7 @@ const HomeScreen: React.FC = () => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
+    setClearedGatesRefresh((k) => k + 1);
     setTimeout(() => {
       setRefreshing(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -240,35 +244,20 @@ const HomeScreen: React.FC = () => {
             setSelectedDungeon={() => {}}
           />
 
-          {/* Standard Gates / Manual Submission Section */}
+          {/* Cleared Gates — you & friends */}
           <View style={styles.sectionHeader}>
             <Image source={require('../../assets/gates.png')} style={styles.sectionIcon} />
-            <Text style={styles.sectionTitle}>STANDARD GATES</Text>
+            <Text style={styles.sectionTitle}>CLEARED GATES</Text>
           </View>
+          <Text style={styles.subsectionHint}>
+            YOU &amp; FRIENDS · LATEST CLEARS · TIME · PACE · KUDOS
+          </Text>
 
-          <View style={styles.manualCard}>
-             <LinearGradient
-               colors={['rgba(15, 23, 42, 0.8)', 'rgba(30, 41, 59, 0.5)']}
-               style={styles.cardInner}
-             >
-               <View style={styles.manualHeader}>
-                 <View style={styles.manualIconBg}>
-                    <Text style={styles.manualIcon}>🖼️</Text>
-                 </View>
-                 <View>
-                   <Text style={styles.manualTitle}>MANUAL SUBMISSION <Text style={styles.xpText}>2X EXP/GOLD</Text></Text>
-                   <Text style={styles.manualSubtitle}>Upload physical activities/strava screenshot</Text>
-                 </View>
-               </View>
-
-               <TouchableOpacity 
-                 style={styles.uploadBtn}
-                 onPress={() => playHunterSound('click')}
-               >
-                 <Text style={styles.uploadBtnText}>UPLOAD SCREENSHOT</Text>
-               </TouchableOpacity>
-             </LinearGradient>
-          </View>
+          <ClearedGatesSection
+            currentUserId={user.id}
+            shopItems={shopItems}
+            refreshKey={clearedGatesRefresh}
+          />
 
           <View style={{ height: 100 }} />
 
@@ -400,58 +389,16 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#3b82f6',
     letterSpacing: 2,
+    fontFamily: 'Exo2-Regular',
   },
-  manualCard: {
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  cardInner: {
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  manualHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
-  },
-  manualIconBg: {
-    width: 32,
-    height: 32,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  manualIcon: {
-    fontSize: 16,
-  },
-  manualTitle: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#3b82f6',
-  },
-  xpText: {
-    color: '#fbbf24',
-    fontWeight: '900',
-  },
-  manualSubtitle: {
-    fontSize: 8,
+  subsectionHint: {
+    fontSize: 7,
+    fontWeight: '700',
     color: '#64748b',
-  },
-  uploadBtn: {
-    backgroundColor: '#2563eb',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  uploadBtnText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '900',
     letterSpacing: 1,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    fontFamily: 'Exo2-Regular',
   },
   testChestBtn: {
     backgroundColor: '#eab308',

@@ -12,14 +12,36 @@ import Animated, {
   interpolate,
   Extrapolation,
 } from 'react-native-reanimated';
-import Svg, { Path, Line, Rect, Defs, Pattern } from 'react-native-svg';
+import Svg, {
+  Path,
+  Line,
+  Rect,
+  Defs,
+  Pattern,
+  Polygon,
+  Stop,
+  LinearGradient as SvgLinearGradient,
+} from 'react-native-svg';
 import { BlurView } from 'expo-blur';
 import { Audio } from 'expo-av';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
+import { SystemWindowHeader, SYSTEM_MECH_GLOW_GRADIENT_COLORS } from '@/components/ui/SystemWindowHeader';
 
 // Constants matching the reference layout
 const MODAL_WIDTH = 380;
 const MODAL_HEIGHT = 580;
+
+/** Upward cone / spotlight: narrow at chest (bottom), wide at top */
+const BEAM_CONE_W = 200;
+const BEAM_CONE_H = 400;
+const BEAM_BOTTOM_W = 40;
+const BEAM_TOP_W = BEAM_CONE_W;
+const BEAM_CONE_POINTS = (() => {
+  const cx = BEAM_CONE_W / 2;
+  const halfB = BEAM_BOTTOM_W / 2;
+  const halfT = BEAM_TOP_W / 2;
+  return `${cx - halfB},${BEAM_CONE_H} ${cx + halfB},${BEAM_CONE_H} ${cx + halfT},0 ${cx - halfT},0`;
+})();
 
 const chestImages = {
   small: require('../../../assets/icons/smallchestmodal.png'),
@@ -52,6 +74,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
   onAnimationComplete,
 }) => {
   const scanlinePatternId = `chest-scan-${useId().replace(/:/g, '_')}`;
+  const beamConeGradId = `chest-beam-cone-${useId().replace(/:/g, '_')}`;
   const [phase, setPhase] = useState<'idle' | 'opening' | 'opened'>('idle');
   const [sound, setSound] = useState<Audio.Sound>();
   const shakingSoundRef = useRef<Audio.Sound | null>(null);
@@ -345,7 +368,9 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
 
   const beamStyle = useAnimatedStyle(() => ({
     opacity: beamOpacity.value,
-    transform: [{ scaleY: beamScaleY.value }, { scaleX: interpolate(beamScaleY.value, [0, 1.2], [0.2, 2]) }]
+    transform: [{ scaleY: beamScaleY.value }, { scaleX: interpolate(beamScaleY.value, [0, 1.2], [0.2, 2]) }],
+    // Grow from bottom center (chest) upward like a cone opening
+    transformOrigin: '50% 100%' as const,
   }));
 
   const loot1Style = useAnimatedStyle(() => ({
@@ -394,7 +419,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
         {/* TOP MECHANICAL BORDER */}
         <View style={styles.mechBorderTop}>
             <ExpoLinearGradient
-                colors={['transparent', '#00d2ff', '#e6ffff', '#00d2ff', 'transparent']}
+                colors={SYSTEM_MECH_GLOW_GRADIENT_COLORS}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={StyleSheet.absoluteFill}
@@ -405,7 +430,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
         {/* BOTTOM MECHANICAL BORDER */}
         <View style={styles.mechBorderBottom}>
             <ExpoLinearGradient
-                colors={['transparent', '#00d2ff', '#e6ffff', '#00d2ff', 'transparent']}
+                colors={SYSTEM_MECH_GLOW_GRADIENT_COLORS}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={StyleSheet.absoluteFill}
@@ -449,21 +474,12 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
                 </Svg>
             </View>
 
-            {/* HEADER */}
+            {/* HEADER — same chrome as login / signup */}
             <View style={styles.headerContainer}>
-                <View style={styles.headerRow}>
-                    <View style={styles.iconSquareFrame}>
-                        <View style={styles.exclamationCircle}>
-                            <Text style={styles.exclamationText}>!</Text>
-                        </View>
-                    </View>
-                    <View style={styles.titleTextFrame}>
-                        <Text style={styles.headerTitle} numberOfLines={2}>
-                            {phase === 'opened' ? "CACHE OPENED" : "CHEST FOUND"}
-                        </Text>
-                    </View>
-                </View>
-
+                <SystemWindowHeader
+                  title={phase === 'opened' ? 'CACHE OPENED' : 'CHEST FOUND'}
+                  containerStyle={styles.chestHeaderChrome}
+                />
                 <Text style={styles.subText}>
                     YOU HAVE ACQUIRED THE{'\n'}FOLLOWING REWARDS.
                 </Text>
@@ -472,12 +488,33 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
             {/* LOOT STAGE */}
             <View style={styles.lootStage}>
 
-                {/* Beam */}
-                <AnimatedView style={[styles.beam, beamStyle]}>
-                    <ExpoLinearGradient
-                        colors={['white', '#00e5ff', 'transparent']}
-                        style={{ flex: 1 }}
+                {/* Beam — trapezoid cone (narrow at chest, wide above) */}
+                <AnimatedView style={[styles.beam, beamStyle]} pointerEvents="none">
+                  <Svg
+                    width={BEAM_CONE_W}
+                    height={BEAM_CONE_H}
+                    style={StyleSheet.absoluteFill}
+                  >
+                    <Defs>
+                      <SvgLinearGradient
+                        id={beamConeGradId}
+                        x1="0"
+                        y1={BEAM_CONE_H}
+                        x2="0"
+                        y2="0"
+                        gradientUnits="userSpaceOnUse"
+                      >
+                        <Stop offset="0" stopColor="#ffffff" stopOpacity={0.92} />
+                        <Stop offset="0.1" stopColor="#00e5ff" stopOpacity={0.55} />
+                        <Stop offset="0.42" stopColor="#00e5ff" stopOpacity={0.18} />
+                        <Stop offset="1" stopColor="#00e5ff" stopOpacity={0} />
+                      </SvgLinearGradient>
+                    </Defs>
+                    <Polygon
+                      points={BEAM_CONE_POINTS}
+                      fill={`url(#${beamConeGradId})`}
                     />
+                  </Svg>
                 </AnimatedView>
 
                 {/* Shockwave */}
@@ -608,6 +645,10 @@ const styles = StyleSheet.create({
     right: 0,
     height: 8,
     zIndex: 20,
+    shadowColor: '#00e5ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 15,
   },
   mechBorderBottom: {
     position: 'absolute',
@@ -616,6 +657,10 @@ const styles = StyleSheet.create({
     right: 0,
     height: 8,
     zIndex: 20,
+    shadowColor: '#00e5ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 15,
   },
   mechInnerLine: {
     position: 'absolute',
@@ -636,79 +681,10 @@ const styles = StyleSheet.create({
     paddingTop: 32,
     paddingHorizontal: 24,
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-    marginBottom: 16,
-    gap: 8,
-  },
-  iconSquareFrame: {
-    width: 44,
-    height: 44,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0, 255, 255, 0.75)',
-    backgroundColor: 'rgba(2, 12, 32, 0.92)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#00ffff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 14,
-    elevation: 8,
-  },
-  exclamationCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#ffffff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 10,
-  },
-  exclamationText: {
-    color: '#FFFFFF',
-    fontFamily: 'Lato-Black',
-    fontSize: 18,
-    fontWeight: '800',
-    lineHeight: 22,
-    textShadowColor: '#a5f3fc',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
-    transform: [{ scaleY: 1.38 }, { translateY: -1 }],
-  },
-  titleTextFrame: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0, 255, 255, 0.75)',
-    backgroundColor: 'rgba(2, 12, 32, 0.92)',
-    shadowColor: '#00ffff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.45,
-    shadowRadius: 14,
-    elevation: 8,
-    flexShrink: 1,
-  },
-  headerTitle: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    fontFamily: 'Lato-Black',
-    letterSpacing: 2,
-    textAlign: 'center',
-    textShadowColor: '#22d3ee',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 12,
-    textTransform: 'uppercase',
+  /** Tighter spacing under title line vs full login panel */
+  chestHeaderChrome: {
+    marginBottom: 12,
+    paddingBottom: 12,
   },
   subText: {
     color: '#00d2ff',
@@ -734,9 +710,10 @@ const styles = StyleSheet.create({
   beam: {
     position: 'absolute',
     bottom: 40,
-    width: 96,
-    height: 400,
-    opacity: 0,
+    width: BEAM_CONE_W,
+    height: BEAM_CONE_H,
+    alignSelf: 'center',
+    zIndex: 5,
   },
   shockwave: {
     position: 'absolute',

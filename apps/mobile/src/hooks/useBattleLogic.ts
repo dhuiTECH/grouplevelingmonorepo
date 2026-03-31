@@ -175,6 +175,16 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
   const activeActorType = activeActorId === 'ENEMY' ? ACTOR_TYPE.ENEMY : (activeActorId?.startsWith('pet-') ? ACTOR_TYPE.PET : ACTOR_TYPE.PLAYER);
   // UI active character is always what's selected, rather than the logical turn actor (like pets/enemies)
   const activeChar = party[activeIndex] || party[0];
+
+  const turnActorDisplayName =
+    activeActorType === ACTOR_TYPE.ENEMY
+      ? (enemy?.name ? String(enemy.name).trim() : '')
+      : activeActorType === ACTOR_TYPE.PET
+        ? (() => {
+            const actor = party.find((p: any) => p.id === activeActorId);
+            return actor?.name ? String(actor.name).trim() : '';
+          })()
+        : '';
   const isPlayerTurnPhase = currentPhase === PHASE.ACTIVE && activeActorType === ACTOR_TYPE.PLAYER && activeActorId === user?.id;
   const currentAbility = activeChar?.abilities?.find((a: any) => a.id === selectedAbilityId);
   const basicAbility = activeChar?.abilities?.find((a: any) => a.id.endsWith('_basic') || a.id === 'generic_attack') ?? activeChar?.abilities?.[0];
@@ -1425,6 +1435,7 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
     shakeAnim,
     activeChar,
     activeActorType,
+    turnActorDisplayName,
     isPlayerTurnPhase,
     currentAbility,
     switchStance,

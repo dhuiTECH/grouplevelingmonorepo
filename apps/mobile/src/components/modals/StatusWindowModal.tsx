@@ -4,6 +4,7 @@ import { BlurView } from 'expo-blur';
 import { User } from '@/types/user';
 import { X } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SystemWindowHeader, SYSTEM_MECH_GLOW_GRADIENT_COLORS } from '@/components/ui/SystemWindowHeader';
 import { Svg, Line } from 'react-native-svg';
 import { SkillTreeTab } from '@/components/tabs/SkillTreeTab';
 import { calculateDerivedStats } from '@/utils/stats';
@@ -60,7 +61,7 @@ const SideAccents = () => (
 const MechanicalBorder = ({ position }: { position: 'top' | 'bottom' }) => (
   <View style={[styles.mechBorderContainer, position === 'top' ? { top: 0 } : { bottom: 0 }]}>
     <LinearGradient
-      colors={['transparent', '#00d2ff', '#e6ffff', '#00d2ff', 'transparent']}
+      colors={SYSTEM_MECH_GLOW_GRADIENT_COLORS}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 0 }}
       style={styles.mechBorderGradient}
@@ -70,9 +71,12 @@ const MechanicalBorder = ({ position }: { position: 'top' | 'bottom' }) => (
 );
 
 const VitalBar = ({ label, current, max, type }: { label: string, current: number, max: number, type: 'hp' | 'mp' | 'exp' }) => {
-  let gradientColors = ['#8a0000', '#ff003c']; // HP
-  if (type === 'mp') gradientColors = ['#0033cc', '#0099ff'];
-  if (type === 'exp') gradientColors = ['#0e7490', '#22d3ee'];
+  const gradientColors =
+    type === 'mp'
+      ? (['#0033cc', '#0099ff'] as const)
+      : type === 'exp'
+        ? (['#0e7490', '#22d3ee'] as const)
+        : (['#8a0000', '#ff003c'] as const);
 
   const percent = Math.min(100, Math.max(0, (current / max) * 100));
 
@@ -209,6 +213,7 @@ export const StatusWindowModal: React.FC<StatusWindowModalProps> = ({ visible, o
         {/* Main Modal Window */}
         <View style={styles.modalWindow}>
           <Scanlines />
+          <SideAccents />
           {/* Mechanical Borders */}
           <MechanicalBorder position="top" />
           <MechanicalBorder position="bottom" />
@@ -218,14 +223,9 @@ export const StatusWindowModal: React.FC<StatusWindowModalProps> = ({ visible, o
             <X size={24} color={THEME.primary} />
           </TouchableOpacity>
 
-          {/* Header Section */}
+          {/* Header Section — same chrome as login / chest */}
           <View style={styles.header}>
-            <View style={styles.titleBox}>
-              <View style={styles.exclamationIcon}>
-                <Text style={styles.exclamationText}>!</Text>
-              </View>
-              <Text style={styles.headerTitle}>STATUS</Text>
-            </View>
+            <SystemWindowHeader title="STATUS" containerStyle={styles.statusHeaderChrome} />
 
             <View style={styles.playerInfo}>
               <Text style={styles.playerName}>{user.current_title || 'PLAYER'}</Text>
@@ -380,6 +380,10 @@ const styles = StyleSheet.create({
     right: 0,
     height: 8,
     zIndex: 20,
+    shadowColor: '#00e5ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 15,
   },
   mechBorderGradient: {
     width: '100%',
@@ -411,52 +415,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 32,
     paddingBottom: 24,
+    paddingHorizontal: 8,
   },
-  titleBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 210, 255, 0.5)',
-    backgroundColor: 'rgba(0, 102, 255, 0.2)',
-    paddingHorizontal: 24,
-    paddingVertical: 8,
-    shadowColor: '#00d2ff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.3,
-    shadowRadius: 15,
-  },
-  exclamationIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 8,
-  },
-  exclamationText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-    fontFamily: Platform.OS === 'ios' ? 'serif' : 'serif', // Fallback
-    textShadowColor: '#FFFFFF',
-    textShadowRadius: 4,
-  },
-  headerTitle: {
-    color: '#e6ffff',
-    fontSize: 20,
-    fontWeight: 'bold',
-    letterSpacing: 4,
-    textShadowColor: '#00d2ff',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
-    fontFamily: 'Exo2-Bold',
+  statusHeaderChrome: {
+    marginBottom: 0,
+    paddingBottom: 12,
   },
   playerInfo: {
     marginTop: 20,

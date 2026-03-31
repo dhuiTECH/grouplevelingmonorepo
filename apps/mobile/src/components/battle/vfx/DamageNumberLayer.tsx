@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, Easing, runOnJS, withDelay, withSpring } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, Easing, runOnJS, withDelay } from 'react-native-reanimated';
 import { useBattleStore } from '@/store/useBattleStore';
-import { SkiaDamageText } from './SkiaDamageText';
+import { SkiaDamageText, DAMAGE_FLOAT_WIDTH, DAMAGE_FLOAT_HEIGHT } from './SkiaDamageText';
 
 // A single damage number animated node
 function DamageNode({ 
@@ -25,20 +25,30 @@ function DamageNode({
   const removeDamageNumber = useBattleStore(state => state.removeDamageNumber);
   
   const translateY = useSharedValue(yOffset);
-  const scale = useSharedValue(0.2);
+  const scale = useSharedValue(0.88);
+  const rotateDeg = useSharedValue(isCrit ? -5 : -2.5);
   const opacity = useSharedValue(1);
 
   useEffect(() => {
-    // 1. Pop up quickly with spring
-    scale.value = withSpring(1, { damping: 10, stiffness: 100 });
-    
-    // 2. Float upwards slowly
-    translateY.value = withTiming(yOffset - 60, { duration: 1200, easing: Easing.out(Easing.quad) });
-    
-    // 3. Fade out after a delay and unmount
+    const peak = isCrit ? 1.12 : 1.06;
+    // Impact snap (no spring bounce): quick overshoot then settle
+    scale.value = withSequence(
+      withTiming(peak, { duration: 50, easing: Easing.out(Easing.cubic) }),
+      withTiming(1, { duration: 85, easing: Easing.out(Easing.cubic) })
+    );
+    rotateDeg.value = withSequence(
+      withTiming(0, { duration: 65, easing: Easing.out(Easing.cubic) }),
+      withTiming(isCrit ? 2 : 0.6, { duration: 180, easing: Easing.inOut(Easing.quad) })
+    );
+
+    translateY.value = withTiming(yOffset - 52, {
+      duration: 900,
+      easing: Easing.out(Easing.cubic),
+    });
+
     opacity.value = withDelay(
-      800, 
-      withTiming(0, { duration: 400 }, (finished) => {
+      720,
+      withTiming(0, { duration: 320 }, (finished) => {
         if (finished) runOnJS(removeDamageNumber)(id);
       })
     );
@@ -48,7 +58,8 @@ function DamageNode({
     transform: [
       { translateY: translateY.value },
       { translateX: xOffset },
-      { scale: scale.value }
+      { rotate: `${rotateDeg.value}deg` },
+      { scale: scale.value },
     ],
     opacity: opacity.value,
   }));
@@ -56,7 +67,10 @@ function DamageNode({
   return (
     <Animated.View style={[
       styles.damageNode,
-      { left: targetX - 75, top: targetY - 40 }, // Center Skia canvas (width 150, height 80)
+      {
+        left: targetX - DAMAGE_FLOAT_WIDTH / 2,
+        top: targetY - DAMAGE_FLOAT_HEIGHT / 2,
+      },
       animatedStyle
     ]} pointerEvents="none">
       <SkiaDamageText value={value} isCrit={isCrit} />

@@ -110,6 +110,8 @@ export function useHunterData() {
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [ownedItemIds, setOwnedItemIds] = useState<Set<string>>(new Set());
   const [leaderboardLastUpdated, setLeaderboardLastUpdated] = useState<Date | null>(null);
+  const [clearedRuns, setClearedRuns] = useState<any[]>([]);
+  const [clearedRunsLoading, setClearedRunsLoading] = useState(false);
 
   const loadLeaderboard = useCallback(async () => {
     try {
@@ -366,6 +368,171 @@ export function useHunterData() {
     }
   }, []);
 
+  const loadClearedRuns = useCallback(async () => {
+    const uid =
+      authUser?.id ||
+      (typeof window !== 'undefined'
+        ? localStorage.getItem('current_hunter_id') || localStorage.getItem('hunter_id')
+        : null);
+    if (!uid || uid === 'default-user-id' || uid === 'Hunter') {
+      setClearedRuns([]);
+      return;
+    }
+
+    setClearedRunsLoading(true);
+    try {
+      const { data: friendships, error: fErr } = await supabase
+        .from('friendships')
+        .select('user_id_1, user_id_2, status')
+        .or(`user_id_1.eq.${uid},user_id_2.eq.${uid}`);
+
+      if (fErr) {
+        console.error('loadClearedRuns friendships:', fErr);
+        setClearedRuns([]);
+        return;
+      }
+
+      const friendIds: string[] = [];
+      friendships?.forEach((f: any) => {
+        if (f.status !== 'accepted') return;
+        friendIds.push(f.user_id_1 === uid ? f.user_id_2 : f.user_id_1);
+      });
+
+      const feedUserIds = [...new Set([...friendIds, uid])];
+
+      const { data: runs, error: rErr } = await supabase
+        .from('dungeon_runs')
+        .select(
+          `
+          id,
+          user_id,
+          dungeon_id,
+          distance_meters,
+          duration_seconds,
+          completed,
+          created_at,
+          dungeons ( id, name, tier, target_distance_meters )
+        `
+        )
+        .in('user_id', feedUserIds)
+        .eq('completed', true)
+        .order('created_at', { ascending: false })
+        .limit(40);
+
+      if (rErr || !runs?.length) {
+        setClearedRuns([]);
+        return;
+      }
+
+      const runnerIds = [...new Set(runs.map((r: any) => r.user_id))];
+
+      const { data: profiles, error: pErr } = await supabase
+        .from('profiles')
+        .select(
+          `
+          id,
+          hunter_name,
+          current_title,
+          user_cosmetics (
+            id,
+            equipped,
+            shop_items:shop_item_id (
+              id,
+              name,
+              image_url,
+              slot,
+              z_index,
+              rarity,
+              is_animated,
+              animation_config,
+              scale,
+              offset_x,
+              offset_y
+            )
+          )
+        `
+        )
+        .in('id', runnerIds);
+
+      if (pErr) {
+        console.error('loadClearedRuns profiles:', pErr);
+      }
+
+      const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+
+      const runIds = runs.map((r: any) => r.id);
+      const { data: kudosRows } = await supabase
+        .from('dungeon_run_kudos')
+        .select('dungeon_run_id, from_user_id')
+        .in('dungeon_run_id', runIds);
+
+      const kudosCount = new Map<string, number>();
+      const myKudos = new Set<string>();
+      kudosRows?.forEach((k: any) => {
+        kudosCount.set(k.dungeon_run_id, (kudosCount.get(k.dungeon_run_id) ?? 0) + 1);
+        if (k.from_user_id === uid) myKudos.add(k.dungeon_run_id);
+      });
+
+      const enriched = runs.map((run: any) => {
+        const p = profileMap.get(run.user_id);
+        const cosmetics = (p?.user_cosmetics || []).map((uc: any) => ({
+          ...uc,
+          shop_items: uc.shop_items,
+        }));
+        return {
+          ...run,
+          dungeon: run.dungeons,
+          runner: p
+            ? {
+                id: p.id,
+                hunter_name: p.hunter_name,
+                name: p.hunter_name,
+                current_title: p.current_title,
+                cosmetics,
+              }
+            : null,
+          kudosCount: kudosCount.get(run.id) ?? 0,
+          kudosGivenByMe: myKudos.has(run.id),
+        };
+      });
+
+      setClearedRuns(enriched);
+    } catch (e) {
+      console.error('loadClearedRuns:', e);
+      setClearedRuns([]);
+    } finally {
+      setClearedRunsLoading(false);
+    }
+  }, [authUser?.id]);
+
+  const toggleDungeonRunKudos = useCallback(
+    async (runId: string, runnerUserId: string, currentlyGiven: boolean) => {
+      const uid =
+        authUser?.id ||
+        (typeof window !== 'undefined'
+          ? localStorage.getItem('current_hunter_id') || localStorage.getItem('hunter_id')
+          : null);
+      if (!uid || runnerUserId === uid) return;
+
+      if (currentlyGiven) {
+        const { error } = await supabase
+          .from('dungeon_run_kudos')
+          .delete()
+          .eq('dungeon_run_id', runId)
+          .eq('from_user_id', uid);
+        if (error) console.error('toggleKudos delete:', error);
+      } else {
+        const { error } = await supabase.from('dungeon_run_kudos').insert({
+          dungeon_run_id: runId,
+          from_user_id: uid,
+        });
+        if (error) console.error('toggleKudos insert:', error);
+      }
+      await loadClearedRuns();
+    },
+    [authUser?.id, loadClearedRuns]
+  );
+
   const loadCosmetics = useCallback(async () => {
     console.log('✨ Loading cosmetics...');
     const hunterId = typeof window !== 'undefined' 
@@ -556,6 +723,7 @@ export function useHunterData() {
 
           await fetchProtocol(authUser.id);
           await fetchNutrition(authUser.id);
+          await loadClearedRuns();
 
           setIsAuthenticated(true);
           setIsLoading(false);
@@ -694,6 +862,8 @@ export function useHunterData() {
         await loadActivities();
         console.log('✅ loadActivities completed');
 
+        await loadClearedRuns();
+
         console.log('🔄 About to call loadDungeons...');
         try {
           await loadDungeons();
@@ -720,7 +890,7 @@ export function useHunterData() {
     } finally {
       setIsLoading(false);
     }
-  }, [authUser, loadActivities, loadDungeons, loadLeaderboard, loadCosmetics, loadShopItems, fetchProtocol]);
+  }, [authUser, loadActivities, loadClearedRuns, loadDungeons, loadLeaderboard, loadCosmetics, loadShopItems, fetchProtocol]);
 
   useEffect(() => {
     checkAuthAndLoadData();
@@ -751,6 +921,10 @@ export function useHunterData() {
     loadActivities,
     loadCosmetics,
     leaderboardLastUpdated,
-    setLeaderboardLastUpdated
+    setLeaderboardLastUpdated,
+    clearedRuns,
+    clearedRunsLoading,
+    loadClearedRuns,
+    toggleDungeonRunKudos,
   };
 }

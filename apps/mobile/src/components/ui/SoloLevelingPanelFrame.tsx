@@ -1,20 +1,16 @@
 import React, { ReactNode, useState, useEffect, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   LayoutChangeEvent,
   useWindowDimensions,
   Animated,
   Easing,
 } from 'react-native';
-import Svg, { Path, Line, Rect, Defs, Pattern } from 'react-native-svg';
+import Svg, { Rect, Defs, Pattern } from 'react-native-svg';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import { useIsFocused } from '@react-navigation/native';
-
-/** Solo Leveling “system window”: icon square + title box are separate; shared height */
-const ICON_FRAME = 44;
-const ROW_GAP = 8;
+import { SystemWindowHeader, SYSTEM_MECH_GLOW_GRADIENT_COLORS } from '@/components/ui/SystemWindowHeader';
 
 type Props = {
   title: string;
@@ -29,7 +25,6 @@ export function SoloLevelingPanelFrame({ title, children }: Props) {
   const { width: winW } = useWindowDimensions();
   const W = Math.min(winW - 36, 380); // Ensure it fits safely within KeyboardAvoidingView padding (16 on each side)
   const [frameH, setFrameH] = useState(360);
-  const titlePulse = useRef(new Animated.Value(1)).current;
   const openScaleY = useRef(new Animated.Value(0.035)).current;
   const isFocused = useIsFocused();
 
@@ -57,27 +52,6 @@ export function SoloLevelingPanelFrame({ title, children }: Props) {
       cancelAnimationFrame(raf);
     };
   }, [openScaleY, isFocused]);
-
-  useEffect(() => {
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(titlePulse, {
-          toValue: 0.58,
-          duration: 1500,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(titlePulse, {
-          toValue: 1,
-          duration: 1500,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    anim.start();
-    return () => anim.stop();
-  }, [titlePulse]);
 
   const onHudLayout = (e: LayoutChangeEvent) => {
     const h = Math.ceil(e.nativeEvent.layout.height);
@@ -108,7 +82,7 @@ export function SoloLevelingPanelFrame({ title, children }: Props) {
         {/* Glow Bars (Top & Bottom) */}
         <View style={styles.glowBarTop}>
           <ExpoLinearGradient
-            colors={['transparent', '#005c99', '#00e5ff', '#ffffff', '#00e5ff', '#005c99', 'transparent']}
+            colors={SYSTEM_MECH_GLOW_GRADIENT_COLORS}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFill}
@@ -116,7 +90,7 @@ export function SoloLevelingPanelFrame({ title, children }: Props) {
         </View>
         <View style={styles.glowBarBottom}>
           <ExpoLinearGradient
-            colors={['transparent', '#005c99', '#00e5ff', '#ffffff', '#00e5ff', '#005c99', 'transparent']}
+            colors={SYSTEM_MECH_GLOW_GRADIENT_COLORS}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFill}
@@ -130,28 +104,7 @@ export function SoloLevelingPanelFrame({ title, children }: Props) {
           <View style={[styles.corner, styles.bl]} />
           <View style={[styles.corner, styles.br]} />
 
-          <View style={styles.headerBlock}>
-            <Animated.View style={[styles.headerRow, { opacity: titlePulse }]}>
-              <View style={styles.iconSquareFrame}>
-                <View style={styles.iconCircle}>
-                  <Text style={styles.iconText}>!</Text>
-                </View>
-              </View>
-              <View style={styles.titleTextFrame}>
-                <Text style={styles.headerTitle} numberOfLines={2}>
-                  {title}
-                </Text>
-              </View>
-            </Animated.View>
-            <View style={styles.headerBottomLine}>
-              <ExpoLinearGradient
-                colors={['transparent', '#00d2ff', 'transparent']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFill}
-              />
-            </View>
-          </View>
+          <SystemWindowHeader title={title} />
 
           <View style={styles.body}>{children}</View>
         </View>
@@ -224,98 +177,7 @@ const styles = StyleSheet.create({
   tr: { top: -1, right: -1, borderTopWidth: 2, borderRightWidth: 2 },
   bl: { bottom: -1, left: -1, borderBottomWidth: 2, borderLeftWidth: 2 },
   br: { bottom: -1, right: -1, borderBottomWidth: 2, borderRightWidth: 2 },
-  
-  headerBlock: {
-    width: '100%',
-    alignItems: 'center',
-    paddingBottom: 15,
-    marginBottom: 25,
-    position: 'relative',
-    paddingHorizontal: 8, // slight padding so it doesn't rub walls
-  },
-  headerBottomLine: {
-    position: 'absolute',
-    bottom: -1,
-    left: '10%',
-    width: '80%',
-    height: 1,
-    shadowColor: '#00d2ff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    flexShrink: 1, // ensure it doesn't break out of bounds
-    maxWidth: '100%', // Prevent expanding beyond the header block
-  },
-  iconSquareFrame: {
-    width: 36,
-    height: 36,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0, 255, 255, 0.75)',
-    backgroundColor: 'rgba(2, 12, 32, 0.92)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#00ffff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 14,
-    elevation: 8,
-  },
-  iconCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 1.5,
-    borderColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-    shadowColor: '#ffffff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 10,
-  },
-  iconText: {
-    color: '#ffffff',
-    fontWeight: '800',
-    fontSize: 14,
-    textShadowColor: '#ffffff',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 5,
-    fontFamily: 'Montserrat-Bold',
-    includeFontPadding: false,
-  },
-  titleTextFrame: {
-    minHeight: 36,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0, 255, 255, 0.75)',
-    backgroundColor: 'rgba(2, 12, 32, 0.92)',
-    shadowColor: '#00ffff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.45,
-    shadowRadius: 14,
-    flexShrink: 1, // lets title shrink if it needs to
-  },
-  headerTitle: {
-    color: '#e6ffff',
-    fontSize: 16,
-    fontWeight: '600',
-    fontFamily: 'Montserrat-Bold',
-    letterSpacing: 2, // reduced letter spacing to help it fit
-    textAlign: 'center',
-    textShadowColor: 'rgba(0, 210, 255, 0.8)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 15,
-    textTransform: 'uppercase',
-  },
+
   body: {
     width: '100%',
   },

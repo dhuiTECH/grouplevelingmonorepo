@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Animated } from 'react-native';
+import { HUD } from './battleTheme';
 import { QTEButton } from './QTEButton';
 
 interface ParryOverlayProps {
@@ -28,8 +29,12 @@ export function ParryOverlay({
     <View style={[styles.parryOverlay, focusMode && { backgroundColor: 'rgba(0,0,0,0.4)' }]} pointerEvents="box-none">
       {comboMultiplier > 1.0 && (
         <View style={styles.comboDisplay}>
-          <Text style={styles.comboText}>{comboMultiplier.toFixed(1)}x COMBO</Text>
-          {focusMode && <Text style={styles.focusText}>FOCUS ACTIVE</Text>}
+          <View style={styles.comboPanel}>
+            <Text style={styles.comboSystem}>SYSTEM // CHAIN</Text>
+            <Text style={styles.comboValue}>{comboMultiplier.toFixed(1)}×</Text>
+            <Text style={styles.comboSub}>DMG MODIFIER ACTIVE</Text>
+            {focusMode && <Text style={styles.focusText}>FOCUS // LOCKED</Text>}
+          </View>
         </View>
       )}
       <View style={styles.parryContainer} pointerEvents="box-none">
@@ -61,23 +66,56 @@ const styles = StyleSheet.create({
   comboDisplay: {
     position: 'absolute',
     top: 100,
-    right: 20,
+    right: 16,
     alignItems: 'flex-end',
   },
-  comboText: {
-    color: '#facc15',
-    fontSize: 24,
+  comboPanel: {
+    alignItems: 'flex-end',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: HUD.panelBg,
+    borderWidth: 1,
+    borderColor: HUD.panelBorder,
+    borderRadius: 4,
+    shadowColor: HUD.comboGlow,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  comboSystem: {
+    color: HUD.systemLabel,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 2,
+    fontFamily: 'Exo2-Regular',
+    marginBottom: 4,
+  },
+  comboValue: {
+    color: HUD.comboInner,
+    fontSize: 28,
     fontWeight: '900',
-    fontStyle: 'italic',
-    textShadowColor: 'black',
-    textShadowRadius: 4,
+    letterSpacing: 2,
+    fontFamily: 'Exo2-Regular',
+    textShadowColor: HUD.comboGlow,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
+  comboSub: {
+    color: HUD.hunterCyanDim,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginTop: 4,
+    fontFamily: 'Exo2-Regular',
   },
   focusText: {
-    color: '#22d3ee',
-    fontSize: 12,
-    fontWeight: 'bold',
+    color: HUD.hunterCyan,
+    fontSize: 9,
+    fontWeight: '800',
     letterSpacing: 2,
-    marginTop: 4,
+    marginTop: 8,
+    fontFamily: 'Exo2-Regular',
   },
   parryContainer: {
     width: '100%',

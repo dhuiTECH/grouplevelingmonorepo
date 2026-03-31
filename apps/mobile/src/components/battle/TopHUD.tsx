@@ -13,6 +13,8 @@ interface TopHUDProps {
   activeChar: any;
   actorTypeEnemy: string;
   actorTypePet: string;
+  /** Required for LayeredAvatar to resolve weapon-matched hand_grip when cosmetics omit the row */
+  allShopItems?: any[];
   onSettingsPress: () => void;
   onLeaveBattle: () => void;
 }
@@ -25,6 +27,7 @@ export function TopHUD({
   activeChar,
   actorTypeEnemy,
   actorTypePet,
+  allShopItems = [],
   onSettingsPress,
   onLeaveBattle,
 }: TopHUDProps) {
@@ -63,7 +66,14 @@ export function TopHUD({
                 <Text style={{ fontSize: 20 }}>🐾</Text>
               ) : char?.avatar ? (
                 <View style={styles.queueAvatarWrapper}>
-                  <LayeredAvatar user={char.avatar} size={i === 0 ? 44 : 28} square hideBackground style={{ backgroundColor: 'transparent' }} />
+                  <LayeredAvatar
+                    user={char.avatar}
+                    size={i === 0 ? 44 : 28}
+                    square
+                    hideBackground
+                    allShopItems={allShopItems}
+                    style={{ backgroundColor: 'transparent' }}
+                  />
                 </View>
               ) : (
                 <Text style={{ fontSize: 20 }}>🥷</Text>

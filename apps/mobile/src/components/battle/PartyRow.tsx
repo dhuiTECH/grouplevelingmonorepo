@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, Easing } from 'react-native-reanimated';
 import { ArrowUp } from 'lucide-react-native';
@@ -6,7 +6,6 @@ import LayeredAvatar from '@/components/LayeredAvatar';
 import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
 import { StatusBarMetric } from './StatusBarMetric';
 import { COLORS } from './battleTheme';
-import { useBattleStore } from '@/store/useBattleStore';
 
 interface PartyRowProps {
   party: any[];
@@ -21,15 +20,52 @@ interface PartyRowProps {
   petAction?: 'idle' | 'walk' | 'enter';
   onPetEnterComplete?: () => void;
   lastDamageEvent?: any;
+  weaponGripCast?: { key: number; durationMs: number; casterCharId: string } | null;
 }
 
-function PartyMemberNode({ char, isActive, isPlayerTurnPhase, isMe, setActiveIndex, visualHp, allShopItems, petAction, petSpriteActive, onPetEnterComplete, lastDamageEvent }: any) {
+function PartyMemberNode({
+  char,
+  isActive,
+  isPlayerTurnPhase,
+  isMe,
+  setActiveIndex,
+  visualHp,
+  allShopItems,
+  petAction,
+  petSpriteActive,
+  onPetEnterComplete,
+  lastDamageEvent,
+  weaponGripCast,
+}: any) {
   const isPet = char.type === 'pet';
   const lungeY = useSharedValue(0);
+  const exitY = useSharedValue(0);
+  const exitOpacity = useSharedValue(1);
+
+  const hp = visualHp ?? char.hp ?? 0;
+  const [leftBattle, setLeftBattle] = useState(() => hp <= 0);
+  const deathExitStartedRef = useRef(false);
 
   useEffect(() => {
-    if (!lastDamageEvent) return;
-    
+    if (hp > 0) {
+      deathExitStartedRef.current = false;
+      exitY.value = 0;
+      exitOpacity.value = 1;
+      setLeftBattle(false);
+      return;
+    }
+    if (leftBattle) return;
+    if (deathExitStartedRef.current) return;
+    deathExitStartedRef.current = true;
+    exitY.value = withTiming(160, { duration: 480, easing: Easing.in(Easing.cubic) });
+    exitOpacity.value = withTiming(0, { duration: 480 });
+    const t = setTimeout(() => setLeftBattle(true), 500);
+    return () => clearTimeout(t);
+  }, [hp, leftBattle]);
+
+  useEffect(() => {
+    if (!lastDamageEvent || hp <= 0) return;
+
     // Character attacks (lunge up)
     if (lastDamageEvent.casterCharId === char.id) {
       lungeY.value = withSequence(
@@ -38,27 +74,34 @@ function PartyMemberNode({ char, isActive, isPlayerTurnPhase, isMe, setActiveInd
       );
     }
     // Character takes damage (flinch down)
-    else if (lastDamageEvent.targetId === char.id || (lastDamageEvent.targetId === 'ALL_FRIENDS')) {
+    else if (lastDamageEvent.targetId === char.id || lastDamageEvent.targetId === 'ALL_FRIENDS') {
       lungeY.value = withSequence(
         withTiming(15, { duration: 100 }),
         withTiming(0, { duration: 150 })
       );
     }
-  }, [lastDamageEvent?.timestamp]);
+  }, [lastDamageEvent?.timestamp, hp]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: lungeY.value }]
+    opacity: exitOpacity.value,
+    transform: [{ translateY: lungeY.value + exitY.value }],
   }));
 
+  if (leftBattle) {
+    return null;
+  }
+
   return (
-    <Animated.View style={animatedStyle}>
+    <Animated.View style={[animatedStyle, styles.partyMemberOuter]}>
       <TouchableOpacity
         onPress={() => {
           if (isPlayerTurnPhase && isMe) {
             setActiveIndex();
           }
         }}
+        disabled={hp <= 0}
         style={[styles.charFigure, isActive && styles.charActive]}
+        activeOpacity={0.9}
       >
         {isPet && char.petDetails ? (
           <PetLayeredAvatar
@@ -72,20 +115,29 @@ function PartyMemberNode({ char, isActive, isPlayerTurnPhase, isMe, setActiveInd
             onPlayOnceComplete={onPetEnterComplete}
           />
         ) : char.avatar ? (
-          <LayeredAvatar
-            user={char.avatar}
-            size={110}
-            square
-            hideBackground
-            allShopItems={allShopItems}
-            style={{ backgroundColor: 'transparent' }}
-          />
+          <View style={styles.avatarSwingSlot} pointerEvents="box-none">
+            <LayeredAvatar
+              user={char.avatar}
+              size={110}
+              square
+              hideBackground
+              allowOverflow
+              allShopItems={allShopItems}
+              style={{ backgroundColor: 'transparent' }}
+              weaponGripAttackKey={
+                weaponGripCast?.casterCharId === char.id ? weaponGripCast.key : undefined
+              }
+              weaponGripAttackDurationMs={
+                weaponGripCast?.casterCharId === char.id ? weaponGripCast.durationMs : undefined
+              }
+            />
+          </View>
         ) : (
           <Text style={{ fontSize: 50 }}>🥷</Text>
         )}
         <View style={{ marginTop: 8 }}>
           <StatusBarMetric
-            current={visualHp ?? char.hp}
+            current={hp}
             max={char.maxHP}
             color={char.type === 'pet' ? '#a855f7' : COLORS.neonCyan}
             label={char.name}
@@ -114,6 +166,7 @@ export function PartyRow({
   petAction = 'idle',
   onPetEnterComplete,
   lastDamageEvent,
+  weaponGripCast,
 }: PartyRowProps) {
   // Use Animated.View for backward compatibility with the parent's partyOpacity Animated.Value
   const RNAnimated = require('react-native').Animated;
@@ -137,6 +190,7 @@ export function PartyRow({
             petSpriteActive={petSpriteActive}
             onPetEnterComplete={onPetEnterComplete}
             lastDamageEvent={lastDamageEvent}
+            weaponGripCast={weaponGripCast}
           />
         );
       })}
@@ -145,8 +199,23 @@ export function PartyRow({
 }
 
 const styles = StyleSheet.create({
-  partyContainer: { flexDirection: 'row', gap: 20, marginBottom: 20 },
-  charFigure: { alignItems: 'center', opacity: 0.9, transform: [{ scale: 0.9 }] },
+  partyContainer: { flexDirection: 'row', gap: 20, marginBottom: 20, overflow: 'visible' },
+  partyMemberOuter: { overflow: 'visible' },
+  /** Extra vertical room so weapon/hand swings are not clipped by row layout */
+  avatarSwingSlot: {
+    overflow: 'visible',
+    paddingTop: 28,
+    paddingBottom: 8,
+    marginTop: -28,
+    marginBottom: -8,
+    alignItems: 'center',
+  },
+  charFigure: {
+    alignItems: 'center',
+    opacity: 0.9,
+    transform: [{ scale: 0.9 }],
+    overflow: 'visible',
+  },
   charActive: { opacity: 1, transform: [{ scale: 1.05 }] },
   charBuffBadge: {
     position: 'absolute',

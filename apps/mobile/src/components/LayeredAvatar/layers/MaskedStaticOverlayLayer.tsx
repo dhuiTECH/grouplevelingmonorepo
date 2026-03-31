@@ -10,6 +10,8 @@ import {
   Rect,
 } from '@shopify/react-native-skia';
 import { FALLBACK_STATIC_SIZE, hexToRgb } from '../LayeredAvatarUtils';
+import { WeaponAttackAnimatedInner } from '../WeaponAttackAnimatedInner';
+import type { WeaponAttackPresetId } from '../weaponGripAttackPresets';
 
 /**
  * Hybrid layer: global eraser mask + positioned item.
@@ -29,6 +31,7 @@ const MaskedStaticOverlayLayer: React.FC<{
   tintColor?: string | null;
   /** When set (hair slot), render mask+fill+multiply like web LayeredAvatar */
   hairFillHex?: string | null;
+  weaponAttack?: { attackKey: number; preset: WeaponAttackPresetId; durationMs: number } | null;
 }> = ({
   item,
   maskUrl,
@@ -41,6 +44,7 @@ const MaskedStaticOverlayLayer: React.FC<{
   size,
   tintColor,
   hairFillHex,
+  weaponAttack,
 }) => {
   const [intrinsicSize, setIntrinsicSize] = useState<number | null>(null);
   const lineUri = item?.image_url;
@@ -150,6 +154,7 @@ const MaskedStaticOverlayLayer: React.FC<{
           top: 0,
           width: size,
           height: size,
+          overflow: 'visible',
         }}
         pointerEvents="none"
       />
@@ -166,29 +171,52 @@ const MaskedStaticOverlayLayer: React.FC<{
           top: 0,
           width: size,
           height: size,
+          overflow: 'visible',
         }}
         pointerEvents="none"
+        collapsable={false}
       >
-        <Canvas style={{ width: size, height: size }}>{itemContent}</Canvas>
+        <WeaponAttackAnimatedInner
+          attackKey={weaponAttack?.attackKey}
+          attackPreset={weaponAttack?.preset ?? null}
+          durationMs={weaponAttack?.durationMs ?? 500}
+        >
+          <Canvas style={{ width: size, height: size }}>{itemContent}</Canvas>
+        </WeaponAttackAnimatedInner>
       </View>
     );
   }
 
   return (
     <View
-      style={{ position: 'absolute', zIndex, left: 0, top: 0, width: size, height: size }}
+      style={{
+        position: 'absolute',
+        zIndex,
+        left: 0,
+        top: 0,
+        width: size,
+        height: size,
+        overflow: 'visible',
+      }}
       pointerEvents="none"
+      collapsable={false}
     >
-      <Canvas style={{ width: size, height: size }}>
-        <Mask
-          mode="alpha"
-          mask={
-            <SkiaImage image={maskImg} x={0} y={0} width={size} height={size} fit="contain" />
-          }
-        >
-          {itemContent}
-        </Mask>
-      </Canvas>
+      <WeaponAttackAnimatedInner
+        attackKey={weaponAttack?.attackKey}
+        attackPreset={weaponAttack?.preset ?? null}
+        durationMs={weaponAttack?.durationMs ?? 500}
+      >
+        <Canvas style={{ width: size, height: size }}>
+          <Mask
+            mode="alpha"
+            mask={
+              <SkiaImage image={maskImg} x={0} y={0} width={size} height={size} fit="contain" />
+            }
+          >
+            {itemContent}
+          </Mask>
+        </Canvas>
+      </WeaponAttackAnimatedInner>
     </View>
   );
 };

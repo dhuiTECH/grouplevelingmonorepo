@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet, useWindowDimensions, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Rect, Defs, Pattern } from 'react-native-svg';
 import { MotiView } from 'moti';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -58,15 +59,15 @@ export function DefeatScreen({ party, enemy, spriteUrls, onReturnToMap }: Defeat
   const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <BattleAssetWarmer party={party} enemy={enemy} spriteUrls={spriteUrls} />
       <View style={styles.ambientGlow} />
       
       <View style={styles.centeredContent}>
         <MotiView
-          from={{ opacity: 0, scale: 0.85 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ type: 'timing', duration: 450 }}
+          from={{ opacity: 0, scale: 0.9, translateY: 56 }}
+          animate={{ opacity: 1, scale: 1, translateY: 0 }}
+          transition={{ type: 'spring', damping: 18, stiffness: 220 }}
           style={styles.slWindow}
         >
           <Scanlines />
@@ -187,7 +188,7 @@ export function DefeatScreen({ party, enemy, spriteUrls, onReturnToMap }: Defeat
           </View>
         </MotiView>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

@@ -5,7 +5,8 @@ import { Sword, RotateCcw } from 'lucide-react-native';
 import { Hexagon } from './Hexagon';
 import { BattleTechButton } from './BattleTechButton';
 import { BattleCard } from './BattleCard';
-import { COLORS } from './battleTheme';
+import { COLORS, HUD } from './battleTheme';
+import { ACTOR_TYPE } from '@/hooks/useBattleLogic';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -24,6 +25,8 @@ interface BattleBottomPanelProps {
   handleAbilityTap: (ability: any) => void;
   activeActorType?: string;
   activeActorName?: string;
+  /** Pet or enemy name for non-player turns (from turn queue) */
+  turnActorDisplayName?: string;
 }
 
 export function BattleBottomPanel({
@@ -41,6 +44,7 @@ export function BattleBottomPanel({
   handleAbilityTap,
   activeActorType,
   activeActorName,
+  turnActorDisplayName = '',
 }: BattleBottomPanelProps) {
   return (
     <Animated.View style={[styles.panelContainer, { opacity: partyOpacity }]}>
@@ -119,19 +123,51 @@ export function BattleBottomPanel({
           </View>
         ) : (
           <View style={styles.waitingContainer}>
-             <Text style={styles.waitingText}>
-                {activeActorType === 'ENEMY' 
-                  ? 'ENEMY TURN...' 
-                  : `WAITING FOR ${activeActorName?.toUpperCase() || 'PLAYER'}...`}
-             </Text>
-             <View style={styles.waitingBar}>
-                <LinearGradient
-                  colors={[COLORS.neonCyan, 'transparent']}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={styles.waitingProgress}
-                />
-             </View>
+            <View style={styles.hudPanelBare}>
+              <Text style={styles.hudSystemTag}>
+                {activeActorType === ACTOR_TYPE.ENEMY
+                  ? 'SYSTEM // GATE'
+                  : activeActorType === ACTOR_TYPE.PET
+                    ? 'SYSTEM // FAMILIAR'
+                    : 'SYSTEM // SYNC'}
+              </Text>
+              <Text
+                style={[
+                  styles.hudPhaseTitle,
+                  activeActorType === ACTOR_TYPE.ENEMY && { color: HUD.enemyCrimson },
+                  activeActorType === ACTOR_TYPE.PET && { color: HUD.petViolet },
+                  activeActorType !== ACTOR_TYPE.ENEMY &&
+                    activeActorType !== ACTOR_TYPE.PET && { color: HUD.hunterCyan },
+                ]}
+              >
+                {activeActorType === ACTOR_TYPE.ENEMY
+                  ? (turnActorDisplayName || 'Enemy').toUpperCase()
+                  : activeActorType === ACTOR_TYPE.PET
+                    ? (turnActorDisplayName || 'Companion').toUpperCase()
+                    : `AWAITING ${activeActorName?.toUpperCase() || 'HUNTER'}`}
+              </Text>
+              <Text style={styles.hudPhaseSub}>
+                {activeActorType === ACTOR_TYPE.ENEMY
+                  ? 'Hostile action — stand by'
+                  : activeActorType === ACTOR_TYPE.PET
+                    ? 'Autonomous strike sequence'
+                    : 'Party member turn'}
+              </Text>
+            </View>
+            <View style={styles.waitingBar}>
+              <LinearGradient
+                colors={
+                  activeActorType === ACTOR_TYPE.ENEMY
+                    ? [HUD.enemyCrimson, 'transparent']
+                    : activeActorType === ACTOR_TYPE.PET
+                      ? ['#a78bfa', 'transparent']
+                      : [COLORS.neonCyan, 'transparent']
+                }
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={styles.waitingProgress}
+              />
+            </View>
           </View>
         )}
       </View>
@@ -247,19 +283,42 @@ const styles = StyleSheet.create({
     maxWidth: (SCREEN_WIDTH - 32 - 24) / 4,
     height: '100%',
   },
-  waitingText: {
-    color: '#64748b',
-    width: '100%',
-    textAlign: 'center',
-    fontWeight: 'bold',
-    fontSize: 12,
-    letterSpacing: 1,
-  },
   waitingContainer: {
     width: '100%',
-    padding: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  hudPanelBare: {
+    width: '100%',
+    maxWidth: SCREEN_WIDTH - 32,
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  hudSystemTag: {
+    color: HUD.systemLabel,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 2,
+    fontFamily: 'Exo2-Regular',
+    marginBottom: 4,
+  },
+  hudPhaseTitle: {
+    color: HUD.hunterCyan,
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 3,
+    fontFamily: 'Exo2-Regular',
+  },
+  hudPhaseSub: {
+    color: 'rgba(148, 163, 184, 0.95)',
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 1,
+    marginTop: 4,
+    fontFamily: 'Exo2-Regular',
   },
   waitingBar: {
     width: '60%',

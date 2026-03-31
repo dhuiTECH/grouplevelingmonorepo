@@ -44,6 +44,8 @@ export interface GearItem {
   icon: string;
   price: number;
   grip_type?: string | null;
+  /** Sword | Spear | Bow — battle attack motion; null uses grip_type only */
+  weapon_type?: string | null;
   offset_x?: number;
   offset_y?: number;
   z_index?: number;

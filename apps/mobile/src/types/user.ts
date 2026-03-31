@@ -27,6 +27,8 @@ export interface ShopItem {
   rotation?: number;
   rotation_female?: number;
   grip_type?: string;
+  /** Sword | Spear | Bow — battle attack motion; omit/null = grip_type only */
+  weapon_type?: string | null;
   hand_grip_type?: string;
   bonuses?: { type: string; value: number }[];
   bonus_type?: string;

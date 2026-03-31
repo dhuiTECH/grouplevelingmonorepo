@@ -107,7 +107,7 @@ export function EnemyBlock({
         {enemy?.metadata ? (
           <OptimizedPetAvatar
             petDetails={enemy}
-            size={140}
+            size={172}
             hideBackground
             borderRadius={0}
             action={action}
@@ -132,7 +132,9 @@ const styles = StyleSheet.create({
   enemyBlockWrap: {
     alignItems: 'center',
     width: '100%',
-    marginTop: 20,
+    marginTop: 36,
+    /** Pulls party row slightly closer without crowding */
+    marginBottom: -20,
   },
   enemySection: {
     marginTop: 0,
@@ -158,14 +160,14 @@ const styles = StyleSheet.create({
     fontSize: 9,
   },
   enemyFigure: {
-    width: 130,
-    height: 130,
+    width: 176,
+    height: 176,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
-    marginTop: 2,
+    marginTop: 4,
   },
-  enemyImage: { width: 110, height: 110 },
-  enemyEmoji: { fontSize: 50 },
+  enemyImage: { width: 142, height: 142 },
+  enemyEmoji: { fontSize: 58 },
   enemyAttacking: { borderColor: '#ef4444', transform: [{ scale: 1.1 }] },
 });

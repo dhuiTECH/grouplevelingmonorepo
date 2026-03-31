@@ -137,12 +137,13 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    borderWidth: 2,
-    borderColor: 'rgba(6, 182, 212, 0.5)', // cyan-500/50
+    borderWidth: 1,
+    borderColor: 'rgba(6, 182, 212, 0.45)',
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#000',
+    // Ring around 36px avatar — use slate, not black, so corners never read as a void
+    backgroundColor: 'rgba(15, 23, 42, 0.98)',
   },
   userInfo: {
     justifyContent: 'center',

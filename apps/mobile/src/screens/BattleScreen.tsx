@@ -1,20 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, Dimensions, Animated, SafeAreaView, StatusBar, Image as RNImage, type ViewStyle } from 'react-native';
+import { View, Animated, SafeAreaView, StatusBar, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
-import { Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Sword, RotateCcw, Play, ArrowUp, Skull, Hexagon as HexagonIcon, Settings, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Zap, LogOut, SkipForward, type LucideIcon } from 'lucide-react-native';
 import { getRank } from '@/utils/stats';
 import { useBattleLogic, PHASE, ACTOR_TYPE } from '@/hooks/useBattleLogic';
 import { useAudio } from '@/contexts/AudioContext';
-import LayeredAvatar from '@/components/LayeredAvatar';
-import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import { getPetSpriteConfig } from '@/utils/pet-sprites';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import SkillSpriteVfx from '@/components/SkillSpriteVfx';
 import { BattleAssetWarmer } from '@/components/BattleAssetWarmer';
-import { DamageNumber } from '@/components/DamageNumber';
 import { useBattleMusic } from '@/hooks/useBattleMusic';
 import { usePets } from '@/hooks/usePets';
 import BossWarningOverlay from '@/components/BossWarningOverlay';
@@ -24,6 +18,9 @@ import { supabase } from '@/lib/supabase';
 import { getCaptureItemCount, findOneCaptureCosmetic, isCaptureItem } from '@/utils/captureItem';
 import type { UserCosmetic } from '@/types/user';
 import { COLORS, BATTLE_INVENTORY_SLOTS, BATTLE_TAP_TO_CONFIRM_KEY } from '@/components/battle/battleTheme';
+import { battleScreenStyles as styles } from '@/components/battle/battleScreenStyles';
+import { BattleFieldHud } from '@/components/battle/BattleFieldHud';
+import { BattleSkillSpriteVfxHost } from '@/components/battle/BattleSkillSpriteVfxHost';
 import { EnemyBlock } from '@/components/battle/EnemyBlock';
 import { PartyRow } from '@/components/battle/PartyRow';
 import { TopHUD } from '@/components/battle/TopHUD';
@@ -37,8 +34,8 @@ import { BattleInventoryModal } from '@/components/battle/BattleInventoryModal';
 import { BattleEffectsLayer } from '@/components/battle/vfx/BattleEffectsLayer';
 import { DamageNumberLayer } from '@/components/battle/vfx/DamageNumberLayer';
 import { ImpactEffects } from '@/components/battle/ImpactEffects';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { useBattleVisualDamage } from '@/hooks/useBattleVisualDamage';
+import { resolvePartyMemberAvatarUri } from '@/utils/partyMemberAvatarUri';
 
 export default function BattleScreen() {
   const navigation = useNavigation();
@@ -100,6 +97,7 @@ export default function BattleScreen() {
     shakeAnim,
     activeChar,
     activeActorType,
+    turnActorDisplayName,
     isPlayerTurnPhase,
     currentAbility,
     switchStance,
@@ -116,6 +114,19 @@ export default function BattleScreen() {
   } = useBattleLogic({ encounterId, raidId, isBoss, tapToConfirm });
 
   const { addPet } = usePets();
+
+  const weaponGripCast = useMemo(() => {
+    if (!lastDamageEvent?.timestamp || !lastDamageEvent.casterCharId) return null;
+    const caster = party.find((p: any) => p.id === lastDamageEvent.casterCharId);
+    if (!caster || caster.type === 'pet') return null;
+    if (!caster.avatar) return null;
+    return {
+      key: lastDamageEvent.timestamp as number,
+      durationMs: lastSkillAnimationConfig?.duration_ms ?? 500,
+      casterCharId: lastDamageEvent.casterCharId as string,
+    };
+  }, [lastDamageEvent?.timestamp, lastDamageEvent?.casterCharId, lastSkillAnimationConfig?.duration_ms, party]);
+
   const [showWarning, setShowWarning] = useState(isBoss);
   const [petCaptureState, setPetCaptureState] = useState<'idle' | 'prompt' | 'saving' | 'done' | 'skipped'>('idle');
   const [petNickname, setPetNickname] = useState('');
@@ -216,270 +227,34 @@ export default function BattleScreen() {
   const [enemyFigureCenter, setEnemyFigureCenter] = useState<{ x: number; y: number } | null>(null);
   const [gameFrameOrigin, setGameFrameOrigin] = useState<{ x: number; y: number } | null>(null);
 
-  // Damage Number Handling
-  const [damageNumbers, setDamageNumbers] = useState<any[]>([]);
-  const [visualEnemyHp, setVisualEnemyHp] = useState<number>(0);
-  const [visualPartyHps, setVisualPartyHps] = useState<Record<string, number>>({});
+  const { visualEnemyHp, visualPartyHps, impactEffects } = useBattleVisualDamage({
+    lastDamageEvent,
+    lastSkillAnimationConfig,
+    enemy,
+    party,
+  });
 
-  // Sync visual HP with real HP for initialization and healing
-  useEffect(() => {
-    if (enemy) {
-      setVisualEnemyHp(prev => {
-        // If real HP is higher (healing) or it's a new enemy, sync immediately
-        if (enemy.hp > prev || prev === 0) return enemy.hp;
-        return prev;
-      });
-    }
-  }, [enemy?.hp, enemy?.id]);
-
-  useEffect(() => {
-    setVisualPartyHps(prev => {
-      const next = { ...prev };
-      let changed = false;
-      party.forEach(p => {
-        if (p.hp > (prev[p.id] || 0) || prev[p.id] === undefined) {
-          next[p.id] = p.hp;
-          changed = true;
-        }
-      });
-      return changed ? next : prev;
-    });
-  }, [party]);
-  
-  // Feedback Animation
   const feedbackAnim = useRef(new Animated.Value(0)).current;
-  const [impactEffects, setImpactEffects] = useState<Array<{
-    id: string;
-    slashAnim: Animated.Value;
-    flashAnim: Animated.Value;
-    splashAnim: Animated.Value;
-    type: 'SLASH' | 'CIRCLE';
-  }>>([]);
 
-  const triggerImpact = (count: number, type: 'SLASH' | 'CIRCLE') => {
-    const STAGGER_MS = 220;
-    const newInstances: typeof impactEffects = [];
-    for (let i = 0; i < count; i++) {
-        const id = `${Date.now()}-${i}-${Math.random()}`;
-        const slashAnim = new Animated.Value(0);
-        const flashAnim = new Animated.Value(0);
-        const splashAnim = new Animated.Value(0);
-        newInstances.push({ id, slashAnim, flashAnim, splashAnim, type });
-        
-        setTimeout(async () => {
-            if (type === 'SLASH') {
-              try {
-                  const { sound } = await Audio.Sound.createAsync(require('../../assets/sounds/QUICK_SLASH.mp3'));
-                  await sound.playAsync();
-                  sound.setOnPlaybackStatusUpdate((s) => {
-                      if (s.isLoaded && 'didJustFinish' in s && s.didJustFinish) sound.unloadAsync();
-                  });
-              } catch (e) { /* ignore */ }
-            }
-            Animated.parallel([
-                Animated.sequence([
-                    Animated.timing(flashAnim, { toValue: 1, duration: 80, useNativeDriver: true }),
-                    Animated.timing(flashAnim, { toValue: 0, duration: 120, useNativeDriver: true })
-                ]),
-                Animated.timing(splashAnim, { toValue: 1, duration: 350, useNativeDriver: true }),
-                Animated.timing(slashAnim, { toValue: 1, duration: 400, useNativeDriver: true })
-            ]).start(() => {
-                setImpactEffects(prev => prev.filter(inst => inst.id !== id));
-            });
-        }, i * STAGGER_MS);
-    }
-    setImpactEffects(prev => [...prev, ...newInstances]);
-  };
-  
   useEffect(() => {
     if (sequenceFeedback) {
-        feedbackAnim.setValue(0);
-        Animated.sequence([
-            Animated.timing(feedbackAnim, {
-                toValue: 1,
-                duration: 400,
-                useNativeDriver: true,
-                easing: (t) => t * (2 - t) // Ease out
-            }),
-            Animated.delay(500),
-            Animated.timing(feedbackAnim, {
-                toValue: 0,
-                duration: 300,
-                useNativeDriver: true
-            })
-        ]).start();
+      feedbackAnim.setValue(0);
+      Animated.sequence([
+        Animated.timing(feedbackAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+          easing: (t) => t * (2 - t),
+        }),
+        Animated.delay(500),
+        Animated.timing(feedbackAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
     }
   }, [sequenceFeedback]);
-
-  const addDamageNumberForEvent = useCallback((event: typeof lastDamageEvent) => {
-    if (!event) return;
-    const id = Date.now().toString() + Math.random().toString();
-    
-    // Determine Location using measured centers if available
-    let x = SCREEN_WIDTH / 2;
-    let y = 200;
-    let color = '#fbbf24';
-
-    if (event.targetId === 'ENEMY') {
-      if (enemyFigureCenter) {
-        x = enemyFigureCenter.x;
-        y = enemyFigureCenter.y - 40; // Float above center
-      } else {
-        x = SCREEN_WIDTH / 2;
-        y = 120;
-      }
-      color = '#fbbf24';
-    } else {
-      // Find player index
-      const idx = party.findIndex((p: any) => p.id === event.targetId);
-      if (idx >= 0) {
-        const totalWidth = party.length * 100 + (party.length - 1) * 20;
-        const startX = (SCREEN_WIDTH - totalWidth) / 2;
-        x = startX + idx * 120 + 50; 
-        y = SCREEN_HEIGHT / 2 + 100;
-      }
-      color = '#ef4444';
-    }
-
-    const newNum = {
-      id,
-      value: event.value,
-      color,
-      x,
-      y,
-    };
-    
-    setDamageNumbers(prev => [...prev, newNum]);
-
-    // Update Visual HP to match the damage number appearing
-    if (event.targetId === 'ENEMY') {
-      setVisualEnemyHp(prev => Math.max(0, prev - event.value));
-    } else {
-      setVisualPartyHps(prev => ({
-        ...prev,
-        [event.targetId]: Math.max(0, (prev[event.targetId] || 0) - event.value)
-      }));
-    }
-
-    // Cleanup logic is now handled inside DamageNumber component via onComplete
-    if (event.targetId === 'ENEMY' && event.value > 0) {
-      if (event.skillId || event.abilityName) {
-        // Generic impact for projectiles/other skills
-        triggerImpact(1, 'CIRCLE');
-      }
-    }
-  }, [party, enemyFigureCenter]);
-
-  const addDamageNumberRef = useRef(addDamageNumberForEvent);
-  useEffect(() => {
-    addDamageNumberRef.current = addDamageNumberForEvent;
-  }, [addDamageNumberForEvent]);
-
-  // Timer management to allow "fire-and-forget" damage numbers that persist across rapid clicks
-  // while still preventing duplicates for the same event (e.g. when config loads)
-  const damageTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const lastScheduledEventTimestampRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      // Cleanup all timers on unmount
-      Object.values(damageTimersRef.current).forEach(clearTimeout);
-    };
-  }, []);
-
-  const scheduleDamageNumber = useCallback((evt: typeof lastDamageEvent, delay: number) => {
-    if (!evt) return;
-    const key = evt.timestamp.toString();
-    
-    // Clear any existing timer for this specific event (e.g. rescheduling with new config)
-    if (damageTimersRef.current[key]) {
-      clearTimeout(damageTimersRef.current[key]);
-    }
-
-    const t = setTimeout(() => {
-      addDamageNumberRef.current(evt);
-      delete damageTimersRef.current[key];
-    }, delay);
-
-    damageTimersRef.current[key] = t;
-  }, []);
-
-  // Only show damage immediately for non-skill hits (e.g. enemy hit player). Skill hits use the timer below.
-  useEffect(() => {
-    if (!lastDamageEvent) return;
-    const isSkillHit = lastDamageEvent.skillId != null || lastDamageEvent.abilityName != null;
-    if (!isSkillHit) {
-      addDamageNumberRef.current(lastDamageEvent);
-    }
-  }, [lastDamageEvent]);
-
-  // Handle Skill Hits: Show damage per hit (staggered) or single total. Only schedule once per event.
-  const SHOW_DAMAGE_BEFORE_END_MS = 250;
-  useEffect(() => {
-    if (!lastDamageEvent) return;
-    const isSkillHit = lastDamageEvent.skillId != null || lastDamageEvent.abilityName != null;
-    if (!isSkillHit) return;
-
-    // Avoid scheduling twice when effect re-runs (e.g. when lastSkillAnimationConfig loads after fetch)
-    if (lastScheduledEventTimestampRef.current === lastDamageEvent.timestamp) return;
-    lastScheduledEventTimestampRef.current = lastDamageEvent.timestamp;
-
-    const durationMs = lastSkillAnimationConfig?.duration_ms ?? 500;
-    const perHit = lastDamageEvent.damagePerHit;
-    const playCount = lastDamageEvent.skillUseCount ?? 1;
-    const multiResults = lastDamageEvent.multiResults;
-    const vfxType = lastSkillAnimationConfig?.vfx_type ?? 'impact';
-    const totalDuration = durationMs * playCount;
-
-    // Handle multi-target effects (area heals/damage)
-    if (multiResults && multiResults.length > 0) {
-      multiResults.forEach((result, i) => {
-        const syntheticEvent = {
-          ...lastDamageEvent,
-          targetId: result.targetId,
-          value: result.value,
-          type: result.type,
-          timestamp: lastDamageEvent.timestamp + i * 50 // Stagger by 50ms
-        };
-        let delay = 100; // Show immediately for multi-target effects
-
-        if (vfxType === 'projectile') {
-          delay = totalDuration;
-        } else if (vfxType === 'beam' || vfxType === 'aoe') {
-          delay = 100; // Show immediately
-        }
-
-        scheduleDamageNumber(syntheticEvent, delay + i * 50);
-      });
-    } else if (perHit && perHit.length > 0) {
-      // One damage number per hit.
-      // For projectiles, delay all until the end of the total travel time.
-      // For others, stagger them at the start of each loop.
-      perHit.forEach((value, i) => {
-        const syntheticEvent = { ...lastDamageEvent, value, timestamp: lastDamageEvent.timestamp + i };
-        let delay = i * durationMs;
-
-        if (vfxType === 'projectile') {
-          // Hits happen when the projectile reaches the target (at the end of totalDuration)
-          delay = totalDuration + (i * 100);
-        } else {
-          // Non-projectiles (impacts) usually show damage at the start or slightly into each loop
-          delay = i * durationMs + 100;
-        }
-
-        scheduleDamageNumber(syntheticEvent, delay);
-      });
-    } else {
-      // Single hit or no per-hit breakdown
-      let delay = durationMs;
-      if (vfxType === 'projectile') {
-        delay = totalDuration;
-      } else if (vfxType === 'beam' || vfxType === 'aoe') {
-        delay = 100; // Show immediately
-      }
-      scheduleDamageNumber(lastDamageEvent, delay);
-    }
-  }, [lastDamageEvent, lastSkillAnimationConfig, scheduleDamageNumber]);
 
   const handleLeaveBattle = () => {
       navigation.goBack();
@@ -494,7 +269,7 @@ export default function BattleScreen() {
     if (!user?.cosmetics?.length) return [];
     return user.cosmetics.filter((c: UserCosmetic) => {
       const slot = (c.shop_items?.slot || '').toLowerCase();
-      return BATTLE_INVENTORY_SLOTS.includes(slot) || isCaptureItem(c.shop_items);
+      return (BATTLE_INVENTORY_SLOTS as readonly string[]).includes(slot) || isCaptureItem(c.shop_items);
     });
   }, [user?.cosmetics]);
 
@@ -653,18 +428,14 @@ export default function BattleScreen() {
       expGained
     };
 
-    const getAvatarUri = (p: any) => {
-// ... existing getAvatarUri code ...
-    };
-
-    const victoryParty = party.map(p => ({
+    const victoryParty = party.map((p) => ({
       id: p.id,
       name: p.name,
       level: p.level,
       currentHp: p.hp,
       maxHp: p.maxHP,
       isPet: p.type === 'pet',
-      imageUri: getAvatarUri(p),
+      imageUri: resolvePartyMemberAvatarUri(p, user),
     }));
     
     const rewards = [
@@ -707,29 +478,11 @@ export default function BattleScreen() {
       expLost
     };
 
-    const getAvatarUriForDefeat = (p: any) => {
-      if (p?.type === 'pet') return p.petDetails?.image_url || 'https://via.placeholder.com/40';
-      const u = p?.avatar || user;
-      if (!u) return 'https://via.placeholder.com/40';
-      const url = u.base_body_silhouette_url || u.base_body_url || u.avatar_url;
-      if (typeof url === 'string' && url.startsWith('http')) return url;
-      const profilePic = u.profilePicture;
-      if (!profilePic) return 'https://via.placeholder.com/40';
-      if (typeof profilePic === 'string') return profilePic;
-      if (profilePic?.uri) return profilePic.uri;
-      try {
-        const asset = RNImage.resolveAssetSource(profilePic);
-        return asset?.uri || 'https://via.placeholder.com/40';
-      } catch (e) {
-        return 'https://via.placeholder.com/40';
-      }
-    };
-
-    const defeatParty = party.map(p => ({
+    const defeatParty = party.map((p) => ({
       id: p.id,
       name: p.name,
       isPet: p.type === 'pet',
-      imageUri: getAvatarUriForDefeat(p),
+      imageUri: resolvePartyMemberAvatarUri(p, user),
       avatar: p.avatar,
       petDetails: p.petDetails,
       type: p.type,
@@ -815,6 +568,7 @@ export default function BattleScreen() {
             activeChar={activeChar}
             actorTypeEnemy={ACTOR_TYPE.ENEMY}
             actorTypePet={ACTOR_TYPE.PET}
+            allShopItems={allShopItems}
             onSettingsPress={handleSettingsPress}
             onLeaveBattle={handleLeaveBattle}
           />
@@ -828,20 +582,12 @@ export default function BattleScreen() {
                 onEnterComplete={() => setEnemyAction('idle')}
               />
 
-              {/* Chain Counter */}
-              {chainCount > 0 && isPlayerTurnPhase && (
-                  <View style={styles.chainContainer}>
-                      <Text style={styles.chainText}>{chainCount} CHAIN</Text>
-                      <Text style={styles.chainBonus}>+{(chainCount * 10)}% BONUS</Text>
-                  </View>
-              )}
-              {/* Pet's turn indicator */}
-              {activeActorType === ACTOR_TYPE.PET && (
-                  <View style={styles.chainContainer}>
-                      <Text style={[styles.chainText, { color: '#a855f7' }]}>PET ATTACK</Text>
-                      <Text style={[styles.chainBonus, { color: '#a855f7' }]}>Your pet strikes!</Text>
-                  </View>
-              )}
+              <BattleFieldHud
+                chainCount={chainCount}
+                isPlayerTurnPhase={isPlayerTurnPhase}
+                activeActorType={activeActorType}
+                turnActorDisplayName={turnActorDisplayName}
+              />
 
               {/* Player Figures — fade in after transition so they don’t appear before walk-in is done */}
               <PartyRow
@@ -857,6 +603,7 @@ export default function BattleScreen() {
                 petAction={petAction}
                 onPetEnterComplete={() => setPetAction('idle')}
                 lastDamageEvent={lastDamageEvent}
+                weaponGripCast={weaponGripCast}
               />
           </View>
 
@@ -875,6 +622,7 @@ export default function BattleScreen() {
             handleAbilityTap={handleAbilityTap}
             activeActorType={activeActorType}
             activeActorName={activeChar?.name}
+            turnActorDisplayName={turnActorDisplayName}
           />
 
         </Animated.View>
@@ -882,92 +630,13 @@ export default function BattleScreen() {
 
       <ImpactEffects impactEffects={impactEffects} enemyFigureCenter={enemyFigureCenter} />
 
-      {/* Skill VFX from Supabase skill_animations (sprite_url + sfx_url from storage) */}
-      {lastSkillAnimationConfig && lastDamageEvent && (() => {
-        // Use measured centers for perfect positioning. 
-        const isProjectile = lastSkillAnimationConfig.vfx_type === 'projectile';
-        const isBeam = lastSkillAnimationConfig.vfx_type === 'beam';
-        const isAoe = lastSkillAnimationConfig.vfx_type === 'aoe';
-
-        // 1. RESOLVE TARGET COORDINATES (targetX, targetY)
-        let targetX = SCREEN_WIDTH / 2;
-        let targetY = 220;
-
-        if (lastDamageEvent.targetId === 'ENEMY') {
-          if (enemyFigureCenter) {
-            targetX = enemyFigureCenter.x;
-            targetY = enemyFigureCenter.y;
-          }
-        } else if (lastDamageEvent.targetId === 'ALL_ENEMIES') {
-          // Center of enemy side
-          targetX = SCREEN_WIDTH / 2;
-          targetY = 200;
-        } else if (lastDamageEvent.targetId === 'ALL_FRIENDS') {
-          // Center of party side
-          targetX = SCREEN_WIDTH / 2;
-          targetY = SCREEN_HEIGHT / 2 + 100;
-        } else {
-          // Specific party member or caster
-          const idx = party.findIndex(p => p.id === lastDamageEvent.targetId);
-          if (idx >= 0) {
-            const totalWidth = party.length * 100 + (party.length - 1) * 20;
-            const layoutStartX = (SCREEN_WIDTH - totalWidth) / 2;
-            targetX = layoutStartX + idx * 120 + 50;
-            targetY = SCREEN_HEIGHT / 2 + 100;
-          }
-        }
-
-        // 2. RESOLVE CASTER COORDINATES (startX, startY)
-        let startX: number | undefined;
-        let startY: number | undefined;
-
-        if (lastDamageEvent.casterCharId === 'ENEMY') {
-          if (enemyFigureCenter) {
-            startX = enemyFigureCenter.x;
-            startY = enemyFigureCenter.y;
-          }
-        } else if (lastDamageEvent.casterCharId) {
-          const casterIdx = party.findIndex(p => p.id === lastDamageEvent.casterCharId);
-          if (casterIdx >= 0) {
-            const totalWidth = party.length * 100 + (party.length - 1) * 20;
-            const layoutStartX = (SCREEN_WIDTH - totalWidth) / 2;
-            startX = layoutStartX + casterIdx * 120 + 50;
-            startY = SCREEN_HEIGHT / 2 + 100;
-          }
-        }
-
-        // Only pass start coords if it's a movement-based VFX
-        const needsStartCoords = isProjectile || isBeam;
-        
-        return (
-          <SkillSpriteVfx
-            key={lastDamageEvent.timestamp}
-            config={lastSkillAnimationConfig}
-            targetX={targetX}
-            targetY={targetY}
-            startX={needsStartCoords ? startX : undefined}
-            startY={needsStartCoords ? startY : undefined}
-            playCount={lastDamageEvent.skillUseCount ?? 1}
-            onEnd={() => {
-              clearLastSkillAnimation();
-            }}
-          />
-        );
-      })()}
-
-      {/* Floating Damage Numbers */}
-      {damageNumbers.map(num => (
-        <DamageNumber
-          key={num.id}
-          id={num.id}
-          value={Math.floor(num.value)}
-          x={num.x}
-          y={num.y}
-          color={num.color}
-          isCrit={false} // You can hook this up to your logic later
-          onComplete={(id) => setDamageNumbers(prev => prev.filter(n => n.id !== id))}
-        />
-      ))}
+      <BattleSkillSpriteVfxHost
+        lastSkillAnimationConfig={lastSkillAnimationConfig}
+        lastDamageEvent={lastDamageEvent}
+        enemyFigureCenter={enemyFigureCenter}
+        party={party}
+        clearLastSkillAnimation={clearLastSkillAnimation}
+      />
 
       <DamageNumberLayer enemyFigureCenter={enemyFigureCenter} />
       <BattleEffectsLayer />
@@ -1023,39 +692,3 @@ export default function BattleScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#020617' },
-  loadingCentered: { justifyContent: 'center', alignItems: 'center' },
-  loadingText: { color: '#22d3ee', marginTop: 10, letterSpacing: 2 },
-  gameFrame: { width: '100%', height: '100%', backgroundColor: '#050b14', position: 'relative' },
-  flashOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, alignItems: 'center', justifyContent: 'center' },
-  cinematicText: { fontSize: 48, fontStyle: 'italic', fontWeight: '900', color: 'white', textTransform: 'uppercase', textShadowColor: '#22d3ee', textShadowRadius: 20 },
-
-  battlefield: { flex: 1, justifyContent: 'space-between', alignItems: 'center', paddingTop: 20, paddingBottom: 24 },
-
-  chainContainer: { alignItems: 'center' },
-  chainText: { color: '#22d3ee', fontSize: 32, fontStyle: 'italic', fontWeight: '900' },
-  chainBonus: { color: '#22d3ee', fontSize: 10, fontWeight: 'bold', letterSpacing: 2 },
-  
-  charTargeted: { opacity: 1, borderColor: '#ef4444', borderWidth: 1, borderRadius: 10 },
-
-  metricContainer: {
-    width: 110,
-  },
-  barTrack: {
-    height: 6,
-    backgroundColor: 'rgba(31, 41, 55, 0.6)',
-    borderRadius: 4,
-    borderWidth: 1,
-    marginBottom: 4,
-  },
-  barFill: {
-    height: '100%',
-    borderRadius: 4,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 5,
-    elevation: 3,
-  },
-  });

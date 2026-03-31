@@ -14,6 +14,7 @@ import Svg, {
   Pattern,
 } from 'react-native-svg';
 import { MotiView, AnimatePresence } from 'moti';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BattleAssetWarmer } from '@/components/BattleAssetWarmer';
 import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
@@ -133,9 +134,14 @@ export function VictoryScreen({
   // --- Pet Capture View ---
   if (shouldShowCapture) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', paddingHorizontal: 24 }]}>
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', paddingHorizontal: 24 }]} edges={['top', 'bottom']}>
         <BattleAssetWarmer party={party} enemy={enemy} spriteUrls={spriteUrls} />
-        <View style={styles.petCaptureCard}>
+        <MotiView
+          from={{ opacity: 0, scale: 0.92, translateY: 52 }}
+          animate={{ opacity: 1, scale: 1, translateY: 0 }}
+          transition={{ type: 'spring', damping: 18, stiffness: 220 }}
+          style={styles.petCaptureCard}
+        >
           <Text style={styles.cinematicText}>VICTORY</Text>
           <Text style={styles.petCaptureTitle}>New Companion Detected</Text>
           <Text style={styles.petCaptureSubtitle}>
@@ -180,8 +186,8 @@ export function VictoryScreen({
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </MotiView>
+      </SafeAreaView>
     );
   }
 
@@ -202,7 +208,7 @@ export function VictoryScreen({
   const expPercent = Math.min(1, totalExp / (playerStats.maxExp || 100));
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <BattleAssetWarmer party={party} enemy={enemy} spriteUrls={spriteUrls} />
       <View style={styles.ambientGlow} />
       
@@ -353,7 +359,7 @@ export function VictoryScreen({
           </View>
         </MotiView>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

@@ -9,6 +9,8 @@ import SkiaTintedLayer from './layers/SkiaTintedLayer';
 import StaticOverlayLayer from './layers/StaticOverlayLayer';
 import SkiaBaseLayer from './layers/SkiaBaseLayer';
 import MaskedStaticOverlayLayer from './layers/MaskedStaticOverlayLayer';
+import { WeaponAttackAnimatedInner } from './WeaponAttackAnimatedInner';
+import { resolveWeaponAttackPreset } from '@/utils/resolveWeaponAttackPreset';
 
 interface LayeredAvatarProps {
   user: User;
@@ -19,6 +21,11 @@ interface LayeredAvatarProps {
   square?: boolean;
   allShopItems?: any[];
   isMoving?: boolean;
+  /** When set with equipped weapon, animates weapon + hand_grip on battle skill resolve */
+  weaponGripAttackKey?: number;
+  weaponGripAttackDurationMs?: number;
+  /** When true, avatar root does not clip — hand_grip / weapon can extend outside the frame (e.g. battle swings). */
+  allowOverflow?: boolean;
 }
 
 const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({ 
@@ -29,7 +36,10 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
   hideBackground = false,
   square = false,
   allShopItems = [],
-  isMoving = false
+  isMoving = false,
+  weaponGripAttackKey,
+  weaponGripAttackDurationMs,
+  allowOverflow = false,
 }) => {
   // Create the breathing value
   const breatheAnim = useRef(new Animated.Value(0)).current;
@@ -143,7 +153,17 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
   // Find equipped weapon to determine grip
   const equippedWeapon = equippedCosmetics.find((c: any) => getSlot(c.shop_items) === 'weapon');
   const handGripZIndexOverride = equippedWeapon?.shop_items?.hand_grip_z_index_override;
-  
+
+  const attackPresetResolved = resolveWeaponAttackPreset(equippedWeapon?.shop_items);
+  const weaponAttackLayer =
+    weaponGripAttackKey != null && attackPresetResolved != null
+      ? {
+          attackKey: weaponGripAttackKey,
+          preset: attackPresetResolved,
+          durationMs: weaponGripAttackDurationMs ?? 500,
+        }
+      : null;
+
   let handGripCosmetic = null;
   if (equippedWeapon?.shop_items?.grip_type) {
       const gripType = equippedWeapon.shop_items.grip_type;
@@ -301,7 +321,17 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
 
   return (
     <Container 
-      style={[styles.container, { width: size, height: size, borderRadius: square ? 16 : size / 2 }, style]}
+      style={[
+        styles.container,
+        {
+          width: size,
+          height: size,
+          // Rounded corners + overflow visible still clips on some platforms; battle uses allowOverflow for swings.
+          borderRadius: allowOverflow ? 0 : square ? 16 : size / 2,
+          overflow: allowOverflow ? 'visible' : 'hidden',
+        },
+        style,
+      ]}
       onPress={() => onAvatarClick?.(user)}
       activeOpacity={0.9}
     >
@@ -322,6 +352,7 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
         style={[
           StyleSheet.absoluteFill, 
           { 
+            overflow: allowOverflow ? 'visible' : undefined,
             transform: [{ translateY }, { scaleY }],
             // @ts-ignore - transformOrigin is available in newer RN versions or Expo
             transformOrigin: 'bottom' 
@@ -382,6 +413,7 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
             const topPercent = ((ADMIN_ANCHOR_POINT + offsetY) / ADMIN_CONTAINER_SIZE) * 100;
 
             const isHandGrip = slot === 'hand_grip';
+            const isWeaponOrGrip = slot === 'weapon' || isHandGrip;
             const zIndex = (isHandGrip && handGripZIndexOverride !== null && handGripZIndexOverride !== undefined) 
               ? Number(handGripZIndexOverride) 
               : Number(item.z_index || 10);
@@ -441,6 +473,7 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
                   size={size}
                   tintColor={isHandGrip ? activeSkinColor : null}
                   hairFillHex={slot === 'hair' ? hairTintEffective : null}
+                  weaponAttack={isWeaponOrGrip ? weaponAttackLayer : null}
                 />
               );
             }
@@ -462,6 +495,7 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
                     top: `${topPercent}%`,
                     width: finalWidth,
                     height: finalHeight,
+                    overflow: 'visible',
                     transform: [
                       { translateX: -finalWidth / 2 },
                       { translateY: -finalHeight / 2 },
@@ -469,14 +503,21 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
                     ],
                   }}
                   pointerEvents="none"
+                  collapsable={false}
                 >
-                  <ShopItemMedia 
-                    item={itemForRender} 
-                    animate={true} 
-                    forceFullImage={true}
-                    style={styles.fullSize}
-                    resizeMode="contain"
-                  />
+                  <WeaponAttackAnimatedInner
+                    attackKey={isWeaponOrGrip ? weaponAttackLayer?.attackKey : undefined}
+                    attackPreset={isWeaponOrGrip ? weaponAttackLayer?.preset ?? null : null}
+                    durationMs={weaponAttackLayer?.durationMs ?? 500}
+                  >
+                    <ShopItemMedia 
+                      item={itemForRender} 
+                      animate={true} 
+                      forceFullImage={true}
+                      style={styles.fullSize}
+                      resizeMode="contain"
+                    />
+                  </WeaponAttackAnimatedInner>
                 </View>
               );
             } else {
@@ -496,6 +537,7 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
                     scaleRatio={scaleRatio}
                     rotation={rotation}
                     tintColor={tintColor}
+                    weaponAttack={isWeaponOrGrip ? weaponAttackLayer : null}
                   />
                 );
               }
@@ -514,6 +556,7 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
                   rotation={rotation}
                   tintColor={tintColor}
                   silhouetteUrl={silhouetteUrl}
+                  weaponAttack={isWeaponOrGrip ? weaponAttackLayer : null}
                 />
               );
             }
@@ -552,12 +595,15 @@ export const LayeredAvatar = React.memo(LayeredAvatarInternal, (prev, next) => {
     return false; 
   }
 
+  if (prev.weaponGripAttackKey !== next.weaponGripAttackKey) return false;
+  if (prev.weaponGripAttackDurationMs !== next.weaponGripAttackDurationMs) return false;
+  if (prev.allowOverflow !== next.allowOverflow) return false;
+
   return true;
 });
 
 const styles = StyleSheet.create({
   container: {
-    overflow: 'hidden', // RESTORED CLIPPING
     backgroundColor: 'transparent',
     position: 'relative',
   },

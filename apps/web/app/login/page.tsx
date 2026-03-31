@@ -99,6 +99,9 @@ export default function App() {
     loadShopItems,
     loadActivities,
     loadCosmetics,
+    clearedRuns,
+    clearedRunsLoading,
+    toggleDungeonRunKudos,
   } = useHunterData();
 
   // Square 1: Add the Fast Boot state
@@ -1122,14 +1125,10 @@ export default function App() {
             dungeons={dungeons}
             selectedDungeon={selectedDungeon}
             setSelectedDungeon={setSelectedDungeon}
-            activities={activities}
-            handleScreenshotUpload={handleScreenshotUpload}
-            handleLevelUp={handleLevelUp}
+            clearedRuns={clearedRuns}
+            clearedRunsLoading={clearedRunsLoading}
+            toggleDungeonRunKudos={toggleDungeonRunKudos}
             handleClaimReward={handleClaimReward}
-            isUploading={isUploading}
-            uploadError={uploadError}
-            isOpeningDailyChest={isOpeningDailyChest}
-            isOpeningGrandChest={isOpeningGrandChest}
           />
         )}
 
