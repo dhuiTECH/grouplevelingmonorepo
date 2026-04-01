@@ -1,5 +1,5 @@
-import React, { useMemo, useEffect, useRef } from "react";
-import { Dimensions, View, StyleSheet } from "react-native";
+import React, { useMemo, useEffect, useRef, useState } from "react";
+import { useWindowDimensions, View, StyleSheet } from "react-native";
 import {
   Canvas,
   Group,
@@ -31,6 +31,7 @@ import { SkiaLayeredAvatar } from "./SkiaLayeredAvatar";
 import { SkiaPetSprite } from "./SkiaPetSprite";
 import { getPixiTextureCoords, getLiquidTextureCoords } from "./mapUtils";
 import { CloudLayer } from "../environment/CloudLayer";
+import { getAtmosphereMultiplyColor } from "./atmosphereColor";
 
 interface SkiaWorldMapProps {
   visionGrid: any[];
@@ -58,9 +59,13 @@ interface SkiaWorldMapProps {
   petZIndex: SharedValue<number>;
   avatarData: any;
   allShopItems?: any[];
+  /** When false, skip the multiply time-of-day overlay. Default true. */
+  enableAtmosphere?: boolean;
+  /** If set, used instead of the hour-based multiply color (debug / overrides). */
+  atmosphereOverride?: string | null;
+  /** When false, cloud drop shadows are not drawn. Default true. */
+  enableCloudShadows?: boolean;
 }
-
-const { width, height } = Dimensions.get("window");
 
 // Frame-based movement: fixed px per frame (3 = walk, 6 = run). Durations in ms for reference only.
 // At 60fps, 48px / 3px per frame = 16 frames. 16 * 16.67ms = 266.7ms
@@ -95,7 +100,23 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   petZIndex,
   avatarData,
   allShopItems,
+  enableAtmosphere = true,
+  atmosphereOverride = null,
+  enableCloudShadows = true,
 }) => {
+  const { width, height } = useWindowDimensions();
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const atmosphereColor = useMemo(() => {
+    if (atmosphereOverride) return atmosphereOverride;
+    return getAtmosphereMultiplyColor(now);
+  }, [now, atmosphereOverride]);
+
   const { tileLibrary } = useTileLibrary();
   const petBehindOpacity = useDerivedValue(() =>
     petZIndex.value < 100 ? 1 : 0,
@@ -663,7 +684,11 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
         </Group>
 
         {/* Screen-fixed sky band above map tiles so clouds stay visible */}
-        <CloudLayer screenWidth={width} screenHeight={height} />
+        <CloudLayer
+          screenWidth={width}
+          screenHeight={height}
+          enableShadows={enableCloudShadows}
+        />
 
         {/* NATIVE SKIA PLAYER & PET RENDERING - Depth Sorted without JS Bridge */}
         <Group opacity={petBehindOpacity}>{petSprite}</Group>
@@ -671,6 +696,17 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
         {playerAvatar}
 
         <Group opacity={petInFrontOpacity}>{petSprite}</Group>
+
+        {enableAtmosphere ? (
+          <SkiaRect
+            x={0}
+            y={0}
+            width={width}
+            height={height}
+            color={atmosphereColor}
+            blendMode="multiply"
+          />
+        ) : null}
       </Canvas>
 
       <Reanimated.View
@@ -685,6 +721,9 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
 export const SkiaWorldMap = React.memo(SkiaWorldMapInternal, (prev, next) => {
   if (prev.visionGrid !== next.visionGrid) return false;
+  if (prev.enableAtmosphere !== next.enableAtmosphere) return false;
+  if (prev.atmosphereOverride !== next.atmosphereOverride) return false;
+  if (prev.enableCloudShadows !== next.enableCloudShadows) return false;
   const dx = Math.abs(next.spawnX - prev.spawnX);
   const dy = Math.abs(next.spawnY - prev.spawnY);
   // Threshold raised to 10 to match the teleport-reset effect.

@@ -33,6 +33,14 @@ const CLOUD_LIGHTEN_MATRIX = [
   0, 0, 0, 1, 0,
 ];
 
+/** Turns the cloud image into a black silhouette for drop-shadow pass. */
+const BLACK_TINT_MATRIX = [
+  0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0,
+  0, 0, 0, 1, 0,
+];
+
 export interface CloudLayerProps {
   screenWidth: number;
   screenHeight: number;
@@ -40,6 +48,13 @@ export interface CloudLayerProps {
   /** Time (ms) for one full period of drift (leftward by one wrap width). */
   speedMs?: number;
   enableMotion?: boolean;
+  /** When false, skip the black duplicate under each cloud. Default true. */
+  enableShadows?: boolean;
+  /** Base shadow opacity multiplier (0–1). Default 0.28. */
+  shadowOpacity?: number;
+  /** Shadow offset as fractions of each cloud's width/height. Defaults tuned for “sun high left”. */
+  shadowOffsetXFactor?: number;
+  shadowOffsetYFactor?: number;
 }
 
 interface CloudSpec {
@@ -81,42 +96,97 @@ function renderCloudInstances(
   cloudSpecs: CloudSpec[],
   images: readonly (unknown | null)[],
   wrapWidth: number,
+  options: {
+    enableShadows: boolean;
+    shadowOpacity: number;
+    shadowOffsetXFactor: number;
+    shadowOffsetYFactor: number;
+  },
 ) {
+  const {
+    enableShadows,
+    shadowOpacity,
+    shadowOffsetXFactor,
+    shadowOffsetYFactor,
+  } = options;
+
   return cloudSpecs.flatMap((spec, index) => {
     const img = images[spec.variantIndex];
     if (!img) return [];
 
+    const ox = spec.width * shadowOffsetXFactor;
+    const oy = spec.height * shadowOffsetYFactor;
+    const shadowGroupOpacity = spec.opacityFactor * shadowOpacity;
+
+    const shadowMain =
+      enableShadows && shadowOpacity > 0 ? (
+        <Group
+          key={`cloud-${index}-${spec.variantIndex}-sh`}
+          opacity={shadowGroupOpacity}
+          transform={[{ translateX: ox }, { translateY: oy }]}
+        >
+          <ColorMatrix matrix={BLACK_TINT_MATRIX} />
+          <SkiaImage
+            image={img}
+            x={spec.x}
+            y={spec.y}
+            width={spec.width}
+            height={spec.height}
+            fit="contain"
+          />
+        </Group>
+      ) : null;
+
+    const shadowDup =
+      enableShadows && shadowOpacity > 0 ? (
+        <Group
+          key={`cloud-${index}-${spec.variantIndex}-sh-dup`}
+          opacity={shadowGroupOpacity}
+          transform={[{ translateX: ox }, { translateY: oy }]}
+        >
+          <ColorMatrix matrix={BLACK_TINT_MATRIX} />
+          <SkiaImage
+            image={img}
+            x={spec.x + wrapWidth}
+            y={spec.y}
+            width={spec.width}
+            height={spec.height}
+            fit="contain"
+          />
+        </Group>
+      ) : null;
+
     const common = (
-      <Group
-        key={`cloud-${index}-${spec.variantIndex}`}
-        opacity={spec.opacityFactor}
-      >
-        <ColorMatrix matrix={CLOUD_LIGHTEN_MATRIX} />
-        <SkiaImage
-          image={img}
-          x={spec.x}
-          y={spec.y}
-          width={spec.width}
-          height={spec.height}
-          fit="contain"
-        />
+      <Group key={`cloud-${index}-${spec.variantIndex}-grp`}>
+        {shadowMain}
+        <Group opacity={spec.opacityFactor}>
+          <ColorMatrix matrix={CLOUD_LIGHTEN_MATRIX} />
+          <SkiaImage
+            image={img}
+            x={spec.x}
+            y={spec.y}
+            width={spec.width}
+            height={spec.height}
+            fit="contain"
+          />
+        </Group>
       </Group>
     );
 
     const duplicate = (
-      <Group
-        key={`cloud-${index}-${spec.variantIndex}-dup`}
-        opacity={spec.opacityFactor}
-      >
-        <ColorMatrix matrix={CLOUD_LIGHTEN_MATRIX} />
-        <SkiaImage
-          image={img}
-          x={spec.x + wrapWidth}
-          y={spec.y}
-          width={spec.width}
-          height={spec.height}
-          fit="contain"
-        />
+      <Group key={`cloud-${index}-${spec.variantIndex}-dup-grp`}>
+        {shadowDup}
+        <Group opacity={spec.opacityFactor}>
+          <ColorMatrix matrix={CLOUD_LIGHTEN_MATRIX} />
+          <SkiaImage
+            image={img}
+            x={spec.x + wrapWidth}
+            y={spec.y}
+            width={spec.width}
+            height={spec.height}
+            fit="contain"
+          />
+        </Group>
       </Group>
     );
 
@@ -130,6 +200,10 @@ export function CloudLayer({
   opacity = 0.82,
   speedMs = 28000,
   enableMotion = true,
+  enableShadows = true,
+  shadowOpacity = 0.28,
+  shadowOffsetXFactor = 0.1,
+  shadowOffsetYFactor = 0.38,
 }: CloudLayerProps) {
   const img0 = useImage(CLOUD_SOURCES[0]);
   const img1 = useImage(CLOUD_SOURCES[1]);
@@ -191,7 +265,12 @@ export function CloudLayer({
   return (
     <Group clip={clipRect}>
       <Group opacity={opacity} transform={driftTransform}>
-        {renderCloudInstances(cloudSpecs, images, wrapWidth)}
+        {renderCloudInstances(cloudSpecs, images, wrapWidth, {
+          enableShadows,
+          shadowOpacity,
+          shadowOffsetXFactor,
+          shadowOffsetYFactor,
+        })}
       </Group>
     </Group>
   );
