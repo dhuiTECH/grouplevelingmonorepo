@@ -37,6 +37,7 @@ import WeeklyFeedbackModal from '@/components/modals/WeeklyFeedbackModal';
 import { api as trainingApi } from '@/api/training';
 import { useWeeklyReset } from '@/hooks/useWeeklyReset';
 import { ChestOpeningModal } from '@/components/modals/ChestOpeningModal';
+import { LevelUpModal } from '@/components/modals/LevelUpModal';
 import { supabase } from '@/lib/supabase';
 
 const HomeScreen: React.FC = () => {
@@ -55,6 +56,7 @@ const HomeScreen: React.FC = () => {
   
   // Test Chest State
   const [showTestChest, setShowTestChest] = useState(false);
+  const [showLevelUpPreview, setShowLevelUpPreview] = useState(false);
 
   useEffect(() => {
     if (isResetDue) {
@@ -268,6 +270,13 @@ const HomeScreen: React.FC = () => {
           >
             <Text style={styles.testChestBtnText}>[DEBUG] OPEN TEST CHEST</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.testLevelUpBtn}
+            onPress={() => setShowLevelUpPreview(true)}
+          >
+            <Text style={styles.testLevelUpBtnText}>[DEBUG] LEVEL UP (full flow)</Text>
+          </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
 
@@ -275,6 +284,16 @@ const HomeScreen: React.FC = () => {
         isOpen={showTestChest}
         chestType="medium"
         onAnimationComplete={handleChestComplete}
+      />
+
+      <LevelUpModal
+        visible={showLevelUpPreview}
+        user={user}
+        fromLevel={user?.level ?? 7}
+        toLevel={(user?.level ?? 7) + 1}
+        onClose={() => setShowLevelUpPreview(false)}
+        preview
+        autoPlay
       />
     </View>
   );
@@ -419,6 +438,31 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1,
     fontSize: 12,
+  },
+  testLevelUpBtn: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 255, 255, 0.75)',
+    backgroundColor: 'rgba(2, 12, 32, 0.92)',
+    shadowColor: '#00ffff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  testLevelUpBtnText: {
+    color: '#e6ffff',
+    fontFamily: 'Montserrat-Bold',
+    fontSize: 12,
+    letterSpacing: 3,
+    textTransform: 'uppercase',
+    textShadowColor: 'rgba(0, 210, 255, 0.8)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
   },
 });
 

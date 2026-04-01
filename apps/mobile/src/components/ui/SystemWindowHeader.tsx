@@ -8,13 +8,20 @@ export interface SystemWindowHeaderProps {
   titlePulse?: boolean;
   /** Override outer spacing (e.g. modals vs full panel) */
   containerStyle?: ViewStyle;
+  /** Smaller fixed-size “!” + title (inventory modals). */
+  compact?: boolean;
 }
 
 /**
  * Shared “system window” header: ! in square + title strip + underline glow,
  * matching {@link SoloLevelingPanelFrame} (login / signup).
  */
-export function SystemWindowHeader({ title, titlePulse = true, containerStyle }: SystemWindowHeaderProps) {
+export function SystemWindowHeader({
+  title,
+  titlePulse = true,
+  containerStyle,
+  compact = false,
+}: SystemWindowHeaderProps) {
   const pulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -42,16 +49,25 @@ export function SystemWindowHeader({ title, titlePulse = true, containerStyle }:
     return () => anim.stop();
   }, [titlePulse, pulse]);
 
+  const c = compact ? compactStyles : null;
+
   return (
-    <View style={[styles.headerBlock, containerStyle]}>
-      <Animated.View style={[styles.headerRow, titlePulse && { opacity: pulse }]}>
-        <View style={styles.iconSquareFrame}>
-          <View style={styles.iconCircle}>
-            <Text style={styles.iconText}>!</Text>
+    <View style={[styles.headerBlock, compact && styles.headerBlockCompact, containerStyle]}>
+      <Animated.View
+        style={[
+          styles.headerRow,
+          compact && styles.headerRowCompact,
+          compact && compactStyles.headerRowPadForClose,
+          titlePulse && { opacity: pulse },
+        ]}
+      >
+        <View style={[styles.iconSquareFrame, c?.iconSquareFrame]}>
+          <View style={[styles.iconCircle, c?.iconCircle]}>
+            <Text style={[styles.iconText, c?.iconText]}>!</Text>
           </View>
         </View>
-        <View style={styles.titleTextFrame}>
-          <Text style={styles.headerTitle} numberOfLines={2}>
+        <View style={[styles.titleTextFrame, c?.titleTextFrame]}>
+          <Text style={[styles.headerTitle, c?.headerTitle]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>
             {title}
           </Text>
         </View>
@@ -103,6 +119,12 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     maxWidth: '100%',
   },
+  headerRowCompact: {
+    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    width: '100%',
+  },
   headerBottomLine: {
     position: 'absolute',
     bottom: -1,
@@ -127,6 +149,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 14,
     elevation: 8,
+    flexShrink: 0,
   },
   iconCircle: {
     width: 26,
@@ -177,5 +200,47 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 15,
     textTransform: 'uppercase',
+  },
+  headerBlockCompact: {
+    paddingBottom: 6,
+    marginBottom: 8,
+    paddingHorizontal: 0,
+  },
+});
+
+/** Same visual weight in every modal; smaller title strip for narrow modals */
+const compactStyles = StyleSheet.create({
+  /** Reserve space when a modal close (X) sits top-right over the header row */
+  headerRowPadForClose: {
+    paddingRight: 32,
+  },
+  iconSquareFrame: {
+    width: 28,
+    height: 28,
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  iconCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  iconText: {
+    fontSize: 11,
+  },
+  titleTextFrame: {
+    minHeight: 28,
+    minWidth: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    flex: 1,
+    flexShrink: 1,
+  },
+  headerTitle: {
+    fontSize: 10,
+    letterSpacing: 0.75,
+    lineHeight: 13,
   },
 });
