@@ -70,15 +70,19 @@ export default function SkillSpriteVfx({
   const isAoe = config.vfx_type === 'aoe';
   const progress = useSharedValue(0);
 
-  // --- 2. SOUND EFFECT (play once per skill use, in sync with sprite loops) ---
-  // Create a new Sound instance per play so each one actually plays (expo-av won't replay the same instance while it's playing).
   const soundsRef = useRef<Audio.Sound[]>([]);
   useEffect(() => {
     if (!config.sfx_url) return;
     soundsRef.current = [];
     const timeouts: ReturnType<typeof setTimeout>[] = [];
     const uri = config.sfx_url;
+
     const playOne = () => {
+      const cached = getCachedSfxSound(uri);
+      if (cached) {
+        cached.replayAsync().catch(() => {});
+        return;
+      }
       Audio.Sound.createAsync({ uri })
         .then(({ sound }) => {
           soundsRef.current.push(sound);
@@ -91,13 +95,9 @@ export default function SkillSpriteVfx({
         .catch(() => {});
     };
 
-    const totalDuration = duration * loops;
-
     const baseDelay = Number(playDelayMs) || 0;
     for (let i = 0; i < loops; i++) {
-      let sfxDelay = baseDelay + i * duration;
-      // Reverted the sfxDelay override for projectiles to ensure sounds play before unmount.
-      // The damage number delay in BattleScreen already handles the visual sync.
+      const sfxDelay = baseDelay + i * duration;
       timeouts.push(setTimeout(playOne, sfxDelay));
     }
     return () => {

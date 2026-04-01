@@ -36,6 +36,7 @@ import { DamageNumberLayer } from '@/components/battle/vfx/DamageNumberLayer';
 import { ImpactEffects } from '@/components/battle/ImpactEffects';
 import { useBattleVisualDamage } from '@/hooks/useBattleVisualDamage';
 import { resolvePartyMemberAvatarUri } from '@/utils/partyMemberAvatarUri';
+import { unloadSfxCache } from '@/utils/audio';
 
 export default function BattleScreen() {
   const navigation = useNavigation();
@@ -45,11 +46,10 @@ export default function BattleScreen() {
   const { isTransitioning } = useTransition();
   const { isMuted, setMuted, stopBackgroundMusic, playTrack } = useAudio();
 
-  // Stop global BGM when entering battle
   useEffect(() => {
     stopBackgroundMusic();
     return () => {
-      // Resume global BGM or let next screen handle it
+      unloadSfxCache();
     };
   }, [stopBackgroundMusic]);
 

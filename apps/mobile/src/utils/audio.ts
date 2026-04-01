@@ -85,7 +85,13 @@ async function ensureSoundPool(): Promise<void> {
           soundPoolIdx[key] = 0;
         }),
       );
-    })().catch((e) => console.warn('[Audio] Pool init failed:', e));
+    })().catch((e) => {
+      console.warn('[Audio] Pool init failed:', e);
+    }).finally(() => {
+      if (Object.keys(soundPool).length < POOLED_KEYS.length) {
+        poolReady = null;
+      }
+    });
   }
   await poolReady;
 }
@@ -140,20 +146,47 @@ export const playHunterSound = async (soundKey: SoundKey, force: boolean = false
   }
 };
 
-const sfxSoundCache: Record<string, Audio.Sound> = {};
+const SFX_POOL_SIZE = 2;
+const sfxSoundCache: Record<string, Audio.Sound[]> = {};
+const sfxSoundIdx: Record<string, number> = {};
 
 export async function preloadSfxUrl(uri: string): Promise<void> {
-  if (!uri || sfxSoundCache[uri]) return;
+  const key = uri.trim();
+  if (!key || sfxSoundCache[key]?.length) return;
   try {
-    const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: false });
-    sfxSoundCache[uri] = sound;
+    const instances = await Promise.all(
+      Array.from({ length: SFX_POOL_SIZE }, () =>
+        Audio.Sound.createAsync({ uri: key }, { shouldPlay: false }),
+      ),
+    );
+    sfxSoundCache[key] = instances.map((r) => r.sound);
+    sfxSoundIdx[key] = 0;
   } catch (e) {
-    console.warn('[Audio] SFX preload failed:', uri, e);
+    console.warn('[Audio] SFX preload failed:', key, e);
   }
 }
 
 export function getCachedSfxSound(uri: string): Audio.Sound | null {
-  return sfxSoundCache[uri] ?? null;
+  const key = uri.trim();
+  const pool = sfxSoundCache[key];
+  if (!pool?.length) return null;
+  const idx = sfxSoundIdx[key] ?? 0;
+  sfxSoundIdx[key] = (idx + 1) % pool.length;
+  return pool[idx];
+}
+
+export async function unloadSfxCache(): Promise<void> {
+  const keys = Object.keys(sfxSoundCache);
+  for (const key of keys) {
+    const pool = sfxSoundCache[key];
+    if (pool) {
+      for (const s of pool) {
+        try { await s.unloadAsync(); } catch (_) {}
+      }
+    }
+    delete sfxSoundCache[key];
+    delete sfxSoundIdx[key];
+  }
 }
 
 const WALK_FOOTSTEP_VOL = 0.28;
