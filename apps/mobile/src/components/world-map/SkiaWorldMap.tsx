@@ -30,6 +30,7 @@ import { useTileLibrary } from "../../contexts/TileContext";
 import { SkiaLayeredAvatar } from "./SkiaLayeredAvatar";
 import { SkiaPetSprite } from "./SkiaPetSprite";
 import { getPixiTextureCoords, getLiquidTextureCoords } from "./mapUtils";
+import { CloudLayer } from "../environment/CloudLayer";
 
 interface SkiaWorldMapProps {
   visionGrid: any[];
@@ -660,6 +661,9 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
             );
           })}
         </Group>
+
+        {/* Screen-fixed sky band above map tiles so clouds stay visible */}
+        <CloudLayer screenWidth={width} screenHeight={height} />
 
         {/* NATIVE SKIA PLAYER & PET RENDERING - Depth Sorted without JS Bridge */}
         <Group opacity={petBehindOpacity}>{petSprite}</Group>
