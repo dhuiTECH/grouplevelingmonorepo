@@ -21,16 +21,19 @@ interface TravelMenuProps {
   visible: boolean;
   onClose: () => void;
   user: User | null;
+  /** Client-side movement budget (device steps); travel cost is deducted in onTravelSuccess */
+  availableMovementSteps: number;
   onTravelSuccess: (newX: number, newY: number, cost: number) => void;
   onUnstuck?: () => void;
 }
 
-export const TravelMenu: React.FC<TravelMenuProps> = ({ 
-  visible, 
-  onClose, 
-  user, 
+export const TravelMenu: React.FC<TravelMenuProps> = ({
+  visible,
+  onClose,
+  user,
+  availableMovementSteps,
   onTravelSuccess,
-  onUnstuck
+  onUnstuck,
 }) => {
   const [locations, setLocations] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -81,36 +84,17 @@ export const TravelMenu: React.FC<TravelMenuProps> = ({
     return (dx + dy) * 100;
   };
 
-  const handleTravel = async (location: any) => {
+  const handleTravel = (location: any) => {
     if (!user) return;
     const cost = calculateTravelCost(location.x, location.y);
-    
-    if ((user.steps_banked || 0) < cost) {
+
+    if (availableMovementSteps < cost) {
       alert("Insufficient Stamina! Walk more to travel here.");
       return;
     }
 
-    try {
-      const newSteps = (user.steps_banked || 0) - cost;
-      
-      const { error } = await supabase
-        .from('profiles')
-        .update({ 
-          world_x: location.x, 
-          world_y: location.y,
-          steps_banked: newSteps 
-        })
-        .eq('id', user.id);
-
-      if (error) throw error;
-
-      onTravelSuccess(location.x, location.y, cost);
-      onClose();
-      
-    } catch (err) {
-      console.error("Error traveling:", err);
-      alert("Travel failed. The system is unstable.");
-    }
+    onTravelSuccess(location.x, location.y, cost);
+    onClose();
   };
 
   return (
@@ -245,7 +229,7 @@ export const TravelMenu: React.FC<TravelMenuProps> = ({
           {/* Footer Info */}
           <View style={styles.footer}>
             <Text style={styles.staminaLabel}>AVAILABLE STAMINA:</Text>
-            <Text style={styles.staminaValue}>{user?.steps_banked || 0} STEPS</Text>
+            <Text style={styles.staminaValue}>{availableMovementSteps} STEPS</Text>
           </View>
         </View>
       </View>

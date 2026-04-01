@@ -1,4 +1,12 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { View, StyleSheet, AppState, AppStateStatus } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
@@ -43,10 +51,28 @@ import { useMapData } from "@/hooks/useMapData";
 import { useWalkingSound } from "@/hooks/useWalkingSound";
 import { useSystemNews } from "@/hooks/useSystemNews";
 import { useMapCharacter } from "@/hooks/useMapCharacter";
+import {
+  useLocalMovementBudget,
+  STEPS_PER_TILE,
+} from "@/hooks/useLocalMovementBudget";
 
+import type { User } from "@/types/user";
 import { worldMapStyles } from "./WorldMapScreen.styles";
 
 const TILE_SIZE = 48;
+const DEBUG_WORLD_MAP_SYNC = __DEV__;
+
+function logWorldMapScreenSync(
+  message: string,
+  payload?: Record<string, unknown>,
+) {
+  if (!DEBUG_WORLD_MAP_SYNC) return;
+  if (payload) {
+    console.log(`[WorldMapSync][WorldMapScreen] ${message}`, payload);
+    return;
+  }
+  console.log(`[WorldMapSync][WorldMapScreen] ${message}`);
+}
 
 export const WorldMapScreen = () => {
   const navigation = useNavigation<any>();
@@ -147,11 +173,9 @@ export const WorldMapScreen = () => {
     flushPendingVision,
     visionGrid,
     nodesInVision,
-    fastTravel,
-    bankSteps,
     setCheckpointAlert,
     loading: movingOnMap,
-
+    setAutoTravelReport,
     latestPos,
   } = useExploration(
     setEncounter,
@@ -161,36 +185,69 @@ export const WorldMapScreen = () => {
     activeMapId,
   );
 
-  // Stable ref wrapper so useAnimatedReaction always calls the latest closure
-  // without needing to be re-registered every time `user` changes.
-  const applyPendingSyncRef = useRef<() => void>(() => {});
-  applyPendingSyncRef.current = () => {
-    const pos = latestPos.current;
-    if (!pos || !user) return;
-    setUser({
-      ...user,
-      world_x: pos.x,
-      world_y: pos.y,
-      steps_banked: pos.banked,
+  const stableVisionGridPrevRef = useRef<any[]>([]);
+  const stableVisionGridRef = useRef<any[]>([]);
+  const rawVisionGrid = visionGrid ?? [];
+  const visionGridHasChanged =
+    rawVisionGrid.length !== stableVisionGridPrevRef.current.length ||
+    rawVisionGrid.some((cell, i) => {
+      const prev = stableVisionGridPrevRef.current[i];
+      return (
+        !prev ||
+        prev.x !== cell.x ||
+        prev.y !== cell.y ||
+        (prev.tiles?.length ?? 0) !== (cell.tiles?.length ?? 0)
+      );
     });
-  };
+  if (visionGridHasChanged) {
+    stableVisionGridPrevRef.current = rawVisionGrid;
+    stableVisionGridRef.current = rawVisionGrid;
+  }
 
-  // When movement stops: sync position to React AND flush deferred map/vision updates.
-  // No server calls or setState during movement — all batched here.
-  const callOnMovementStop = useCallback(() => {
-    applyPendingSyncRef.current();
-    flushPendingVision();
-  }, [flushPendingVision]);
+  const {
+    movementBudget,
+    displayBudget,
+    spendMovementBudget,
+    addMovementBudget,
+  } = useLocalMovementBudget();
 
-  // Sync React state (setUser + vision) only when the player fully stops moving.
-  useAnimatedReaction(
-    () => isMoving.value,
-    (moving, wasMoving) => {
-      if (wasMoving && !moving) {
-        runOnJS(callOnMovementStop)();
-      }
-    },
-  ); // callOnMovementStop = applyPendingSync + flushPendingVision
+  // Ref keeps saveSessionPosition stable; do not call setUser inside it (avoids focus blur/enter loops).
+  const flushPendingVisionRef = useRef(flushPendingVision);
+  flushPendingVisionRef.current = flushPendingVision;
+  const userIdRef = useRef(user?.id);
+  userIdRef.current = user?.id;
+
+  /** DB + vision flush only. React `user` coords are updated in useFocusEffect cleanup (real blur). */
+  const saveSessionPosition = useCallback(() => {
+    const pos = latestPos.current;
+    const uid = userIdRef.current;
+    if (!pos || !uid) {
+      logWorldMapScreenSync("saveSessionPosition:skip", {
+        hasPos: Boolean(pos),
+        hasUserId: Boolean(uid),
+      });
+      return;
+    }
+    logWorldMapScreenSync("saveSessionPosition:start", {
+      x: pos.x,
+      y: pos.y,
+      userId: uid,
+    });
+    supabase
+      .from("profiles")
+      .update({
+        world_x: pos.x,
+        world_y: pos.y,
+        last_sync_time: new Date().toISOString(),
+      })
+      .eq("id", uid)
+      .then();
+    flushPendingVisionRef.current();
+    logWorldMapScreenSync("saveSessionPosition:end", {
+      x: pos.x,
+      y: pos.y,
+    });
+  }, []);
 
   useEffect(() => {
     if (activeMapId && user != null) {
@@ -231,25 +288,28 @@ export const WorldMapScreen = () => {
     activeDirection.value = null;
   }, [activeDirection]);
 
-  // Safety Reset: Force stop movement if app goes background/inactive
   useEffect(() => {
-    const subscription = AppState.addEventListener(
-      "change",
-      (nextAppState: AppStateStatus) => {
-        if (nextAppState === "background" || nextAppState === "inactive") {
-          activeDirection.value = null;
-          isMoving.value = false;
-        }
-      },
-    );
-    return () => subscription.remove();
-  }, [activeDirection, isMoving]);
+    const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
+      if (next === "background" || next === "inactive") {
+        logWorldMapScreenSync("appState:saveSessionPosition", { next });
+        activeDirection.value = null;
+        isMoving.value = false;
+        saveSessionPosition();
+      }
+    });
+    return () => sub.remove();
+  }, [activeDirection, isMoving, saveSessionPosition]);
 
   useFocusEffect(
     useCallback(() => {
+      logWorldMapScreenSync("focus:enter");
       playTrack("Beginning Map");
       refreshProfile();
-    }, [playTrack, refreshProfile]),
+      return () => {
+        logWorldMapScreenSync("focus:blur:saveSessionPosition");
+        saveSessionPosition();
+      };
+    }, [playTrack, refreshProfile, saveSessionPosition]),
   );
 
   const handleUnstuck = useCallback(async () => {
@@ -276,7 +336,7 @@ export const WorldMapScreen = () => {
     setInteractionVisible(false);
   }, [setCheckpointAlert]);
 
-  const { pendingSteps, setPendingSteps } = useStepTracker();
+  const { pendingSteps, acknowledgeOfflineStepsPrompt } = useStepTracker();
   const { step } = useTutorial();
   const { systemNews, setSystemNews, navigationTarget, handleNewsTap } =
     useSystemNews();
@@ -284,25 +344,81 @@ export const WorldMapScreen = () => {
   const handleTravelSuccess = useCallback(
     (newX: number, newY: number, cost: number) => {
       if (!user) return;
+      if (!spendMovementBudget(cost)) return;
+      const now = new Date().toISOString();
       setUser({
         ...user,
         world_x: newX,
         world_y: newY,
-        steps_banked: (user.steps_banked || 0) - cost,
+        last_sync_time: now,
       });
       refreshVision(newX, newY, true, flushPendingVision);
     },
-    [user, setUser, refreshVision, flushPendingVision],
+    [user, setUser, spendMovementBudget, refreshVision, flushPendingVision],
+  );
+
+  const fastTravel = useCallback(
+    async (stepsAvailable: number) => {
+      if (!user) return;
+      const tilesToMove = Math.floor(stepsAvailable / STEPS_PER_TILE);
+      if (tilesToMove < 1) {
+        addMovementBudget(stepsAvailable);
+        return;
+      }
+      const ny = (user.world_y || 0) + tilesToMove;
+      const nx = user.world_x || 0;
+      const now = new Date().toISOString();
+      await AsyncStorage.setItem(
+        "last_known_coords",
+        JSON.stringify({ x: nx, y: ny }),
+      ).catch(() => {});
+      setUser({ ...user, world_y: ny, last_sync_time: now });
+      setAutoTravelReport({
+        tilesTraveled: tilesToMove,
+        xpGained: tilesToMove * 50,
+        itemsFound: Math.random() > 0.5 ? ["Mana Crystal"] : [],
+      });
+    },
+    [user, setUser, addMovementBudget, setAutoTravelReport],
+  );
+
+  const bankSteps = useCallback(
+    (steps: number) => {
+      addMovementBudget(steps);
+    },
+    [addMovementBudget],
   );
 
   const handleSystemChoice = useCallback(
     async (choice: "AUTO" | "MANUAL") => {
       const steps = pendingSteps;
-      setPendingSteps(0);
+      if (steps <= 0) return;
+      // Invalidate any in-flight pedometer read so it cannot re-set pending after dismiss
+      acknowledgeOfflineStepsPrompt();
       if (choice === "AUTO") await fastTravel(steps);
-      else await bankSteps(steps);
+      else bankSteps(steps);
+      // Advance sync anchor so getStepCountAsync(last_sync, now) does not re-count this batch
+      const now = new Date().toISOString();
+      (setUser as Dispatch<SetStateAction<User | null>>)((prev) =>
+        prev ? { ...prev, last_sync_time: now } : null,
+      );
+      if (user?.id) {
+        // Persist sync anchor so refreshProfile/user reload doesn't revert it and re-open prompt.
+        supabase
+          .from("profiles")
+          .update({ last_sync_time: now })
+          .eq("id", user.id)
+          .then();
+      }
     },
-    [pendingSteps, setPendingSteps, fastTravel, bankSteps],
+    [
+      pendingSteps,
+      acknowledgeOfflineStepsPrompt,
+      fastTravel,
+      bankSteps,
+      setUser,
+      user?.id,
+    ],
   );
 
   const startTestBattle = useCallback(async () => {
@@ -371,7 +487,7 @@ export const WorldMapScreen = () => {
         />
 
         <SkiaWorldMap
-          visionGrid={visionGrid}
+          visionGrid={stableVisionGridRef.current}
           nodesInVision={nodesInVision}
           mapSettings={mapSettings}
           spawnX={user?.world_x ?? 0}
@@ -383,7 +499,7 @@ export const WorldMapScreen = () => {
           activeDirection={activeDirection}
           isRunning={isRunning}
           isMoving={isMoving}
-          bankedSteps={bankedSteps}
+          movementBudget={movementBudget}
           mapLeft={mapLeft}
           mapTop={mapTop}
           onTileEnter={onTileEnter}
@@ -414,6 +530,7 @@ export const WorldMapScreen = () => {
           onPressWorld={() => setTravelMenuVisible(true)}
           onPressBattle={startTestBattle}
           floatAnim={floatAnim}
+          localSteps={displayBudget}
         />
 
         <View style={worldMapStyles.dpadLayer} pointerEvents="box-none">
@@ -424,6 +541,7 @@ export const WorldMapScreen = () => {
           visible={travelMenuVisible}
           onClose={() => setTravelMenuVisible(false)}
           user={user}
+          availableMovementSteps={displayBudget}
           onTravelSuccess={handleTravelSuccess}
           onUnstuck={handleUnstuck}
         />

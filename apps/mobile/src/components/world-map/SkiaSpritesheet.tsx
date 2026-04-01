@@ -14,11 +14,14 @@ export const SkiaSpritesheet: React.FC<SkiaSpritesheetProps> = ({
   image, numFrames, durationSecs, destRect, animationFrame
 }) => {
   const safeFrames = Math.max(1, numFrames);
-  
+
+  // One frame width in local space — round to reduce float noise from tileSize/frame scaling.
+  const frameStep = Math.round(destRect.width * 10000) / 10000;
+
   // We make the drawn image N times wider than the destination rectangle.
-  const fullWidth = destRect.width * safeFrames;
+  const fullWidth = frameStep * safeFrames;
   const fullHeight = destRect.height;
-  
+
   // Render the full strip starting at the same origin as the destRect
   const fullRect = rect(destRect.x, destRect.y, fullWidth, fullHeight);
 
@@ -28,19 +31,17 @@ export const SkiaSpritesheet: React.FC<SkiaSpritesheetProps> = ({
     const safeDuration = durationSecs > 0 ? durationSecs : 1;
     const progress = (animationFrame.value % safeDuration) / safeDuration;
     const frameIndex = Math.floor(progress * safeFrames) % safeFrames;
-    
-    // VERY IMPORTANT: Do NOT use absolute pixels based on full width.
-    // Instead, shift by exactly the width of ONE frame (destRect.width) multiplied by the frameIndex.
-    // If the image is natively huge (e.g., 2048px), destRect.width will be scaled down (e.g. 192px).
-    // This ensures we always move exactly one visual frame over.
-    return [{ translateX: -frameIndex * destRect.width }];
+
+    // Integer-pixel shift (frameStep) — reduces strip vs clip mismatch with Nearest + scaled camera.
+    const offsetX = -Math.round(frameIndex * frameStep);
+    return [{ translateX: offsetX }];
   });
 
   return (
     <Group clip={destRect}>
       <Paint antiAlias={false} />
       <Group transform={transform}>
-        {/* We use fit="fill" so the full strip perfectly stretches across the N * destRect.width area */}
+        {/* We use fit="fill" so the full strip stretches across frameStep * numFrames wide */}
         <Image image={image} rect={fullRect} fit="fill" sampling={{ filter: FilterMode.Nearest }} antiAlias={false} />
       </Group>
     </Group>
