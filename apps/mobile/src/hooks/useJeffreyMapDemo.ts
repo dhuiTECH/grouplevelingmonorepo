@@ -143,16 +143,17 @@ export function useJeffreyMapDemo({
    */
   const onBankedStepsSpent = useCallback(
     (cost: number) => {
+      console.log(LOG_PREFIX, "onBankedStepsSpent called", { cost, encounterId, demoDone: demoDoneRef.current });
       if (!encounterId || demoDoneRef.current) return;
       bankedStepsSpentRef.current += cost;
-      logDev("banked steps spent", {
+      console.log(LOG_PREFIX, "banked steps spent", {
         total: bankedStepsSpentRef.current,
         need: JEFFREY_MAP_DEMO_TRIGGER_STEPS,
       });
       if (bankedStepsSpentRef.current < JEFFREY_MAP_DEMO_TRIGGER_STEPS) return;
       demoDoneRef.current = true;
       suppressEncounterRollRef.current = true;
-      logDev("threshold reached — triggering battle");
+      console.log(LOG_PREFIX, "threshold reached — triggering battle");
       void triggerBattleRef.current();
     },
     [encounterId],

@@ -263,6 +263,7 @@ export const WorldMapScreen = () => {
 
   const spendStepsBank = useCallback(
     (cost: number) => {
+      console.log("[WorldMap] spendStepsBank called", { cost, budget: movementBudget.value, hasUser: !!userRef.current });
       if (cost <= 0) return true;
       if (movementBudget.value < cost) return false;
       movementBudget.value -= cost;
