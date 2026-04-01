@@ -1,11 +1,8 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import * as Haptics from "expo-haptics";
-import { useSharedValue } from "react-native-reanimated";
-
-const MOVE_COST = 100;
 // Keep chunk size the same
 const CHUNK_SIZE = 16;
 
@@ -25,6 +22,39 @@ const PREFETCH_RADIUS_Y = 48;
 const BOOTSTRAP_PREFETCH_RADIUS_X = 48;
 const BOOTSTRAP_PREFETCH_RADIUS_Y = 48;
 
+const EXPLORATION_CACHE_VERSION = 1;
+const DEBUG_WORLD_MAP_SYNC = __DEV__;
+
+function logWorldMapSync(message: string, payload?: Record<string, unknown>) {
+  if (!DEBUG_WORLD_MAP_SYNC) return;
+  if (payload) {
+    console.log(`[WorldMapSync][useExploration] ${message}`, payload);
+    return;
+  }
+  console.log(`[WorldMapSync][useExploration] ${message}`);
+}
+
+function makeExplorationCacheKey(userId: string, mapId: string) {
+  return `exploration_cache_v${EXPLORATION_CACHE_VERSION}:${userId}:${mapId}`;
+}
+
+function mapToObject(map: Map<string, any>) {
+  const out: Record<string, any> = {};
+  map.forEach((value, key) => {
+    out[key] = value;
+  });
+  return out;
+}
+
+function objectToMap(value: Record<string, any> | undefined) {
+  const map = new Map<string, any>();
+  if (!value || typeof value !== "object") return map;
+  Object.entries(value).forEach(([k, v]) => {
+    map.set(k, v);
+  });
+  return map;
+}
+
 export const useExploration = (
   setEncounter: (encounter: any | null) => void,
   setInteractionVisible: (visible: boolean) => void,
@@ -33,7 +63,7 @@ export const useExploration = (
   currentMapId?: string | null,
   tileLibrary?: Map<string, any>,
 ) => {
-  const { user, setUser } = useAuth();
+  const { user } = useAuth();
   const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
   const [nodes, setNodes] = useState<any[]>([]);
   const [chunksVersion, setChunksVersion] = useState(0);
@@ -57,15 +87,12 @@ export const useExploration = (
     y: user?.world_y || 0,
   });
 
-  // Debounced DB write timer — batches rapid tile crossings into fewer Supabase calls
-  const dbWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestPos = useRef<{ x: number; y: number; banked: number }>({
+  /** Latest grid position; synced to React on movement stop. Server sync is batched (useMapSessionSync). */
+  const latestPos = useRef<{ x: number; y: number }>({
     x: user?.world_x || 0,
     y: user?.world_y || 0,
-    banked: user?.steps_banked || 0,
   });
   const nodeLookupRef = useRef<Map<string, any>>(new Map());
-  const bankedSteps = useSharedValue(user?.steps_banked || 0);
 
   // Pre-cached encounter pool — populated once on map load, never read mid-movement via DB
   const encounterPoolRef = useRef<any[]>([]);
@@ -83,9 +110,8 @@ export const useExploration = (
     y: user?.world_y || 0,
   });
   const chunksVersionRef = useRef(0);
-
-  // Local ref for step limit so we don't trigger setUser on every step (avoids GC stutters)
-  const localBankRef = useRef(user?.steps_banked || 0);
+  /** Chunk cache updated in refreshVision; React bumps `chunksVersion` only in flushPendingVision (movement stop). */
+  const pendingChunksBumpRef = useRef(false);
 
   useEffect(() => {
     userRef.current = user;
@@ -101,11 +127,74 @@ export const useExploration = (
     nodeLookupRef.current = lookup;
   }, [nodes]);
 
-  // Keep the ref synced if the server or a menu updates the user's steps
+  // Hydrate local exploration cache immediately for local-first world rendering.
   useEffect(() => {
-    localBankRef.current = user?.steps_banked || 0;
-    bankedSteps.value = localBankRef.current;
-  }, [user?.steps_banked]);
+    const userId = user?.id;
+    if (!userId || !currentMapId || currentMapId === "undefined") return;
+
+    let cancelled = false;
+    const cacheKey = makeExplorationCacheKey(userId, currentMapId);
+
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(cacheKey);
+        if (!raw || cancelled) return;
+        const parsed = JSON.parse(raw);
+
+        if (Array.isArray(parsed?.nodes)) {
+          nodesRef.current = parsed.nodes;
+          setNodes(parsed.nodes);
+        }
+
+        if (Array.isArray(parsed?.unlocked)) {
+          const unlockedSet = new Set<string>(parsed.unlocked);
+          unlockedRef.current = unlockedSet;
+          setUnlocked(unlockedSet);
+        }
+
+        if (parsed?.chunkCache && typeof parsed.chunkCache === "object") {
+          chunkCache.current = objectToMap(parsed.chunkCache);
+          chunksVersionRef.current += 1;
+          setChunksVersion((v) => v + 1);
+        }
+
+        if (parsed?.gridCenter && typeof parsed.gridCenter.x === "number" && typeof parsed.gridCenter.y === "number") {
+          gridCenterRef.current = parsed.gridCenter;
+          lastRefreshCenter.current = parsed.gridCenter;
+          setGridCenter(parsed.gridCenter);
+        }
+      } catch (e) {
+        console.warn("[useExploration] cache hydrate failed:", e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, currentMapId]);
+
+  // Persist exploration cache in small batches.
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId || !currentMapId || currentMapId === "undefined") return;
+
+    const cacheKey = makeExplorationCacheKey(userId, currentMapId);
+    const id = setTimeout(() => {
+      AsyncStorage.setItem(
+        cacheKey,
+        JSON.stringify({
+          nodes: nodesRef.current,
+          unlocked: Array.from(unlockedRef.current),
+          chunkCache: mapToObject(chunkCache.current),
+          gridCenter: gridCenterRef.current,
+        }),
+      ).catch((e) => {
+        console.warn("[useExploration] cache persist failed:", e);
+      });
+    }, 800);
+
+    return () => clearTimeout(id);
+  }, [user?.id, currentMapId, nodes, unlocked, chunksVersion]);
 
   // Pre-cache encounter pool on map load so onTileEnter never does a DB read during movement
   useEffect(() => {
@@ -229,15 +318,16 @@ export const useExploration = (
   }, [gridCenter.x, gridCenter.y, unlocked, nodes, globalTileMap]);
 
   // 2. REFRESH DATA (Fetching Chunks/Nodes/Discoveries)
-  // Updates refs only — never setState during fetch. Caller passes onComplete to flush to React
-  // when appropriate (e.g. initial load). When called from flushPendingVision on stop, no onComplete:
-  // we defer the flush to the next stop to avoid re-renders mid-movement.
+  // Chunk data is written to chunkCache refs; `chunksVersion` bumps in flushPendingVision
+  // (movement stop) via pendingChunksBumpRef — avoids globalTileMap/visionGrid re-renders mid-move.
+  // Discoveries/nodes still flush via flushPendingVision on movement stop.
   const refreshVision = useCallback(
     async (
       cx: number,
       cy: number,
       force: boolean = false,
       onComplete?: () => void,
+      opts?: { chunksOnly?: boolean },
     ) => {
       if (!userRef.current?.id) return;
 
@@ -260,6 +350,78 @@ export const useExploration = (
             missingChunks.push(key);
           }
         }
+      }
+
+      logWorldMapSync("refreshVision:start", {
+        cx,
+        cy,
+        force,
+        chunksOnly: Boolean(opts?.chunksOnly),
+        missingChunks: missingChunks.length,
+      });
+
+      // Movement prefetch: only pull map_chunks (no discoveries/nodes) to avoid network + setState storms.
+      if (opts?.chunksOnly) {
+        if (missingChunks.length === 0) return;
+        missingChunks.forEach((key) => inFlightChunks.current.add(key));
+        const chunkCoords = missingChunks.map((key) => {
+          const [x, y] = key.split(",").map(Number);
+          return { x, y };
+        });
+        const minX = Math.min(...chunkCoords.map((c) => c.x));
+        const maxX = Math.max(...chunkCoords.map((c) => c.x));
+        const minY = Math.min(...chunkCoords.map((c) => c.y));
+        const maxY = Math.max(...chunkCoords.map((c) => c.y));
+
+        let wroteChunkTiles = false;
+        try {
+          const { data, error } = await supabase
+            .from("map_chunks")
+            .select("*")
+            .gte("chunk_x", minX)
+            .lte("chunk_x", maxX)
+            .gte("chunk_y", minY)
+            .lte("chunk_y", maxY);
+          if (error) throw error;
+
+          if (data && Array.isArray(data)) {
+            const fetchedMap = new Map<string, any>();
+            data.forEach((chunk: any) => {
+              fetchedMap.set(`${chunk.chunk_x},${chunk.chunk_y}`, chunk);
+            });
+
+            missingChunks.forEach((key) => {
+              const chunkData = fetchedMap.get(key);
+              const rawTiles = chunkData?.tile_data || [];
+              const tile_data = rawTiles.map((t: any) => ({
+                ...t,
+                cleanUrl: t.imageUrl ? t.imageUrl.split("?")[0] : undefined,
+              }));
+              chunkCache.current.set(
+                key,
+                chunkData ? { ...chunkData, tile_data } : { tile_data: [] },
+              );
+              wroteChunkTiles = true;
+            });
+          }
+
+          if (wroteChunkTiles) {
+            chunksVersionRef.current += 1;
+            pendingChunksBumpRef.current = true;
+          }
+          logWorldMapSync("refreshVision:chunksOnly:complete", {
+            cx,
+            cy,
+            fetchedChunks: missingChunks.length,
+            wroteChunkTiles,
+          });
+          onComplete?.();
+        } catch (e) {
+          console.warn("[useExploration] refreshVision (chunksOnly) failed:", e);
+        } finally {
+          missingChunks.forEach((key) => inFlightChunks.current.delete(key));
+        }
+        return;
       }
 
       const promises: Promise<any>[] = [];
@@ -306,154 +468,126 @@ export const useExploration = (
         );
       }
 
-      const results = await Promise.all(promises);
-      const discoveriesRes = results[0];
+      let wroteChunkTiles = false;
 
-      let nodesRes: { data?: any[] } | undefined;
-      let newChunksRes: { data?: any[] } | undefined;
+      try {
+        const results = await Promise.all(promises);
+        const discoveriesRes = results[0];
 
-      let resultIndex = 1;
-      if (force || (cachedNodes || []).length === 0) {
-        nodesRes = results[resultIndex++];
-      } else {
-        nodesRes = { data: cachedNodes || [] };
-      }
+        let nodesRes: { data?: any[] } | undefined;
+        let newChunksRes: { data?: any[] } | undefined;
 
-      if (missingChunks.length > 0) {
-        newChunksRes = results[resultIndex];
-
-        if (newChunksRes?.data && Array.isArray(newChunksRes.data)) {
-          const fetchedMap = new Map<string, any>();
-          newChunksRes.data.forEach((chunk: any) => {
-            fetchedMap.set(`${chunk.chunk_x},${chunk.chunk_y}`, chunk);
-          });
-
-          missingChunks.forEach((key) => {
-            const chunkData = fetchedMap.get(key);
-            const rawTiles = chunkData?.tile_data || [];
-            const tile_data = rawTiles.map((t: any) => ({
-              ...t,
-              cleanUrl: t.imageUrl ? t.imageUrl.split("?")[0] : undefined,
-            }));
-            chunkCache.current.set(
-              key,
-              chunkData ? { ...chunkData, tile_data } : { tile_data: [] },
-            );
-            inFlightChunks.current.delete(key);
-          });
+        let resultIndex = 1;
+        if (force || (cachedNodes || []).length === 0) {
+          nodesRes = results[resultIndex++];
+        } else {
+          nodesRes = { data: cachedNodes || [] };
         }
+
+        if (missingChunks.length > 0) {
+          newChunksRes = results[resultIndex];
+
+          if (newChunksRes?.data && Array.isArray(newChunksRes.data)) {
+            const fetchedMap = new Map<string, any>();
+            newChunksRes.data.forEach((chunk: any) => {
+              fetchedMap.set(`${chunk.chunk_x},${chunk.chunk_y}`, chunk);
+            });
+
+            missingChunks.forEach((key) => {
+              const chunkData = fetchedMap.get(key);
+              const rawTiles = chunkData?.tile_data || [];
+              const tile_data = rawTiles.map((t: any) => ({
+                ...t,
+                cleanUrl: t.imageUrl ? t.imageUrl.split("?")[0] : undefined,
+              }));
+              chunkCache.current.set(
+                key,
+                chunkData ? { ...chunkData, tile_data } : { tile_data: [] },
+              );
+              wroteChunkTiles = true;
+            });
+          }
+        }
+
+        if (discoveriesRes?.data && Array.isArray(discoveriesRes.data)) {
+          unlockedRef.current = new Set<string>(
+            discoveriesRes.data.map((d: any) => `${d.x},${d.y}`),
+          );
+        }
+
+        if (nodesRes?.data && Array.isArray(nodesRes.data)) {
+          const mapped = nodesRes.data.map((n: any) => ({
+            ...n,
+            x: Number(n.global_x ?? n.x ?? 0),
+            y: Number(n.global_y ?? n.y ?? 0),
+          }));
+          nodesRef.current = mapped;
+        }
+
+        lastRefreshCenter.current = { x: cx, y: cy };
+        gridCenterRef.current = { x: cx, y: cy };
+        hasPendingVisionRef.current = true;
+
+        if (wroteChunkTiles) {
+          chunksVersionRef.current += 1;
+          pendingChunksBumpRef.current = true;
+        }
+        logWorldMapSync("refreshVision:full:complete", {
+          cx,
+          cy,
+          force,
+          fetchedChunks: missingChunks.length,
+          wroteChunkTiles,
+          discoveries: unlockedRef.current.size,
+          nodes: nodesRef.current.length,
+        });
+
+        onComplete?.();
+      } catch (e) {
+        console.warn("[useExploration] refreshVision failed:", e);
+      } finally {
+        missingChunks.forEach((key) => inFlightChunks.current.delete(key));
       }
-
-      // Update refs only — no setState. Flush to React via flushPendingVision.
-      if (discoveriesRes?.data && Array.isArray(discoveriesRes.data)) {
-        unlockedRef.current = new Set<string>(
-          discoveriesRes.data.map((d: any) => `${d.x},${d.y}`),
-        );
-      }
-
-      if (nodesRes?.data && Array.isArray(nodesRes.data)) {
-        const mapped = nodesRes.data.map((n: any) => ({
-          ...n,
-          x: Number(n.global_x ?? n.x ?? 0),
-          y: Number(n.global_y ?? n.y ?? 0),
-        }));
-        nodesRef.current = mapped;
-      }
-
-      lastRefreshCenter.current = { x: cx, y: cy };
-      gridCenterRef.current = { x: cx, y: cy };
-      chunksVersionRef.current += 1;
-      hasPendingVisionRef.current = true;
-
-      onComplete?.();
     },
     [],
   );
 
   // Applies deferred vision data to React state. Call when player stops.
-  // Also kicks off a new fetch if we drifted during movement.
   const flushPendingVision = useCallback(() => {
+    logWorldMapSync("flushPendingVision:start", {
+      hasPendingVision: hasPendingVisionRef.current,
+      hasPendingCenter: Boolean(pendingRefreshCenterRef.current),
+      gridCenterRef: { ...gridCenterRef.current },
+    });
+
     if (hasPendingVisionRef.current) {
       setUnlocked(unlockedRef.current);
       setNodes(nodesRef.current);
-      setGridCenter(gridCenterRef.current);
-      setChunksVersion((v) => v + 1); // force memo invalidation
       hasPendingVisionRef.current = false;
     }
 
-    const pending = pendingRefreshCenterRef.current;
-    if (pending) {
-      pendingRefreshCenterRef.current = null;
-      // Center grid optimistically so camera matches player position while fetch runs
-      setGridCenter({ x: pending.x, y: pending.y });
-      lastRefreshCenter.current = { x: pending.x, y: pending.y };
-      refreshVision(pending.x, pending.y, true);
-    }
-  }, [refreshVision]);
-
-  // AUTO-HUNT
-  const fastTravel = async (stepsAvailable: number) => {
-    if (!user) return;
-    const tilesToMove = Math.floor(stepsAvailable / MOVE_COST);
-
-    if (tilesToMove < 1) {
-      await bankSteps(stepsAvailable);
-      return;
+    if (pendingChunksBumpRef.current) {
+      pendingChunksBumpRef.current = false;
+      setChunksVersion((v) => v + 1);
     }
 
-    let ny = (user.world_y || 0) + tilesToMove;
-    const nx = user.world_x || 0;
+    // Apply the latest known player position to gridCenter.
+    const target = pendingRefreshCenterRef.current ?? gridCenterRef.current;
+    pendingRefreshCenterRef.current = null;
 
-    const report = {
-      tilesTraveled: tilesToMove,
-      xpGained: tilesToMove * 50,
-      itemsFound: Math.random() > 0.5 ? ["Mana Crystal"] : [],
-    };
+    setGridCenter({ x: target.x, y: target.y });
+    lastRefreshCenter.current = { x: target.x, y: target.y };
+    gridCenterRef.current = { x: target.x, y: target.y };
 
-    const now = new Date().toISOString();
-
-    await supabase
-      .from("profiles")
-      .update({
-        world_y: ny,
-        last_sync_time: now,
-      })
-      .eq("id", user.id);
-
-    // Save fresh coords to local storage
-    AsyncStorage.setItem(
-      "last_known_coords",
-      JSON.stringify({ x: nx, y: ny }),
-    ).catch((e) => {
-      console.warn("Failed to save local coordinates:", e);
+    // No refreshVision here; chunks are prefetched during movement via chunksOnly.
+    logWorldMapSync("flushPendingVision:end", {
+      gridCenterX: target.x,
+      gridCenterY: target.y,
     });
-
-    setUser({ ...user, world_y: ny, last_sync_time: now });
-    setAutoTravelReport(report);
-  };
-
-  // MANUAL BANK
-  const bankSteps = async (steps: number) => {
-    if (!user) return;
-    const newTotal = (user.steps_banked || 0) + steps;
-
-    const now = new Date().toISOString();
-
-    await supabase
-      .from("profiles")
-      .update({
-        steps_banked: newTotal,
-        last_sync_time: now,
-      })
-      .eq("id", user.id);
-
-    setUser({ ...user, steps_banked: newTotal, last_sync_time: now });
-  };
+  }, []);
 
   // MANUAL MOVE (Triggered by UI thread frame loop via runOnJS)
-  // Fully synchronous — no await, no setUser, no DB reads.
-  // DB write is fire-and-forget; React state sync happens only when movement stops
-  // via applyPendingSync in WorldMapScreen.
+  // Fully synchronous — no await, no setUser. Profile world position saves on map blur / background (WorldMapScreen).
   const onTileEnter = useCallback(
     (nx: number, ny: number) => {
       if (
@@ -465,23 +599,11 @@ export const useExploration = (
       tileEnterBusy.current = true;
 
       try {
-        if (localBankRef.current < MOVE_COST) return;
-
-        localBankRef.current -= MOVE_COST;
-        bankedSteps.value = localBankRef.current;
-        latestPos.current = { x: nx, y: ny, banked: localBankRef.current };
+        latestPos.current = { x: nx, y: ny };
         lastProcessedTile.current = { x: nx, y: ny };
 
-        // Node collision — local ref only, no DB read
         const u = userRef.current;
-        const currentNodes = nodesRef.current || [];
-        let node: any = null;
-        for (let i = 0; i < currentNodes.length; i++) {
-          if (currentNodes[i].x === nx && currentNodes[i].y === ny) {
-            node = currentNodes[i];
-            break;
-          }
-        }
+        const node = nodeLookupRef.current.get(`${nx},${ny}`) ?? null;
 
         if (node) {
           // Discovery upserts — fire and forget, never awaited
@@ -545,43 +667,42 @@ export const useExploration = (
           }
         }
 
-        // Queue vision refresh — never call server during movement.
-        // flushPendingVision (on stop) will fetch when player stops.
+        pendingRefreshCenterRef.current = { x: nx, y: ny };
         const dist =
           Math.abs(nx - lastRefreshCenter.current.x) +
           Math.abs(ny - lastRefreshCenter.current.y);
         if (dist >= GRID_REFRESH_DISTANCE) {
-          pendingRefreshCenterRef.current = { x: nx, y: ny };
-          // Update gridCenter immediately during movement to prevent black spaces.
-          // Chunk cache already covers prefetch radius; we just recenter the visible grid.
-          setGridCenter({ x: nx, y: ny });
+          logWorldMapSync("onTileEnter:gridRefreshThreshold", {
+            nx,
+            ny,
+            dist,
+            threshold: GRID_REFRESH_DISTANCE,
+          });
+          // Do not call setGridCenter here — that is setState mid-movement.
+          // pendingRefreshCenterRef already tracks this; flushPendingVision applies it on stop.
           lastRefreshCenter.current = { x: nx, y: ny };
+          void refreshVision(nx, ny, false, undefined, { chunksOnly: true });
         }
 
-        // DB position write — fire and forget, NO setUser.
-        // React state sync happens in WorldMapScreen via applyPendingSync when isMoving stops.
-        if (dbWriteTimer.current) clearTimeout(dbWriteTimer.current);
-        dbWriteTimer.current = setTimeout(() => {
-          const pos = latestPos.current;
-          const userForSync = userRef.current;
-          if (!userForSync) return;
-          supabase
-            .from("profiles")
-            .update({
-              world_x: pos.x,
-              world_y: pos.y,
-              steps_banked: pos.banked,
-            })
-            .eq("id", userForSync.id)
-            .then();
-          // No setUser — WorldMapScreen owns that via applyPendingSync
-        }, 500);
       } finally {
         tileEnterBusy.current = false;
       }
     },
-    [currentMapId],
+    [currentMapId, refreshVision],
   ); // Stable — reads user/nodes/pool from refs
 
-  return { onTileEnter, move: () => {}, refreshVision, flushPendingVision, visionGrid, nodesInVision, loading: false, fastTravel, bankSteps, autoTravelReport, setAutoTravelReport, checkpointAlert, setCheckpointAlert, latestPos, bankedSteps };
+  return {
+    onTileEnter,
+    move: () => {},
+    refreshVision,
+    flushPendingVision,
+    visionGrid,
+    nodesInVision,
+    loading: false,
+    autoTravelReport,
+    setAutoTravelReport,
+    checkpointAlert,
+    setCheckpointAlert,
+    latestPos,
+  };
 };

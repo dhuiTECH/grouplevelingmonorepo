@@ -80,8 +80,8 @@ export default function LandingPageClient() {
     <div className="min-h-screen bg-slate-900 font-sans text-white overflow-x-hidden">
       {/* 
         HERO SECTION 
-        - Mobile: hero-banner-mobile.webp + lightning sword.mp4 (9:16)
-        - Desktop: hero-banner.webp + Lightningsword_1.webm
+        - Mobile: hero-banner-mobile.webp + lightning_mobile.gif (same dimensions)
+        - Desktop: hero-banner.webp + lightningsword.gif (same dimensions)
       */}
       <section className="relative z-20 w-full aspect-[9/16] md:aspect-auto md:h-[800px]">
         {/* Background Assets Layer */}
@@ -100,40 +100,19 @@ export default function LandingPageClient() {
             />
           </picture>
 
-          {/* 2. Video Overlay */}
-          {isMobile !== null && (
-            <>
-              {isMobile ? (
-                <video
-                  autoPlay
-                  muted
-                  loop
-                  playsInline
-                  style={{ mixBlendMode: "screen", zIndex: 10, opacity: 0.6 }}
-                  className="absolute inset-0 w-full h-full object-contain scale-[1.02] -translate-y-[-7.7%] translate-x-[4.9%]"
-                >
-                  <source
-                    src="/website/lightning%20sword.mp4"
-                    type='video/mp4; codecs="hvc1"'
-                  />
-                  <source
-                    src="/website/lightning%20sword.mp4"
-                    type="video/mp4"
-                  />
-                </video>
-              ) : (
-                <video
-                  src="/website/Lightningsword_1.webm"
-                  autoPlay
-                  muted
-                  loop
-                  playsInline
-                  className="absolute top-[39.5%] right-[0.090%] w-[60%] h-[560px] object-contain mix-blend-screen scale-[1.7] origin-bottom-right translate-x-[9.9px]"
-                  style={{ zIndex: 10 }}
-                />
-              )}
-            </>
-          )}
+          {/* 2. Lightning overlay (GIFs match hero banner pixel dimensions) */}
+          <img
+            src="/website/lightning_mobile.gif"
+            alt=""
+            aria-hidden
+            className="absolute inset-0 z-10 h-full w-full object-cover object-center mix-blend-screen opacity-60 md:hidden pointer-events-none"
+          />
+          <img
+            src="/website/lightningsword.gif"
+            alt=""
+            aria-hidden
+            className="absolute inset-0 z-10 hidden h-full w-full object-cover object-center mix-blend-screen md:block pointer-events-none"
+          />
 
           {/* 3. Smooth cinematic gradient fade for background only */}
           <div

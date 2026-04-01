@@ -17,7 +17,8 @@ export const useSkiaAssets = (urls: string[]) => {
 
     const loadImages = async () => {
       let changed = false;
-      const newImages = new Map(images);
+      // Merge from global cache so url-list churn never drops already-decoded images (empty tiles).
+      const newImages = new Map(globalImageCache);
 
       const promises = urlList.map(async (url) => {
         if (!url) return;

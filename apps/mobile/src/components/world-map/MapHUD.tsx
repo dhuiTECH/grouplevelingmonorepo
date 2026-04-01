@@ -114,6 +114,8 @@ interface MapHUDProps {
   onPressWorld: () => void;
   onPressBattle: () => void;
   floatAnim: Animated.Value;
+  /** Client-side movement budget (pedometer). Falls back to profile when omitted. */
+  localSteps?: number;
 }
 
 const GlowingStepCounter = ({ steps }: { steps: number }) => {
@@ -131,9 +133,11 @@ export const MapHUD: React.FC<MapHUDProps> = ({
   onPressWorld,
   onPressBattle,
   floatAnim,
+  localSteps,
 }) => {
   const { user } = useAuth();
-  const steps = user?.steps_banked || 0;
+  const steps =
+    localSteps !== undefined ? localSteps : user?.steps_banked || 0;
   const currentTier = user?.rank_tier ?? 0;
   const nextMilestone = (currentTier + 1) * 30;
   const isAdvancementLocked = Boolean(

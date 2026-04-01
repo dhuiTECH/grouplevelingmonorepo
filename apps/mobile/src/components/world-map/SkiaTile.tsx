@@ -7,8 +7,8 @@ import { getPixiTextureCoords, getLiquidTextureCoords } from './mapUtils';
 
 interface SkiaTileProps {
   tile: any;
-  absPx: number;
-  absPy: number;
+  gridX: number;
+  gridY: number;
   tileSize: number;
   images: Map<string, SkImage>;
   mapSettings: any;
@@ -27,29 +27,30 @@ function staticOrientTransform(rotation?: number, flipX?: boolean) {
 }
 
 const SkiaTileInternal: React.FC<SkiaTileProps> = ({
-  tile, absPx, absPy, tileSize, images, mapSettings, animationFrame, foamOpacity, isProp, dictionaryData
+  tile, gridX, gridY, tileSize, images, mapSettings, animationFrame, foamOpacity, isProp, dictionaryData
 }) => {
   // Use dictionary data first, then fallback to tile data, then default to 64
   const frameWidth = dictionaryData?.frame_width ?? tile.frameWidth ?? tile.frame_width ?? 48;
   const frameHeight = dictionaryData?.frame_height ?? tile.frameHeight ?? tile.frame_height ?? 48;
 
-  // REMOVED Math.round to prevent sub-pixel "snapping" jitter during map movement
+  const absPx = gridX * tileSize;
+  const absPy = gridY * tileSize;
+
   const displayWidth = frameWidth * (tileSize / 48);
   const displayHeight = frameHeight * (tileSize / 48);
   const offsetX = tile.offsetX || 0;
   const offsetY = tile.offsetY || 0;
 
+  // No Math.round here — the camera transform rounds the whole scene atomically
   const staticTransform = useMemo(
     () => staticOrientTransform(tile.rotation, tile.flipX),
     [tile.rotation, tile.flipX],
   );
-
-  // Lock the destination rect to the pixel grid to stop Nearest Neighbor tearing
   const destRect = useMemo(() => rect(
-    Math.round(absPx - (displayWidth - tileSize) / 2 + offsetX),
-    Math.round(absPy - (displayHeight - tileSize) + offsetY),
-    Math.round(displayWidth),
-    Math.round(displayHeight)
+    absPx - (displayWidth - tileSize) / 2 + offsetX,
+    absPy - (displayHeight - tileSize) + offsetY,
+    displayWidth,
+    displayHeight
   ), [absPx, absPy, displayWidth, displayHeight, offsetX, offsetY, tileSize]);
 
   // Handle Foam Layer (Now uses dictionary lookup for foam strip)
@@ -63,7 +64,7 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
       
       // Foam is rendered at the base tile position (48x48), ignoring the prop size
       // Remove the + 1 hack. Strict 48x48 clipping to prevent spritesheet bleed.
-      const foamDestRect = rect(Math.round(absPx), Math.round(absPy), Math.ceil(tileSize), Math.ceil(tileSize));
+      const foamDestRect = rect(absPx, absPy, tileSize, tileSize);
       
       foamLayer = (
         <Group opacity={foamOpacity} clip={foamDestRect}>
@@ -120,7 +121,7 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
     
     // Even if it's on a higher layer, smart tiles typically use the base 48x48 grid
     // Remove the + 1 hack. Strict 48x48 clipping to prevent spritesheet bleed.
-    let baseDestRect = rect(Math.round(absPx), Math.round(absPy), Math.ceil(tileSize), Math.ceil(tileSize));
+    let baseDestRect = rect(absPx, absPy, tileSize, tileSize);
 
     if (img) {
       // Re-calculate the bitmask for the mobile app using the shared function
@@ -220,8 +221,8 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
 };
 
 export const SkiaTile = React.memo(SkiaTileInternal, (prev, next) => {
-  if (prev.absPx !== next.absPx) return false;
-  if (prev.absPy !== next.absPy) return false;
+  if (prev.gridX !== next.gridX) return false;
+  if (prev.gridY !== next.gridY) return false;
   if (prev.tileSize !== next.tileSize) return false;
   if (prev.isProp !== next.isProp) return false;
   if (prev.mapSettings !== next.mapSettings) return false;

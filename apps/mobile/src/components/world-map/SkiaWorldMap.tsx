@@ -7,7 +7,6 @@ import {
   Rect as SkiaRect,
   useClock,
   Skia,
-  Picture,
   FilterMode,
   Circle,
   Image as SkiaImage,
@@ -32,6 +31,7 @@ import { SkiaPetSprite } from "./SkiaPetSprite";
 import { getPixiTextureCoords, getLiquidTextureCoords } from "./mapUtils";
 import { CloudLayer } from "../environment/CloudLayer";
 import { getAtmosphereMultiplyColor } from "./atmosphereColor";
+import { STEPS_PER_TILE } from "@/hooks/useLocalMovementBudget";
 
 interface SkiaWorldMapProps {
   visionGrid: any[];
@@ -47,6 +47,8 @@ interface SkiaWorldMapProps {
   activeDirection: SharedValue<"UP" | "DOWN" | "LEFT" | "RIGHT" | null>;
   isRunning: SharedValue<boolean>;
   isMoving: SharedValue<boolean>;
+  /** Client-side step budget (pedometer); each tile spends STEPS_PER_TILE */
+  movementBudget: SharedValue<number>;
   mapLeft: SharedValue<number>;
   mapTop: SharedValue<number>;
   onTileEnter?: (x: number, y: number) => void;
@@ -69,10 +71,9 @@ interface SkiaWorldMapProps {
 
 // Frame-based movement: fixed px per frame (3 = walk, 6 = run). Durations in ms for reference only.
 // At 60fps, 48px / 3px per frame = 16 frames. 16 * 16.67ms = 266.7ms
-const WALK_DURATION = 267;
+const WALK_DURATION = 220;
 // At 60fps, 48px / 6px per frame = 8 frames. 8 * 16.67ms = 133.3ms
 const RUN_DURATION = 134;
-const MOVE_COST = 100;
 
 const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   visionGrid,
@@ -88,6 +89,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   activeDirection,
   isRunning,
   isMoving,
+  movementBudget,
   mapLeft,
   mapTop,
   onTileEnter,
@@ -128,10 +130,16 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   const visibleGrid = useMemo(() => {
     if (!visionGrid || visionGrid.length === 0) return [];
 
-    // Viewport Culling logic
+    // Viewport culling — must stay in sync with the *camera*, not only gridCenter.
+    // useExploration refreshes gridCenter every GRID_REFRESH_DISTANCE (5) steps while
+    // mapLeft/mapTop follow the player every tile, so the viewport can drift by up to
+    // ~4 tiles. Culling around the vision-grid center only caused tiles/NPCs to pop
+    // in and out at the edges (read as “jitter” / assets not staying loaded).
     const BUFFER_X = 8;
     const BUFFER_Y_TOP = 8;
     const BUFFER_Y_BOTTOM = 15;
+    /** Match useExploration GRID_REFRESH_DISTANCE − 1 (max Manhattan drift before recenter). */
+    const CAMERA_DRIFT_BUFFER = 5;
 
     const screenTilesX = Math.ceil(width / tileSize);
     const screenTilesY = Math.ceil(height / tileSize);
@@ -153,10 +161,10 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     const centerX = (minG + maxG) / 2;
     const centerY = (minGY + maxGY) / 2;
 
-    const minX = centerX - halfScreenX - BUFFER_X;
-    const maxX = centerX + halfScreenX + BUFFER_X;
-    const minY = centerY - halfScreenY - BUFFER_Y_TOP;
-    const maxY = centerY + halfScreenY + BUFFER_Y_BOTTOM;
+    const minX = centerX - halfScreenX - BUFFER_X - CAMERA_DRIFT_BUFFER;
+    const maxX = centerX + halfScreenX + BUFFER_X + CAMERA_DRIFT_BUFFER;
+    const minY = centerY - halfScreenY - BUFFER_Y_TOP - CAMERA_DRIFT_BUFFER;
+    const maxY = centerY + halfScreenY + BUFFER_Y_BOTTOM + CAMERA_DRIFT_BUFFER;
 
     return visionGrid.filter(
       (cell) =>
@@ -182,9 +190,11 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       activePet?.pet_details?.metadata?.visuals?.walking_spritesheet;
     if (walkSheet?.url) urls.add(walkSheet.url.split("?")[0]);
 
-    if (visibleGrid) {
-      for (let i = 0; i < visibleGrid.length; i++) {
-        const cell = visibleGrid[i];
+    // Decode textures for the full vision grid so assets are ready before culled tiles
+    // enter the draw window (avoids flash when gridCenter lags the camera).
+    if (visionGrid) {
+      for (let i = 0; i < visionGrid.length; i++) {
+        const cell = visionGrid[i];
         if (cell?.tiles) {
           for (let j = 0; j < cell.tiles.length; j++) {
             const t = cell.tiles[j];
@@ -201,7 +211,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       }
     }
     return Array.from(urls);
-  }, [visibleGrid, mapSettings, activePet, nodesInVision]);
+  }, [visionGrid, mapSettings, activePet, nodesInVision]);
 
   const images = useSkiaAssets(urlsToLoad);
 
@@ -223,34 +233,24 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   const currentTileY = useSharedValue(spawnY);
   const targetX = useSharedValue(spawnX);
   const targetY = useSharedValue(spawnY);
+  const hasInitialized = useRef(false);
 
   const lastEnteredTileX = useSharedValue(-999);
   const lastEnteredTileY = useSharedValue(-999);
 
   useEffect(() => {
-    const ux = spawnX;
-    const uy = spawnY;
+    if (hasInitialized.current) return;
+    hasInitialized.current = true;
 
-    // Check distance against the CURRENT VISUAL TARGET, not the last DB sync.
-    // This prevents "teleporting" (rubber-banding) the camera when the DB syncs a few steps later.
-    const dx = Math.abs(ux - targetX.value);
-    const dy = Math.abs(uy - targetY.value);
-
-    // Only hard-reset on large teleports (10+ tiles) and only when not mid-move.
-    // Raised from 5→10 so normal stop-sync writes never trigger a camera reset.
-    if ((dx >= 10 || dy >= 10) && !isMoving.value) {
-      cancelAnimation(mapLeft);
-      cancelAnimation(mapTop);
-      mapLeft.value = -ux * tileSize - tileSize / 2;
-      mapTop.value = -uy * tileSize - tileSize / 2;
-      currentTileX.value = ux;
-      currentTileY.value = uy;
-      targetX.value = ux;
-      targetY.value = uy;
-      lastEnteredTileX.value = ux;
-      lastEnteredTileY.value = uy;
-    }
-  }, [spawnX, spawnY, tileSize]);
+    mapLeft.value = -spawnX * tileSize - tileSize / 2;
+    mapTop.value = -spawnY * tileSize - tileSize / 2;
+    currentTileX.value = spawnX;
+    currentTileY.value = spawnY;
+    targetX.value = spawnX;
+    targetY.value = spawnY;
+    lastEnteredTileX.value = spawnX;
+    lastEnteredTileY.value = spawnY;
+  }, [spawnX, spawnY]);
 
   // Collision data
   const collisionDataRef = useSharedValue<{
@@ -261,10 +261,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     if (onTileEnter) {
       onTileEnter(tx, ty);
     }
-    // Set isMoving=false AFTER onTileEnter updates latestPos, so callOnMovementStop
-    // reads the correct position. Prevents "jumping back" from race condition.
-    isMoving.value = false;
-  }, [onTileEnter, isMoving]);
+  }, [onTileEnter]);
 
   const checkTileEnter = (tx: number, ty: number) => {
     'worklet';
@@ -274,7 +271,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       lastEnteredTileX.value = tx;
       lastEnteredTileY.value = ty;
     }
-    // Always call handleTileEnter so isMoving is reset; onTileEnter no-ops if same tile
+    // Fire-and-forget JS side effects (encounters/discovery). Movement handoff stays on UI thread.
     runOnJS(handleTileEnter)(tx, ty);
   };
 
@@ -284,6 +281,11 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     if (!dirStr) {
       return;
     }
+
+    // TEMP: stamina/energy gate disabled.
+    // if (movementBudget.value < STEPS_PER_TILE) {
+    //   return;
+    // }
 
     let nx = currentTileX.value;
     let ny = currentTileY.value;
@@ -326,20 +328,30 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
     if (nx !== currentTileX.value) {
       cancelAnimation(mapLeft);
-
-      mapLeft.value = withTiming(targetPixelX, { duration, easing: Easing.linear }, () => {
-        currentTileX.value = nx; // always commit, even if interrupted
-        checkTileEnter(nx, ny);
-        // isMoving set in handleTileEnter after onTileEnter updates latestPos
+      mapLeft.value = withTiming(targetPixelX, { duration, easing: Easing.linear }, (finished) => {
+        if (finished) {
+          currentTileX.value = nx;
+          // TEMP: stamina/energy spending disabled.
+          // movementBudget.value -= STEPS_PER_TILE;
+          isMoving.value = false;
+          checkTileEnter(nx, ny);
+        } else {
+          isMoving.value = false;
+        }
       });
     } else if (ny !== currentTileY.value) {
       cancelAnimation(mapTop);
-      mapTop.value = withTiming(targetPixelY, { duration, easing: Easing.linear }, () => {
-        currentTileY.value = ny; // always commit, even if interrupted
-        checkTileEnter(nx, ny);
-        // isMoving set in handleTileEnter after onTileEnter updates latestPos
+      mapTop.value = withTiming(targetPixelY, { duration, easing: Easing.linear }, (finished) => {
+        if (finished) {
+          currentTileY.value = ny;
+          // TEMP: stamina/energy spending disabled.
+          // movementBudget.value -= STEPS_PER_TILE;
+          isMoving.value = false;
+          checkTileEnter(nx, ny);
+        } else {
+          isMoving.value = false;
+        }
       });
-
     }
   };
 
@@ -364,40 +376,30 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   // You can increase MAP_SCALE (e.g., to 1.25 or 1.5) to zoom in the map
   const MAP_SCALE = 1.25;
 
-  // We calculate the exact scaled pixels, then round them to integers.
-  // This completely eliminates sub-pixel shimmering and camera jitter!
-  const skiaTransform = useDerivedValue(() => {
-    const roundedMapLeft = Math.round(mapLeft.value * MAP_SCALE);
-    const roundedMapTop = Math.round(mapTop.value * MAP_SCALE);
+  // Camera pan in screen space (after scale factor): continuous values — device-pixel snapping
+  // was causing subtle flicker; chunk/tile sync fixes address the remaining “shimmer” more directly.
+  const skiaTransform = useDerivedValue(() => [
+    { translateX: centerX },
+    { translateY: centerY },
+    { translateX: mapLeft.value * MAP_SCALE },
+    { translateY: mapTop.value * MAP_SCALE },
+    { scale: MAP_SCALE },
+  ]);
 
-    return [
-      { translateX: centerX },
-      { translateY: centerY },
-      { translateX: roundedMapLeft },
-      { translateY: roundedMapTop },
+  const uiTransformStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: mapLeft.value * MAP_SCALE + centerX },
+      { translateY: mapTop.value * MAP_SCALE + centerY },
       { scale: MAP_SCALE },
-    ];
-  });
+    ],
+  }));
 
-  const uiTransformStyle = useAnimatedStyle(() => {
-    const roundedMapLeft = Math.round(mapLeft.value * MAP_SCALE);
-    const roundedMapTop = Math.round(mapTop.value * MAP_SCALE);
-
-    return {
-      transform: [
-        { translateX: roundedMapLeft + MAP_SCALE * centerX },
-        { translateY: roundedMapTop + MAP_SCALE * centerY },
-        { scale: MAP_SCALE },
-      ],
-    };
-  });
-
-  // Build collision lookup from visibleGrid
-  const collisionMap = useMemo(() => {
-    const map = new Map<string, { isWalkable: boolean; edgeBlocks: number }>();
+  useMemo(() => {
+    const obj: {
+      [key: string]: { isWalkable: boolean; edgeBlocks: number };
+    } = {};
     (visibleGrid || []).forEach((cell) => {
       if (!cell) return;
-      const key = `${cell.x},${cell.y}`;
       const hasBlockedTile = cell.tiles?.some(
         (t: any) =>
           t.isWalkable === false ||
@@ -406,26 +408,15 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       );
       const edgeBlocks =
         cell.tiles?.reduce((acc: number, t: any) => {
-          const bits = Number(
-            t.edgeBlocks ?? t.edge_blocks ?? t.edge_mask ?? t.edgeMask ?? 0,
+          return (
+            acc |
+            Number(t.edgeBlocks ?? t.edge_blocks ?? t.edge_mask ?? t.edgeMask ?? 0)
           );
-          return acc | bits;
         }, 0) || 0;
-      map.set(key, { isWalkable: !hasBlockedTile, edgeBlocks });
+      obj[`${cell.x},${cell.y}`] = { isWalkable: !hasBlockedTile, edgeBlocks };
     });
-    return map;
-  }, [visibleGrid]);
-
-  // Sync collision data to shared value for UI-thread access
-  useEffect(() => {
-    const collisionObj: {
-      [key: string]: { isWalkable: boolean; edgeBlocks: number };
-    } = {};
-    collisionMap.forEach((value, key) => {
-      collisionObj[key] = value;
-    });
-    collisionDataRef.value = collisionObj;
-  }, [collisionMap]);
+    collisionDataRef.value = obj;
+  }, [visibleGrid, collisionDataRef]);
 
   // Extract layers and sort ALL tiles by zIndex (single pass)
   const sortedTiles = useMemo(() => {
@@ -446,10 +437,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
           // Compute Z-Index logic to match PixiMapCanvas
           const tileLayer = t.layer || 0;
 
-          // Z-Index calculation: (layer * 100000) + (y + offsetY/TILE_SIZE)
-          // This ensures higher layers are always on top, and same-layer tiles are Y-sorted.
-          const zIndex =
-            tileLayer * 100000 + (cell.y + (t.offsetY || 0) / tileSize);
+          const zIndex = tileLayer * 100000 + cell.y;
 
           all.push([
             t,
@@ -519,8 +507,8 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
             <SkiaTile
               key={`tile-${e[0].id || e[1] + "," + e[2] + "," + e[7] + "," + e[3]}`}
               tile={e[0]}
-              absPx={e[1] * tileSize}
-              absPy={e[2] * tileSize}
+              gridX={e[1]}
+              gridY={e[2]}
               tileSize={tileSize}
               images={images}
               mapSettings={mapSettings}
@@ -710,7 +698,16 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       </Canvas>
 
       <Reanimated.View
-        style={[StyleSheet.absoluteFill, { zIndex: 100 }, uiTransformStyle]}
+        style={[
+          StyleSheet.absoluteFill,
+          {
+            zIndex: 100,
+            // Match Skia Group (top-left scale origin). Default RN is center — mismatched
+            // pivot made overlays (and perceived map alignment) fight the camera while moving.
+            transformOrigin: "0% 0%",
+          },
+          uiTransformStyle,
+        ]}
         pointerEvents="box-none"
       >
         {children}
@@ -721,13 +718,5 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
 export const SkiaWorldMap = React.memo(SkiaWorldMapInternal, (prev, next) => {
   if (prev.visionGrid !== next.visionGrid) return false;
-  if (prev.enableAtmosphere !== next.enableAtmosphere) return false;
-  if (prev.atmosphereOverride !== next.atmosphereOverride) return false;
-  if (prev.enableCloudShadows !== next.enableCloudShadows) return false;
-  const dx = Math.abs(next.spawnX - prev.spawnX);
-  const dy = Math.abs(next.spawnY - prev.spawnY);
-  // Threshold raised to 10 to match the teleport-reset effect.
-  // Stop-sync writes (small deltas) no longer trigger re-renders.
-  if (dx >= 10 || dy >= 10) return false;
-  return true;
+  return true; // ignore other props (e.g. spawnX/Y) so React state cannot re-skin mid-movement
 });
