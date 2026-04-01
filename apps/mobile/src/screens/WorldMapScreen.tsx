@@ -2,6 +2,7 @@ import React, {
   useEffect,
   useState,
   useCallback,
+  useMemo,
   useRef,
   type Dispatch,
   type SetStateAction,
@@ -188,6 +189,7 @@ export const WorldMapScreen = () => {
   const {
     explorationOptions: jeffreyExplorationOptions,
     onBankedStepsSpent,
+    resetDemo: resetJeffreyDemo,
     ensureShopItemsForPreview,
     captureMapSnapshotForBattle,
   } = useJeffreyMapDemo({
@@ -203,6 +205,45 @@ export const WorldMapScreen = () => {
     isMoving,
   });
 
+  const onBattleEncounter = useCallback(
+    async (enc: any) => {
+      if (!enc?.id) return;
+      activeDirection.value = null;
+      isMoving.value = false;
+      try {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        const u = userRef.current;
+        if (!u) return;
+        const shop = await ensureShopItemsForPreview();
+        const ap = activePetRef.current;
+        const partyPreview: PartyPreviewItem[] = [
+          { type: "player" as const, user: u, allShopItems: shop },
+        ];
+        if (ap?.pet_details) {
+          partyPreview.push({ type: "pet" as const, petDetails: ap.pet_details });
+        }
+        const snapshot = await captureMapSnapshotForBattle();
+        startTransition(
+          snapshot,
+          () => navigation.navigate("Battle", { encounterId: enc.id, mapId: activeMapId }),
+          partyPreview,
+        );
+      } catch (err) {
+        console.error("[WorldMap] Random encounter battle failed:", err);
+      }
+    },
+    [activeDirection, isMoving, ensureShopItemsForPreview, captureMapSnapshotForBattle, startTransition, navigation, activeMapId],
+  );
+
+  const explorationOptions = useMemo(
+    () => ({
+      ...jeffreyExplorationOptions,
+      onBattleEncounter,
+      excludeEncounterIds: [JEFFREY_MAP_DEMO_ENCOUNTER_ID],
+    }),
+    [jeffreyExplorationOptions, onBattleEncounter],
+  );
+
   const {
     onTileEnter,
     refreshVision,
@@ -213,6 +254,7 @@ export const WorldMapScreen = () => {
     loading: movingOnMap,
     setAutoTravelReport,
     latestPos,
+    resetBattleInFlight,
   } = useExploration(
     setEncounter,
     setInteractionVisible,
@@ -220,7 +262,7 @@ export const WorldMapScreen = () => {
     setRaidModalVisible,
     activeMapId,
     undefined,
-    jeffreyExplorationOptions,
+    explorationOptions,
   );
 
   flushPendingVisionRef.current = flushPendingVision;
@@ -390,6 +432,8 @@ export const WorldMapScreen = () => {
   useFocusEffect(
     useCallback(() => {
       logWorldMapScreenSync("focus:enter");
+      resetJeffreyDemo();
+      resetBattleInFlight();
       void (async () => {
         await playTrack("Beginning Map");
         await startBackgroundMusic();
@@ -399,7 +443,7 @@ export const WorldMapScreen = () => {
         logWorldMapScreenSync("focus:blur:saveSessionPosition");
         saveSessionPosition();
       };
-    }, [playTrack, startBackgroundMusic, refreshProfile, saveSessionPosition]),
+    }, [playTrack, startBackgroundMusic, refreshProfile, saveSessionPosition, resetJeffreyDemo, resetBattleInFlight]),
   );
 
   const handleUnstuck = useCallback(async () => {

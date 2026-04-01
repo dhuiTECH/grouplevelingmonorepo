@@ -71,6 +71,10 @@ export interface UseExplorationOptions {
   suppressEncounterRollRef?: MutableRefObject<boolean>;
   /** Fires once per **processed** tile (after duplicate / busy guards) — use for scripted steps vs Skia spam. */
   onProcessedTileEnter?: (nx: number, ny: number) => void;
+  /** Called when a random SIDE_VIEW encounter should start a battle (navigate to Battle screen). */
+  onBattleEncounter?: (encounter: any) => void;
+  /** Encounter IDs to exclude from the random roll (e.g. scripted demo encounters). */
+  excludeEncounterIds?: string[];
 }
 
 export const useExploration = (
@@ -101,6 +105,7 @@ export const useExploration = (
     y: user?.world_y || 0,
   });
   const tileEnterBusy = useRef(false);
+  const battleInFlightRef = useRef(false);
   const lastProcessedTile = useRef<{ x: number; y: number }>({
     x: user?.world_x || 0,
     y: user?.world_y || 0,
@@ -115,7 +120,6 @@ export const useExploration = (
   explorationOptionsRef.current = explorationOptions;
   const nodeLookupRef = useRef<Map<string, any>>(new Map());
 
-  // Pre-cached encounter pool — filled by useMapData → Zustand; no DB read on tile enter
   const encounterPoolRef = useRef<any[]>([]);
   const encounterPoolForMap = useEncounterPoolStore((s) => {
     if (!currentMapId || currentMapId === "undefined") return EMPTY_ENCOUNTER_POOL;
@@ -222,7 +226,15 @@ export const useExploration = (
   }, [user?.id, currentMapId, nodes, unlocked, chunksVersion]);
 
   useEffect(() => {
-    encounterPoolRef.current = encounterPoolForMap;
+    const excluded = explorationOptionsRef.current?.excludeEncounterIds;
+    if (excluded?.length) {
+      const set = new Set(excluded);
+      encounterPoolRef.current = encounterPoolForMap.filter(
+        (e) => !set.has(String(e?.id)),
+      );
+    } else {
+      encounterPoolRef.current = encounterPoolForMap;
+    }
   }, [encounterPoolForMap]);
 
   // Separate camera position for visionGrid that only updates when we actually
@@ -669,31 +681,37 @@ export const useExploration = (
             setRaidModalVisible(true);
           }
         } else {
-          // Encounter roll — against pre-cached pool, zero DB reads
           if (explorationOptionsRef.current?.suppressEncounterRollRef?.current) {
-            // skip roll (e.g. scripted Jeffrey demo when step threshold fires)
-          } else {
-          const roll = Math.random();
-          if (roll < 0.05 && encounterPoolRef.current.length > 0) {
-            const eligible = encounterPoolRef.current.filter(
-              (e) => e.spawn_chance >= roll,
-            );
-            if (eligible.length > 0) {
-              const randomEncounter =
-                eligible[Math.floor(Math.random() * eligible.length)];
-              if (
-                randomEncounter.event_type === "LOOT" &&
-                randomEncounter.metadata?.display_mode === "TEXT"
-              ) {
-                // Toast logic (no-op for now)
-              } else if (
-                randomEncounter.metadata?.visuals?.layout === "SIDE_VIEW"
-              ) {
-                setEncounter(randomEncounter);
-                setInteractionVisible(true);
+          } else if (encounterPoolRef.current.length > 0) {
+            const roll = Math.random();
+            if (roll < 0.05) {
+              const eligible = encounterPoolRef.current.filter(
+                (e) => e.spawn_chance >= roll,
+              );
+              if (eligible.length > 0) {
+                const randomEncounter =
+                  eligible[Math.floor(Math.random() * eligible.length)];
+                if (
+                  randomEncounter.event_type === "LOOT" &&
+                  randomEncounter.metadata?.display_mode === "TEXT"
+                ) {
+                  // Toast logic (no-op for now)
+                } else if (
+                  randomEncounter.metadata?.visuals?.layout === "SIDE_VIEW"
+                ) {
+                  if (!battleInFlightRef.current) {
+                    const handler = explorationOptionsRef.current?.onBattleEncounter;
+                    if (handler) {
+                      battleInFlightRef.current = true;
+                      handler(randomEncounter);
+                    } else {
+                      setEncounter(randomEncounter);
+                      setInteractionVisible(true);
+                    }
+                  }
+                }
               }
             }
-          }
           }
         }
 
@@ -737,5 +755,6 @@ export const useExploration = (
     checkpointAlert,
     setCheckpointAlert,
     latestPos,
+    resetBattleInFlight: () => { battleInFlightRef.current = false; },
   };
 };

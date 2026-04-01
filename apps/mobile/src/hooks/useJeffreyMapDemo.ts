@@ -159,6 +159,13 @@ export function useJeffreyMapDemo({
     [encounterId],
   );
 
+  const resetDemo = useCallback(() => {
+    demoDoneRef.current = false;
+    bankedStepsSpentRef.current = 0;
+    suppressEncounterRollRef.current = false;
+    logDev("demo state reset");
+  }, []);
+
   const explorationOptions: UseExplorationOptions = useMemo(
     () => ({
       suppressEncounterRollRef: suppressEncounterRollRef,
@@ -169,6 +176,7 @@ export function useJeffreyMapDemo({
   return {
     explorationOptions,
     onBankedStepsSpent,
+    resetDemo,
     ensureShopItemsForPreview,
     captureMapSnapshotForBattle,
     startJeffreyBattleTransition,
