@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { playHunterSound } from '@/utils/audio';
+import { playHunterSound, preloadBattleSounds, preloadSfxUrl } from '@/utils/audio';
 import * as Haptics from 'expo-haptics';
 import { Animated, Vibration, Alert } from 'react-native';
 import { Image } from 'expo-image';
@@ -234,10 +234,11 @@ export const useBattleLogic = ({
     }
 
     const preloadAssets = async () => {
+      preloadBattleSounds();
+
       const seen = new Set<string>();
       const promises: Promise<any>[] = [];
 
-      // 1. Preload Skill Animations from DB
       abilities.forEach((ability: { id?: string; name?: string }) => {
         const key = [ability.id, ability.name].filter(Boolean).join('|');
         if (!key || seen.has(key)) return;
@@ -254,10 +255,18 @@ export const useBattleLogic = ({
           if (ability.name) animationConfigCacheRef.current[ability.name] = config;
           if (ability.id) animationConfigCacheRef.current[ability.id] = config;
 
+          const preloads: Promise<any>[] = [];
           if (hasSprite && row.sprite_url) {
-            await Image.prefetch(row.sprite_url);
-            setPreloadedSpriteUrls(prev => (prev.includes(row.sprite_url!) ? prev : [...prev, row.sprite_url!]));
+            preloads.push(
+              Image.prefetch(row.sprite_url).then(() => {
+                setPreloadedSpriteUrls(prev => (prev.includes(row.sprite_url!) ? prev : [...prev, row.sprite_url!]));
+              }),
+            );
           }
+          if (hasSfx && row.sfx_url) {
+            preloads.push(preloadSfxUrl(String(row.sfx_url).trim()));
+          }
+          await Promise.all(preloads);
         });
         promises.push(p);
       });

@@ -9,8 +9,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import { Audio } from 'expo-av';
+import { getCachedSfxSound } from '@/utils/audio';
 
-// Retaining the interface to avoid breaking consumers like useBattleLogic.ts
 export interface SkillAnimationConfig {
   sprite_url: string | null;
   sfx_url?: string | null;

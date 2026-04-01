@@ -62,13 +62,59 @@ export const stopActiveVoice = async () => {
   }
 };
 
+const POOLED_KEYS: SoundKey[] = ['tap', 'swipe', 'click', 'clickA'];
+const POOL_SIZE = 2;
+const soundPool: Record<string, Audio.Sound[]> = {};
+const soundPoolIdx: Record<string, number> = {};
+let poolReady: Promise<void> | null = null;
+
+async function ensureSoundPool(): Promise<void> {
+  if (Object.keys(soundPool).length >= POOLED_KEYS.length) return;
+  if (!poolReady) {
+    poolReady = (async () => {
+      await initializeGlobalAudioMode();
+      await Promise.all(
+        POOLED_KEYS.map(async (key) => {
+          if (soundPool[key]?.length) return;
+          const instances = await Promise.all(
+            Array.from({ length: POOL_SIZE }, () =>
+              Audio.Sound.createAsync(SOUND_FILES[key], { shouldPlay: false }),
+            ),
+          );
+          soundPool[key] = instances.map((r) => r.sound);
+          soundPoolIdx[key] = 0;
+        }),
+      );
+    })().catch((e) => console.warn('[Audio] Pool init failed:', e));
+  }
+  await poolReady;
+}
+
+export function preloadBattleSounds(): void {
+  ensureSoundPool().catch(() => {});
+}
+
 export const playHunterSound = async (soundKey: SoundKey, force: boolean = false) => {
   if (!force && getMuted()) return;
-  
-  // If it's a voice sound, stop any currently playing voice first
+
   const isVoice = soundKey === 'nyxGreeting' || soundKey === 'nyxPurchase';
   if (isVoice) {
     await stopActiveVoice();
+  }
+
+  if ((POOLED_KEYS as string[]).includes(soundKey as string)) {
+    try {
+      await ensureSoundPool();
+      const pool = soundPool[soundKey as string];
+      if (pool?.length) {
+        const idx = soundPoolIdx[soundKey as string] ?? 0;
+        soundPoolIdx[soundKey as string] = (idx + 1) % pool.length;
+        await pool[idx].replayAsync();
+        return;
+      }
+    } catch (e) {
+      console.warn(`[Hunter Audio] Pool play failed for ${soundKey}, falling back`, e);
+    }
   }
 
   try {
@@ -81,7 +127,6 @@ export const playHunterSound = async (soundKey: SoundKey, force: boolean = false
       activeVoiceSound = sound;
     }
 
-    // Unload from memory once finished to keep the system fast
     sound.setOnPlaybackStatusUpdate((status) => {
       if (status.isLoaded && status.didJustFinish) {
         sound.unloadAsync();
@@ -94,6 +139,22 @@ export const playHunterSound = async (soundKey: SoundKey, force: boolean = false
     console.log(`[Hunter Audio] Failed to play ${soundKey}:`, error);
   }
 };
+
+const sfxSoundCache: Record<string, Audio.Sound> = {};
+
+export async function preloadSfxUrl(uri: string): Promise<void> {
+  if (!uri || sfxSoundCache[uri]) return;
+  try {
+    const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: false });
+    sfxSoundCache[uri] = sound;
+  } catch (e) {
+    console.warn('[Audio] SFX preload failed:', uri, e);
+  }
+}
+
+export function getCachedSfxSound(uri: string): Audio.Sound | null {
+  return sfxSoundCache[uri] ?? null;
+}
 
 const WALK_FOOTSTEP_VOL = 0.28;
 const RUN_FOOTSTEP_VOL = 0.36;
