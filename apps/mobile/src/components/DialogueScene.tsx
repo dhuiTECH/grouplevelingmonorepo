@@ -74,7 +74,8 @@ export function DialogueScene({
   onAction,
   actionButtons = [],
   interactionType,
-  typingSpeed = 25,
+  /** ms per character; 0 = show full line immediately (matches editor snappiness). */
+  typingSpeed = 8,
   isSpritesheet = false,
   frameCount = 1,
   frameSize = 512,
@@ -88,6 +89,42 @@ export function DialogueScene({
   const voiceCacheRef = useRef<Record<string, Audio.Sound | null>>({});
 
   const [currentFrame, setCurrentFrame] = useState(0);
+
+  // Warm voice clips as soon as the scene opens (first line was waiting on network decode before)
+  useEffect(() => {
+    if (!visible || !dialogueScript?.length) return;
+    let cancelled = false;
+    const urls = [
+      ...new Set(
+        dialogueScript
+          .map((l) => l?.voice_line_url)
+          .filter((u): u is string => Boolean(u)),
+      ),
+    ];
+    (async () => {
+      await Promise.all(
+        urls.map(async (url) => {
+          if (voiceCacheRef.current[url] !== undefined) return;
+          try {
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: url },
+              { shouldPlay: false },
+            );
+            if (cancelled) {
+              await sound.unloadAsync();
+              return;
+            }
+            voiceCacheRef.current[url] = sound;
+          } catch {
+            voiceCacheRef.current[url] = null;
+          }
+        }),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, dialogueScript]);
   
   // Use ref to track typing index to avoid closure staleness
   const typingIndexRef = useRef(0);
@@ -107,16 +144,15 @@ export function DialogueScene({
   // Resolve which portrait to show
   const currentPortrait = currentLine?.image_url ? { uri: currentLine.image_url } : npcSpriteUrl;
 
-  // 1. Initialize typewriter Audio (clicky text sound)
+  // Light tick for typewriter (optional; avoid per-char playAsync — it queues audio and feels laggy)
   useEffect(() => {
     let soundObj: Audio.Sound | null = null;
     const loadSound = async () => {
       try {
-        // Only load if visible
         if (!visible) return;
-
         const { sound } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/tap.mp3')
+          require('../../assets/sounds/tap.mp3'),
+          { volume: 0.35 },
         );
         soundObj = sound;
         typeSoundRef.current = sound;
@@ -129,6 +165,7 @@ export function DialogueScene({
       if (soundObj) {
         soundObj.unloadAsync();
       }
+      typeSoundRef.current = null;
     };
   }, [visible]);
 
@@ -194,51 +231,65 @@ export function DialogueScene({
     };
   }, [visible, currentIndex, currentLine?.voice_line_url]);
 
-  // 2. Typewriter Effect - Fixed to avoid undefined
+  // 2. Typewriter — skip when voiced (show text immediately; voice carries pacing) or typingSpeed <= 0
   useEffect(() => {
     if (!visible || !dialogueScript || dialogueScript.length === 0) return;
 
-    // Reset refs and state
+    const full = currentLine.text || '';
+    fullTextRef.current = full;
+
+    if (typingSpeed <= 0 || currentLine.voice_line_url) {
+      typingIndexRef.current = full.length;
+      setDisplayedText(full);
+      setIsTypingComplete(true);
+      return;
+    }
+
     typingIndexRef.current = 0;
-    fullTextRef.current = currentLine.text || '';
     setDisplayedText('');
     setIsTypingComplete(false);
-    
-    let charsTypedSinceHaptic = 0;
+
+    let charsSinceHaptic = 0;
+    let tickSoundChars = 0;
     let isActive = true;
 
     const interval = setInterval(() => {
       if (!isActive) return;
-      
+
       const fullText = fullTextRef.current;
       const currentIdx = typingIndexRef.current;
-      
+
       if (currentIdx < fullText.length) {
         const char = fullText[currentIdx];
-        // Only append if char is defined
         if (char !== undefined) {
           setDisplayedText((prev) => prev + char);
         }
         typingIndexRef.current = currentIdx + 1;
-        charsTypedSinceHaptic++;
+        charsSinceHaptic++;
+        tickSoundChars++;
 
-        // Audio blip (skip if a voice line is playing to avoid noise stacking)
-        if (typeSoundRef.current && !currentLine.voice_line_url) {
-           typeSoundRef.current.setPositionAsync(0);
-           typeSoundRef.current.playAsync();
+        // Occasional tick only — per-char playAsync stalls the JS thread / audio mixer
+        if (
+          typeSoundRef.current &&
+          !currentLine.voice_line_url &&
+          tickSoundChars >= 5
+        ) {
+          tickSoundChars = 0;
+          try {
+            void typeSoundRef.current.setPositionAsync(0);
+            void typeSoundRef.current.playAsync();
+          } catch {
+            // ignore
+          }
         }
 
-        // Haptic feedback every 3 characters
-        if (charsTypedSinceHaptic >= 3) {
+        if (charsSinceHaptic >= 10) {
+          charsSinceHaptic = 0;
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          charsTypedSinceHaptic = 0;
         }
-
-      } else {
-        if (isActive) {
-          setIsTypingComplete(true);
-          clearInterval(interval);
-        }
+      } else if (isActive) {
+        setIsTypingComplete(true);
+        clearInterval(interval);
       }
     }, typingSpeed);
 
@@ -246,7 +297,14 @@ export function DialogueScene({
       isActive = false;
       clearInterval(interval);
     };
-  }, [currentIndex, visible, currentLine.text, typingSpeed, dialogueScript]);
+  }, [
+    currentIndex,
+    visible,
+    currentLine.text,
+    currentLine.voice_line_url,
+    typingSpeed,
+    dialogueScript,
+  ]);
 
   // 3. Interaction Handling
   const handleDialogueTap = () => {
@@ -285,8 +343,8 @@ export function DialogueScene({
     return {
       transform: [
         {
-          scaleY: withDelay(
-            1200, // Wait for fade in / slide in to finish
+          scaleY:           withDelay(
+            400,
             withRepeat(
               withSequence(
                 withTiming(1.015, { duration: 3000 }),
@@ -328,7 +386,7 @@ export function DialogueScene({
         {/* NPC Sprite (Large Background) */}
         {!!npcSpriteUrl && (
           <Animated.View
-            entering={FadeInLeft.duration(1000).delay(150)}
+            entering={FadeInLeft.duration(200)}
             style={styles.spriteContainer}
             pointerEvents="none"
           >
@@ -365,7 +423,7 @@ export function DialogueScene({
 
         {/* Dialogue Box Area */}
         <Animated.View
-          entering={FadeInUp.duration(500)}
+          entering={FadeInUp.duration(180)}
           style={styles.dialogueWrapper}
         >
           <BlurView intensity={80} tint="dark" style={styles.dialogueBox}>

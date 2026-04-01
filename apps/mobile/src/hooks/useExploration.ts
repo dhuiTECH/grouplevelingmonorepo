@@ -248,12 +248,19 @@ export const useExploration = (
 
     tileMap.forEach((layers) => {
       layers.sort((a, b) => {
-        // Primary Sort: By Layer
-        const layerDiff = (Number(a.layer) || 0) - (Number(b.layer) || 0);
-        if (layerDiff !== 0) return layerDiff;
+        const layerA = Number(a.layer) || 0;
+        const layerB = Number(b.layer) || 0;
+        if (layerA !== layerB) return layerA - layerB;
 
-        // Secondary Sort: By ID (or cleanUrl) to PREVENT Z-FIGHTING
-        // If they are on the same layer, their order is now permanently locked.
+        // Match world map editor `PixiMapCanvas` visibleTiles sort + SmartPixiTile depth
+        const depthA =
+          (Number(a.y) || 0) +
+          (Number(a.offsetY ?? a.offset_y) || 0) / 48;
+        const depthB =
+          (Number(b.y) || 0) +
+          (Number(b.offsetY ?? b.offset_y) || 0) / 48;
+        if (depthA !== depthB) return depthA - depthB;
+
         const idA = a.id || a.cleanUrl || "";
         const idB = b.id || b.cleanUrl || "";
         return idA.localeCompare(idB);

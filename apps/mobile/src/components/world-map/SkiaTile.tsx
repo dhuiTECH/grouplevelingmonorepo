@@ -53,6 +53,17 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
     displayHeight
   ), [absPx, absPy, displayWidth, displayHeight, offsetX, offsetY, tileSize]);
 
+  /** Must run every render — never inside `if (img)` (conditional hooks break when image loads later). */
+  const autoTileTransform = useDerivedValue(() => {
+    const st = tile.smartType || 'grass';
+    if (st !== 'waterv2') return [];
+    const NUM_FRAMES = 3;
+    const durationSecs = 1.0;
+    const progress = (animationFrame.value % durationSecs) / durationSecs;
+    const frameIndex = Math.floor(progress * NUM_FRAMES) % NUM_FRAMES;
+    return [{ translateX: -frameIndex * 576 }];
+  });
+
   // Handle Foam Layer (Now uses dictionary lookup for foam strip)
   let foamLayer = null;
   if (!isProp && tile.foamBitmask > 0 && mapSettings?.cleanFoamSheetUrl) {
@@ -134,17 +145,6 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
         : getPixiTextureCoords(mask, blockCol, blockRow);
 
       const coords = coordsList[0];
-      
-      const autoTileTransform = useDerivedValue(() => {
-        if (smartType === 'waterv2') {
-           const NUM_FRAMES = 3;
-           const durationSecs = 1.0; // 1 second loop
-           const progress = (animationFrame.value % durationSecs) / durationSecs;
-           const frameIndex = Math.floor(progress * NUM_FRAMES) % NUM_FRAMES;
-           return [{ translateX: -frameIndex * 576 }];
-        }
-        return [];
-      });
 
       // Use clipping instead of src prop to ensure correct cropping of large sheets
       baseLayer = (

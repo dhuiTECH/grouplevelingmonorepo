@@ -1,15 +1,18 @@
-import React, { useMemo, useEffect, useRef, useState } from "react";
+import React, { useMemo, useEffect, useRef, useCallback } from "react";
 import { useWindowDimensions, View, StyleSheet } from "react-native";
 import {
   Canvas,
   Group,
   Fill,
   Rect as SkiaRect,
+  LinearGradient,
+  RadialGradient,
   useClock,
   Skia,
   FilterMode,
   Circle,
   Image as SkiaImage,
+  vec,
 } from "@shopify/react-native-skia";
 import Reanimated, {
   useSharedValue,
@@ -30,7 +33,6 @@ import { SkiaLayeredAvatar } from "./SkiaLayeredAvatar";
 import { SkiaPetSprite } from "./SkiaPetSprite";
 import { getPixiTextureCoords, getLiquidTextureCoords } from "./mapUtils";
 import { CloudLayer } from "../environment/CloudLayer";
-import { getAtmosphereMultiplyColor } from "./atmosphereColor";
 import { STEPS_PER_TILE } from "@/hooks/useLocalMovementBudget";
 
 interface SkiaWorldMapProps {
@@ -47,8 +49,10 @@ interface SkiaWorldMapProps {
   activeDirection: SharedValue<"UP" | "DOWN" | "LEFT" | "RIGHT" | null>;
   isRunning: SharedValue<boolean>;
   isMoving: SharedValue<boolean>;
-  /** Client-side step budget (pedometer); each tile spends STEPS_PER_TILE */
+  /** Mirrors profile `steps_banked` for UI-thread gate; each tile spends STEPS_PER_TILE */
   movementBudget: SharedValue<number>;
+  /** Deducts cost from bank (React + SharedValue); called when a tile move completes. */
+  spendMovementBudget: (cost: number) => boolean;
   mapLeft: SharedValue<number>;
   mapTop: SharedValue<number>;
   onTileEnter?: (x: number, y: number) => void;
@@ -61,12 +65,16 @@ interface SkiaWorldMapProps {
   petZIndex: SharedValue<number>;
   avatarData: any;
   allShopItems?: any[];
-  /** When false, skip the multiply time-of-day overlay. Default true. */
+  /** When false, skip the screen-space vignette (multiply + radial gradient). Default true. */
   enableAtmosphere?: boolean;
-  /** If set, used instead of the hour-based multiply color (debug / overrides). */
+  /** If set, replaces the vignette edge color (second RadialGradient stop). */
   atmosphereOverride?: string | null;
   /** When false, cloud drop shadows are not drawn. Default true. */
   enableCloudShadows?: boolean;
+  /** Fired from the movement worklet when a tile step actually starts (sync with isMoving). */
+  onTileMoveStart?: (running: boolean) => void;
+  /** Fired when a move was requested but blocked (stamina or collision). */
+  onTileMoveBlocked?: (reason: "stamina" | "collision") => void;
 }
 
 // Frame-based movement: fixed px per frame (3 = walk, 6 = run). Durations in ms for reference only.
@@ -74,6 +82,9 @@ interface SkiaWorldMapProps {
 const WALK_DURATION = 220;
 // At 60fps, 48px / 6px per frame = 8 frames. 8 * 16.67ms = 133.3ms
 const RUN_DURATION = 134;
+
+/** Matches `PixiMapCanvas` SmartPixiTile / `TILE_SIZE` in the world map editor (depth in grid units). */
+const EDITOR_TILE_SIZE_PX = 48;
 
 const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   visionGrid,
@@ -90,6 +101,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   isRunning,
   isMoving,
   movementBudget,
+  spendMovementBudget,
   mapLeft,
   mapTop,
   onTileEnter,
@@ -105,19 +117,13 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   enableAtmosphere = true,
   atmosphereOverride = null,
   enableCloudShadows = true,
+  onTileMoveStart,
+  onTileMoveBlocked,
 }) => {
   const { width, height } = useWindowDimensions();
-  const [now, setNow] = useState(() => new Date());
 
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
-  }, []);
-
-  const atmosphereColor = useMemo(() => {
-    if (atmosphereOverride) return atmosphereOverride;
-    return getAtmosphereMultiplyColor(now);
-  }, [now, atmosphereOverride]);
+  /** Softer edge than 0.4 so vignette does not cancel the warm sun side */
+  const vignetteEdgeColor = atmosphereOverride ?? "rgba(26, 24, 44, 0.28)";
 
   const { tileLibrary } = useTileLibrary();
   const petBehindOpacity = useDerivedValue(() =>
@@ -263,6 +269,19 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     }
   }, [onTileEnter]);
 
+  /** Ref + stable JS fn so the moveNext worklet never captures a stale optional prop (Reanimated). */
+  const onTileMoveStartRef = useRef(onTileMoveStart);
+  onTileMoveStartRef.current = onTileMoveStart;
+  const invokeTileMoveStart = useCallback((running: boolean) => {
+    onTileMoveStartRef.current?.(running);
+  }, []);
+
+  const onTileMoveBlockedRef = useRef(onTileMoveBlocked);
+  onTileMoveBlockedRef.current = onTileMoveBlocked;
+  const invokeTileMoveBlocked = useCallback((reason: "stamina" | "collision") => {
+    onTileMoveBlockedRef.current?.(reason);
+  }, []);
+
   const checkTileEnter = (tx: number, ty: number) => {
     'worklet';
     const isNewTile = tx !== lastEnteredTileX.value || ty !== lastEnteredTileY.value;
@@ -282,10 +301,10 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       return;
     }
 
-    // TEMP: stamina/energy gate disabled.
-    // if (movementBudget.value < STEPS_PER_TILE) {
-    //   return;
-    // }
+    if (movementBudget.value < STEPS_PER_TILE) {
+      runOnJS(invokeTileMoveBlocked)("stamina");
+      return;
+    }
 
     let nx = currentTileX.value;
     let ny = currentTileY.value;
@@ -300,6 +319,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
     // 1. Check Full Block
     if (targetCol && !targetCol.isWalkable) {
+      runOnJS(invokeTileMoveBlocked)("collision");
       return;
     }
 
@@ -315,37 +335,43 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       (dirStr === "LEFT" && (currentEdgeBlocks & 8 || destEdgeBlocks & 2));
 
     if (blockedByEdge) {
+      runOnJS(invokeTileMoveBlocked)("collision");
+      return;
+    }
+
+    const needsXAnim = nx !== currentTileX.value;
+    const needsYAnim = ny !== currentTileY.value;
+    if (!needsXAnim && !needsYAnim) {
       return;
     }
 
     targetX.value = nx;
     targetY.value = ny;
+    runOnJS(invokeTileMoveStart)(isRunning.value);
     isMoving.value = true;
 
     const targetPixelX = -nx * tileSize - tileSize / 2;
     const targetPixelY = -ny * tileSize - tileSize / 2;
     const duration = isRunning.value ? RUN_DURATION : WALK_DURATION;
 
-    if (nx !== currentTileX.value) {
+    if (needsXAnim) {
       cancelAnimation(mapLeft);
       mapLeft.value = withTiming(targetPixelX, { duration, easing: Easing.linear }, (finished) => {
         if (finished) {
           currentTileX.value = nx;
-          // TEMP: stamina/energy spending disabled.
-          // movementBudget.value -= STEPS_PER_TILE;
+          runOnJS(spendMovementBudget)(STEPS_PER_TILE);
           isMoving.value = false;
           checkTileEnter(nx, ny);
         } else {
           isMoving.value = false;
         }
       });
-    } else if (ny !== currentTileY.value) {
+    } else {
       cancelAnimation(mapTop);
       mapTop.value = withTiming(targetPixelY, { duration, easing: Easing.linear }, (finished) => {
         if (finished) {
           currentTileY.value = ny;
-          // TEMP: stamina/energy spending disabled.
-          // movementBudget.value -= STEPS_PER_TILE;
+          runOnJS(spendMovementBudget)(STEPS_PER_TILE);
           isMoving.value = false;
           checkTileEnter(nx, ny);
         } else {
@@ -434,10 +460,13 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
           const cleanUrl = t.cleanUrl;
           const dictData = cleanUrl ? tileLibrary.get(cleanUrl) : null;
 
-          // Compute Z-Index logic to match PixiMapCanvas
+          // Same formula as web `PixiMapCanvas` SmartPixiTile zIndex
           const tileLayer = t.layer || 0;
-
-          const zIndex = tileLayer * 100000 + cell.y;
+          const gridY =
+            typeof t.y === "number" && !Number.isNaN(t.y) ? t.y : cell.y;
+          const offsetY = Number(t.offsetY ?? t.offset_y) || 0;
+          const depthY = gridY + offsetY / EDITOR_TILE_SIZE_PX;
+          const zIndex = tileLayer * 100000 + depthY;
 
           all.push([
             t,
@@ -453,11 +482,14 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
       }
     }
 
-    // Sort by zIndex
-    all.sort((a, b) => a[6] - b[6]);
+    all.sort((a, b) => {
+      const dz = a[6] - b[6];
+      if (dz !== 0) return dz;
+      return String(a[0]?.id ?? "").localeCompare(String(b[0]?.id ?? ""));
+    });
 
     return all;
-  }, [visibleGrid, tileSize, tileLibrary]);
+  }, [visibleGrid, tileLibrary]);
 
   const allVisibleTiles = sortedTiles;
 
@@ -686,14 +718,41 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
         <Group opacity={petInFrontOpacity}>{petSprite}</Group>
 
         {enableAtmosphere ? (
-          <SkiaRect
-            x={0}
-            y={0}
-            width={width}
-            height={height}
-            color={atmosphereColor}
-            blendMode="multiply"
-          />
+          <Group>
+            {/* Directional sun from west (screen left): warm lift, cooler fill toward the right */}
+            <SkiaRect
+              x={0}
+              y={0}
+              width={width}
+              height={height}
+              blendMode="softLight"
+            >
+              <LinearGradient
+                start={vec(-width * 0.2, height * 0.16)}
+                end={vec(width * 1.08, height * 0.84)}
+                colors={[
+                  "rgba(255, 234, 198, 0.36)",
+                  "rgba(255, 244, 224, 0.2)",
+                  "rgba(255, 248, 238, 0.08)",
+                  "rgba(75, 88, 118, 0.09)",
+                ]}
+                positions={[0, 0.28, 0.58, 1]}
+              />
+            </SkiaRect>
+            <SkiaRect
+              x={0}
+              y={0}
+              width={width}
+              height={height}
+              blendMode="multiply"
+            >
+              <RadialGradient
+                c={vec(width / 2, height / 2)}
+                r={width / 1.08}
+                colors={["rgba(0, 0, 0, 0)", vignetteEdgeColor]}
+              />
+            </SkiaRect>
+          </Group>
         ) : null}
       </Canvas>
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 interface RecoveryTimerSectionProps {
@@ -8,6 +8,8 @@ interface RecoveryTimerSectionProps {
   onPresetPress: (seconds: number) => void;
   onStop?: () => void;
   isActive?: boolean;
+  /** Optional extra bottom padding (e.g. when parent has no safe-area padding). Training log modal usually leaves this 0. */
+  bottomInset?: number;
 }
 
 const PRESETS = [
@@ -24,6 +26,7 @@ export default function RecoveryTimerSection({
   onPresetPress,
   onStop,
   isActive = false,
+  bottomInset = 0,
 }: RecoveryTimerSectionProps) {
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -31,32 +34,37 @@ export default function RecoveryTimerSection({
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  const timerCircumference = 2 * Math.PI * 30;
+  const ringR = 22;
+  const timerCircumference = 2 * Math.PI * ringR;
   const timerMax = initialSeconds || 300;
   const timerOffset = timerCircumference - (timerCircumference * (timeLeft / timerMax));
 
-  return (
-    <View style={styles.timerPanel}>
-      <View style={styles.timerTitleRow}>
-        <Text style={styles.timerTitle}>RECOVERY TIMER</Text>
-        {isActive && onStop && (
-          <TouchableOpacity onPress={onStop} hitSlop={8}>
-            <Text style={styles.timerStop}>STOP</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+  // Visible padding under the presets (outer modal already handles home indicator — don’t add full insets again).
+  const bottomPad = 14 + bottomInset;
 
-      <View style={styles.timerRow}>
+  return (
+    <View style={[styles.timerPanel, { paddingBottom: bottomPad }]}>
+      <View style={styles.timerInner}>
+        <View style={styles.timerTitleRow}>
+          <Text style={styles.timerTitle}>RECOVERY</Text>
+          {isActive && onStop && (
+            <TouchableOpacity onPress={onStop} hitSlop={8}>
+              <Text style={styles.timerStop}>STOP</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.timerRow}>
         <View style={styles.timerCircleWrap}>
-          <Svg width={70} height={70} viewBox="0 0 70 70" style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}>
-            <Circle cx="35" cy="35" r="30" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="4" />
+          <Svg width={56} height={56} viewBox="0 0 56 56" style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}>
+            <Circle cx="28" cy="28" r={ringR} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="3" />
             <Circle
-              cx="35"
-              cy="35"
-              r="30"
+              cx="28"
+              cy="28"
+              r={ringR}
               fill="none"
               stroke="#6b9ac4"
-              strokeWidth="4"
+              strokeWidth="3"
               strokeDasharray={timerCircumference}
               strokeDashoffset={timerOffset}
               strokeLinecap="round"
@@ -65,7 +73,13 @@ export default function RecoveryTimerSection({
           <Text style={styles.timerDisplayText}>{formatTime(timeLeft)}</Text>
         </View>
 
-        <View style={styles.presetsRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.presetsScroll}
+          contentContainerStyle={styles.presetsScrollContent}
+          bounces={false}
+        >
           {PRESETS.map(({ label, seconds, isBlue }) => (
             <TouchableOpacity
               key={seconds}
@@ -81,6 +95,7 @@ export default function RecoveryTimerSection({
               </Text>
             </TouchableOpacity>
           ))}
+        </ScrollView>
         </View>
       </View>
     </View>
@@ -92,22 +107,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(20, 23, 31, 0.95)',
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.05)',
-    paddingTop: 16,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingHorizontal: 12,
+  },
+  timerInner: {
+    gap: 8,
   },
   timerTitleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-    marginLeft: 80,
+    paddingHorizontal: 2,
   },
   timerTitle: {
     color: '#666',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
   timerStop: {
     fontSize: 10,
@@ -118,12 +134,25 @@ const styles = StyleSheet.create({
   timerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    minWidth: 0,
+  },
+  presetsScroll: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 14,
+    alignSelf: 'center',
+  },
+  presetsScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingRight: 8,
   },
   timerCircleWrap: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: 56,
+    height: 56,
+    flexShrink: 0,
+    borderRadius: 28,
     backgroundColor: '#1a1c24',
     alignItems: 'center',
     justifyContent: 'center',
@@ -132,19 +161,14 @@ const styles = StyleSheet.create({
   },
   timerDisplayText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '800',
   },
-  presetsRow: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginLeft: 15,
-  },
   presetBtn: {
-    width: 44,
-    height: 38,
-    borderRadius: 10,
+    minWidth: 40,
+    paddingHorizontal: 8,
+    height: 32,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -155,7 +179,7 @@ const styles = StyleSheet.create({
   presetBtnGoldActive: { borderColor: '#d4a040', backgroundColor: 'rgba(212, 160, 64, 0.2)' },
   presetBtnBlueActive: { borderColor: '#6b9ac4', backgroundColor: 'rgba(56, 91, 136, 0.2)' },
   presetBtnText: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '800',
   },
 });

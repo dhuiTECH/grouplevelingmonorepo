@@ -6,7 +6,7 @@ const BATCH_MS = 120_000;
 
 /**
  * Batches world position to Supabase on background, interval, and unmount.
- * Does not send steps_banked (client movement uses local budget only).
+ * Position only. `steps_banked` is written from `WorldMapScreen` session save, not this helper.
  */
 export function useMapSessionSync(
   userId: string | undefined,

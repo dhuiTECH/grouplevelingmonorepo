@@ -103,6 +103,8 @@ export function ClearedGatesSection({
           dungeon_id,
           distance_meters,
           duration_seconds,
+          elevation_gain_meters,
+          time_to_target_seconds,
           completed,
           created_at,
           dungeons ( id, name, tier, target_distance_meters )

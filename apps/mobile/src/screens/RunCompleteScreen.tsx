@@ -13,7 +13,13 @@ import { ChestOpeningModal } from '@/components/modals/ChestOpeningModal';
 const { width: WINDOW_WIDTH } = Dimensions.get('window');
 
 const CAVE_OF_SHADOWS_DEMO = {
-  runData: { distance: 10000, duration: 55 * 60 + 33, routeCoordinates: [] },
+  runData: {
+    distance: 10000,
+    duration: 55 * 60 + 33,
+    routeCoordinates: [] as Array<{ latitude: number; longitude: number }>,
+    elevationGain: 180,
+    timeToTargetSeconds: 52 * 60 + 10,
+  },
   dungeon: {
     id: '425dc861-6ce0-4ef3-bde3-79c71ae47f8e', name: 'Cave of Shadows', difficulty: 'E-Rank',
     tier: '5k', target_distance_meters: 5000, xp_reward: 500, coin_reward: 100,
@@ -61,17 +67,28 @@ export default function RunCompleteScreen() {
     const targetMeters = Number(paramDungeon.target_distance_meters) || 5000;
     const distanceMeters = Math.round(Number(paramRunData.distance) || 0);
     const durationSeconds = Math.round(Number(paramRunData.duration) || 0);
-    
+    const elevationGainMeters = Math.max(0, Math.round(Number(paramRunData.elevationGain) || 0));
+    const rawTimeToTarget =
+      paramRunData.timeToTargetSeconds != null && !Number.isNaN(Number(paramRunData.timeToTargetSeconds))
+        ? Math.round(Number(paramRunData.timeToTargetSeconds))
+        : null;
+
     // Be slightly lenient with distance (allow completion at 99% of target)
     // This helps with rounding issues or GPS jitter near the finish line
     const completed = distanceMeters >= (targetMeters * 0.99);
+    const timeToTargetForDb = completed ? (rawTimeToTarget ?? durationSeconds) : null;
 
     const recordRunAndFetchEvent = async () => {
       console.log(`[RunComplete] Recording run: user=${user.id} dungeon=${paramDungeon.id} distance=${distanceMeters} duration=${durationSeconds} completed=${completed}`);
       
       const { error: runError } = await supabase.from('dungeon_runs').insert({
-        user_id: user.id, dungeon_id: paramDungeon.id, distance_meters: distanceMeters,
-        duration_seconds: durationSeconds, completed,
+        user_id: user.id,
+        dungeon_id: paramDungeon.id,
+        distance_meters: distanceMeters,
+        duration_seconds: durationSeconds,
+        completed,
+        elevation_gain_meters: elevationGainMeters,
+        time_to_target_seconds: timeToTargetForDb,
       });
       
       if (runError) {

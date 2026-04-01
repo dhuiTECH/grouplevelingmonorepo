@@ -10,6 +10,11 @@ export interface SystemWindowHeaderProps {
   containerStyle?: ViewStyle;
   /** Smaller fixed-size “!” + title (inventory modals). */
   compact?: boolean;
+  /**
+   * When compact, center the ! + title row (e.g. full-screen modals).
+   * Default compact layout is start-aligned with right padding for a close button.
+   */
+  centered?: boolean;
 }
 
 /**
@@ -21,6 +26,7 @@ export function SystemWindowHeader({
   titlePulse = true,
   containerStyle,
   compact = false,
+  centered = false,
 }: SystemWindowHeaderProps) {
   const pulse = useRef(new Animated.Value(1)).current;
 
@@ -50,6 +56,7 @@ export function SystemWindowHeader({
   }, [titlePulse, pulse]);
 
   const c = compact ? compactStyles : null;
+  const useCenteredCompact = compact && centered;
 
   return (
     <View style={[styles.headerBlock, compact && styles.headerBlockCompact, containerStyle]}>
@@ -57,7 +64,8 @@ export function SystemWindowHeader({
         style={[
           styles.headerRow,
           compact && styles.headerRowCompact,
-          compact && compactStyles.headerRowPadForClose,
+          useCenteredCompact && compactStyles.headerRowCompactCentered,
+          compact && !useCenteredCompact && compactStyles.headerRowPadForClose,
           titlePulse && { opacity: pulse },
         ]}
       >
@@ -66,7 +74,13 @@ export function SystemWindowHeader({
             <Text style={[styles.iconText, c?.iconText]}>!</Text>
           </View>
         </View>
-        <View style={[styles.titleTextFrame, c?.titleTextFrame]}>
+        <View
+          style={[
+            styles.titleTextFrame,
+            c?.titleTextFrame,
+            useCenteredCompact && compactStyles.titleTextFrameCentered,
+          ]}
+        >
           <Text style={[styles.headerTitle, c?.headerTitle]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>
             {title}
           </Text>
@@ -210,6 +224,18 @@ const styles = StyleSheet.create({
 
 /** Same visual weight in every modal; smaller title strip for narrow modals */
 const compactStyles = StyleSheet.create({
+  /** Full-width modals: center ! + title; symmetric inset clears absolute close (≈44px). */
+  headerRowCompactCentered: {
+    justifyContent: 'center',
+    paddingHorizontal: 44,
+  },
+  /** Title strip hugs content when centered (avoid flex:1 stretching the box). */
+  titleTextFrameCentered: {
+    flex: 0,
+    flexGrow: 0,
+    flexShrink: 1,
+    maxWidth: '78%',
+  },
   /** Reserve space when a modal close (X) sits top-right over the header row */
   headerRowPadForClose: {
     paddingRight: 32,

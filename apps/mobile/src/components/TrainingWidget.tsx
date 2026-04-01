@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Platform } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
 import { Footprints } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api as nutritionApi } from '@/api/nutrition';
 import { api as trainingApi } from '@/api/training';
+import { FlameIcon } from '@/components/icons/MacroNutrientIcons';
 import QuickFoodEntryModal from './modals/QuickFoodEntryModal';
 import { useNotification } from '@/contexts/NotificationContext';
 
@@ -201,10 +201,7 @@ const TrainingWidget: React.FC<TrainingWidgetProps> = ({
             </View>
             <View style={styles.statItem}>
               <View style={styles.statHeader}>
-                <Svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <Path d="M12 2v10" />
-                  <Path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
-                </Svg>
+                <FlameIcon size={8} color="#fbbf24" />
               </View>
               <Text style={styles.statValue}>{nutritionTotals.calories}</Text>
             </View>

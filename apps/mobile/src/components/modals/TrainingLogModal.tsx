@@ -1,10 +1,26 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, ActivityIndicator, Alert, TextInput, StyleSheet, Image } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  Modal,
+  ActivityIndicator,
+  Alert,
+  TextInput,
+  StyleSheet,
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { BlurView } from 'expo-blur';
-import { X, Check, Plus, Flame, Utensils, Activity } from 'lucide-react-native';
+import { X, Check, Plus, ClipboardList } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
 import { Audio } from 'expo-av';
-import { MotiView, AnimatePresence } from 'moti';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Defs, Pattern, Rect } from 'react-native-svg';
+import { SystemWindowHeader, SYSTEM_MECH_GLOW_GRADIENT_COLORS } from '@/components/ui/SystemWindowHeader';
 
 import { api as trainingApi } from '@/api/training';
 import { api as nutritionApi } from '@/api/nutrition';
@@ -13,12 +29,12 @@ import { supabase } from '@/lib/supabase';
 import ExerciseItem from '../ExerciseItem';
 import DeployMissionForm from './DeployMissionForm';
 import AddFoodForm from './AddFoodForm';
-import HologramPet from '@/components/HologramPet';
 import HologramOverlay from '../HologramOverlay';
 import { useTutorial } from '@/context/TutorialContext';
 import { HunterLogModal } from './HunterLogModal';
 import DietLogSection from '../DietLogSection';
 import RecoveryTimerSection from '../RecoveryTimerSection';
+import { parseTrainingProgram } from '@/utils/parseTrainingProgramPaste';
 
 interface TrainingLogModalProps {
   isOpen: boolean;
@@ -31,6 +47,99 @@ interface TrainingLogModalProps {
 }
 
 import { useNotification } from '@/contexts/NotificationContext';
+import { useAudio } from '@/contexts/AudioContext';
+
+const THEME = {
+  primary: '#00d2ff',
+  text: '#e6ffff',
+  trainingAccent: '#22d3ee',
+  dietAccent: '#f59e0b',
+} as const;
+
+const systemChromeStyles = StyleSheet.create({
+  sideAccent: {
+    position: 'absolute',
+    top: 48,
+    bottom: 48,
+    width: 1,
+    backgroundColor: 'rgba(0, 210, 255, 0.4)',
+    shadowColor: '#00d2ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 10,
+    zIndex: 10,
+  },
+  mechBorderContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 8,
+    zIndex: 20,
+    shadowColor: '#00e5ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 15,
+  },
+  mechBorderGradient: {
+    width: '100%',
+    height: '100%',
+  },
+  mechInnerLine: {
+    position: 'absolute',
+    top: 3,
+    left: '5%',
+    right: '5%',
+    height: 1,
+    backgroundColor: '#00d2ff',
+    shadowColor: '#00d2ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+  },
+});
+
+function TrainingLogScanlines({ width: w, height: h }: { width: number; height: number }) {
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Svg width={w} height={h}>
+        <Defs>
+          <Pattern id="tlTrainingScan" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+            <Rect x="0" y="0" width="4" height="1" fill="#00e5ff" fillOpacity={0.03} />
+          </Pattern>
+        </Defs>
+        <Rect x="0" y="0" width={w} height={h} fill="url(#tlTrainingScan)" />
+      </Svg>
+    </View>
+  );
+}
+
+function SideAccents() {
+  return (
+    <>
+      <View style={[systemChromeStyles.sideAccent, { left: 0 }]} />
+      <View style={[systemChromeStyles.sideAccent, { right: 0 }]} />
+    </>
+  );
+}
+
+function MechanicalBorder({ position }: { position: 'top' | 'bottom' }) {
+  return (
+    <View
+      style={[
+        systemChromeStyles.mechBorderContainer,
+        position === 'top' ? { top: 0 } : { bottom: 0 },
+      ]}
+    >
+      <LinearGradient
+        colors={SYSTEM_MECH_GLOW_GRADIENT_COLORS}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={systemChromeStyles.mechBorderGradient}
+      />
+      <View style={systemChromeStyles.mechInnerLine} />
+    </View>
+  );
+}
 
 export default function TrainingLogModal({ 
   isOpen, 
@@ -42,6 +151,11 @@ export default function TrainingLogModal({
   setUser
 }: TrainingLogModalProps) {
   const { showNotification } = useNotification();
+  const { stopBackgroundMusic, playTrack } = useAudio();
+  const userRef = useRef(user);
+  userRef.current = user;
+  const insets = useSafeAreaInsets();
+  const { width: winW, height: winH } = Dimensions.get('window');
   const { step } = useTutorial();
   // State
   const [activeTab, setActiveTab] = useState<'training' | 'nutrition'>(initialTab);
@@ -88,6 +202,17 @@ export default function TrainingLogModal({
     };
   }, []);
 
+  // Pause dashboard BGM while this modal is open; resume home track on close (matches HomeScreen focus music).
+  useEffect(() => {
+    if (!isOpen) return;
+    void stopBackgroundMusic();
+    return () => {
+      const u = userRef.current;
+      if (u?.tutorial_completed) void playTrack('Dashboard');
+      else void playTrack('Onboarding Screen - Before Tutorial Overlay');
+    };
+  }, [isOpen, stopBackgroundMusic, playTrack]);
+
   // Modals
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
   const [deployPathName, setDeployPathName] = useState<string | null>(null);
@@ -95,6 +220,8 @@ export default function TrainingLogModal({
   const [deployFormData, setDeployFormData] = useState<{ name: string; sets: any[] }>({ name: '', sets: [] });
   
   const [isFoodModalOpen, setIsFoodModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importText, setImportText] = useState('');
   const [isInitializingCategory, setIsInitializingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [firstExerciseName, setFirstExerciseName] = useState('');
@@ -349,6 +476,52 @@ export default function TrainingLogModal({
       }
   };
 
+  const pasteProgramFromClipboard = async () => {
+    try {
+      const t = await Clipboard.getStringAsync();
+      if (t) setImportText(t);
+      else showNotification('Clipboard empty', 'error');
+    } catch {
+      showNotification('Could not read clipboard', 'error');
+    }
+  };
+
+  const handleImportProgram = async () => {
+    const result = parseTrainingProgram(importText);
+    if (!result.ok) {
+      Alert.alert('Could not parse', result.errors.join('\n'));
+      return;
+    }
+    setLoading(true);
+    try {
+      let imported = 0;
+      for (const row of result.rows) {
+        const payload = {
+          hunter_id: user.id,
+          day_of_week: selectedJournalDay,
+          activity_type: row.category,
+          category: row.category,
+          exercise_name: row.exerciseName,
+          sets_data: row.setsData,
+          is_completed: false,
+        };
+        const res = await trainingApi.createTrainingProtocol(payload);
+        if (!res.success) {
+          Alert.alert('Import stopped', (res as { error?: string }).error || 'Save failed');
+          await fetchData();
+          return;
+        }
+        imported += 1;
+      }
+      showNotification(`Imported ${imported} mission(s)`, 'success');
+      setImportModalOpen(false);
+      setImportText('');
+      fetchData();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCreateCategory = async () => {
       if (!newCategoryName.trim() || !firstExerciseName.trim()) return showNotification("Fields required", "error");
       const payload = {
@@ -429,30 +602,52 @@ export default function TrainingLogModal({
 
   return (
     <Modal visible={isOpen} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <BlurView intensity={40} tint="dark" style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: '#131524' }}>
-            {/* Header */}
-            <View style={styles.headerBlock}>
-                <View style={styles.headerRow}>
-                    <View style={styles.titleBadge}>
-                        <Image
-                          source={require('../../../assets/journal.png')}
-                          style={styles.titleIcon}
-                          resizeMode="contain"
-                        />
-                        <Text style={styles.titleText}>Hunter's Training Log</Text>
-                    </View>
-                    <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={8}>
-                        <X size={20} color="#22d3ee" />
-                    </TouchableOpacity>
-                </View>
+      <BlurView
+        intensity={22}
+        tint="dark"
+        style={[
+          styles.backdrop,
+          {
+            paddingTop: Math.max(insets.top, 4),
+            paddingBottom: Math.max(insets.bottom, 4),
+            paddingHorizontal: 0,
+          },
+        ]}
+      >
+        <View style={styles.modalWindow}>
+          <LinearGradient
+            colors={['rgba(2, 6, 15, 0.97)', 'rgba(8, 18, 35, 0.98)']}
+            style={StyleSheet.absoluteFill}
+          />
+          <TrainingLogScanlines width={winW} height={winH} />
+          <SideAccents />
+          <MechanicalBorder position="top" />
+          <MechanicalBorder position="bottom" />
 
-                {/* Days Grid */}
-                <View style={styles.daysRow}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.closeButton}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
+            <X size={22} color={THEME.primary} />
+          </TouchableOpacity>
+
+          <View style={styles.chromeHeader}>
+            <SystemWindowHeader
+              compact
+              centered
+              title="HUNTER TRAINING LOG"
+              containerStyle={styles.trainingLogHeaderChrome}
+            />
+          </View>
+
+          <View style={styles.daysRow}>
                     {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => {
                         const isCompleted = getDayCompletionStatus(day);
                         const isSelected = selectedJournalDay === day;
-                        const activeColor = activeTab === 'training' ? '#22d3ee' : '#f59e0b';
+                        const activeColor = activeTab === 'training' ? THEME.trainingAccent : THEME.dietAccent;
                         
                         return (
                             <TouchableOpacity 
@@ -502,13 +697,30 @@ export default function TrainingLogModal({
                         <Text style={[styles.tabText, activeTab === 'nutrition' && styles.tabTextNutrition]}>[ DIET LOG ]</Text>
                     </TouchableOpacity>
                 </View>
-            </View>
 
-            {/* Content */}
+                {activeTab === 'training' && (
+                  <View style={styles.importRow}>
+                    <TouchableOpacity
+                      style={styles.importBtn}
+                      onPress={() => setImportModalOpen(true)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Paste program from notes"
+                    >
+                      <ClipboardList size={15} color={THEME.primary} />
+                      <Text style={styles.importBtnText}>PASTE PROGRAM</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+          <View style={styles.contentArea}>
             {activeTab === 'training' ? (
-                <>
-                <ScrollView className="flex-1 p-4" contentContainerStyle={{ paddingBottom: 100 }}>
-                    {loading && <ActivityIndicator size="large" color="#22d3ee" />}
+                <View style={styles.trainingTabColumn}>
+                <ScrollView
+                  className="p-4"
+                  style={styles.trainingScroll}
+                  contentContainerStyle={styles.trainingScrollContent}
+                >
+                    {loading && <ActivityIndicator size="large" color={THEME.primary} />}
                     {!loading && (
                         <View className="space-y-6">
                             {sectorsInDatabase.map(pathName => {
@@ -569,7 +781,7 @@ export default function TrainingLogModal({
                                         }}
                                         style={styles.primaryButton}
                                         >
-                                            <Plus size={14} color="#22d3ee" />
+                                            <Plus size={14} color={THEME.primary} />
                                             <Text style={styles.primaryButtonText}>Deploy Mission</Text>
                                         </TouchableOpacity>
                                     </View>
@@ -614,8 +826,9 @@ export default function TrainingLogModal({
                     onStop={() => { setIsRestTimerActive(false); setRestTimer(0); setRestTimerInitial(0); }}
                     isActive={isRestTimerActive}
                 />
-                </>
+                </View>
             ) : (
+                <View style={styles.dietTabColumn}>
                 <DietLogSection
                     nutritionTotals={nutritionTotals}
                     targetCalories={userTargets?.target_calories || 2000}
@@ -625,9 +838,13 @@ export default function TrainingLogModal({
                     entryCount={localNutritionLogs.filter(l => l.day_of_week === selectedJournalDay).length}
                     onLogNewEntry={() => setIsFoodModalOpen(true)}
                 >
-                    <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 300 }}>
+                    <ScrollView
+                      showsVerticalScrollIndicator={false}
+                      style={styles.dietEntriesScroll}
+                      contentContainerStyle={styles.dietEntriesScrollContent}
+                    >
                         {localNutritionLogs.filter(l => l.day_of_week === selectedJournalDay).map(item => (
-                            <View key={item.id} className="flex-row justify-between items-center bg-slate-900/50 p-3 rounded-lg mb-2 border border-white/5">
+                            <View key={item.id} style={styles.dietEntryRow}>
                                 <View>
                                     <Text style={styles.dietEntryName}>{item.name}</Text>
                                     <Text style={styles.dietEntryMeta}>{item.calories} CALS | P:{item.protein} C:{item.carbs} F:{item.fats}</Text>
@@ -639,47 +856,88 @@ export default function TrainingLogModal({
                         ))}
                     </ScrollView>
                 </DietLogSection>
+                </View>
             )}
-
-            {/* Modals */}
-            <Modal visible={isDeployModalOpen} transparent animationType="slide">
-                <BlurView intensity={20} tint="dark" style={{flex:1, justifyContent:'center', padding:20}}>
-                     <View className="bg-slate-900 border border-cyan-500/30 rounded-2xl p-6 h-[500px]">
-                         <DeployMissionForm 
-                            deployPathName={deployPathName!}
-                            initialObjectiveName={deployFormData.name}
-                            initialSets={deployFormData.sets}
-                            onCancel={() => setIsDeployModalOpen(false)}
-                            onConfirm={handleSaveMission}
-                         />
-                     </View>
-                </BlurView>
-            </Modal>
-
-            <Modal visible={isFoodModalOpen} transparent animationType="slide">
-                 <BlurView intensity={20} tint="dark" style={{flex:1, justifyContent:'center', padding:20}}>
-                     <View className="bg-slate-900 border border-amber-500/30 rounded-2xl h-[600px]">
-                         <AddFoodForm 
-                            day={selectedJournalDay}
-                            user={user}
-                            isToday={isTodaySelected}
-                            onCancel={() => setIsFoodModalOpen(false)}
-                            onConfirm={handleSaveFood}
-                         />
-                     </View>
-                 </BlurView>
-            </Modal>
-            
-            {step === 'TRAINING_LOG_MODAL' && <HologramOverlay />}
-            {step === 'TRAINING_LOG_DIET' && <HologramOverlay />}
+          </View>
         </View>
-        
-        {/* Reward Overlay - Renders absolutely positioned over the modal content */}
-        <HunterLogModal 
-            visible={showReward} 
-            expAmount={earnedExp} 
-            coinsAmount={earnedCoins} 
-            onClose={() => setShowReward(false)} 
+
+        <Modal visible={isDeployModalOpen} transparent animationType="slide">
+          <BlurView intensity={20} tint="dark" style={styles.nestedBackdrop}>
+            <View style={styles.nestedModalShell}>
+              <DeployMissionForm
+                deployPathName={deployPathName!}
+                initialObjectiveName={deployFormData.name}
+                initialSets={deployFormData.sets}
+                onCancel={() => setIsDeployModalOpen(false)}
+                onConfirm={handleSaveMission}
+              />
+            </View>
+          </BlurView>
+        </Modal>
+
+        <Modal visible={importModalOpen} transparent animationType="fade" onRequestClose={() => setImportModalOpen(false)}>
+          <BlurView intensity={22} tint="dark" style={styles.nestedBackdrop}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              style={styles.importKeyboardAvoid}
+            >
+              <View style={styles.importModalShell}>
+                <Text style={styles.importModalTitle}>PASTE PROGRAM</Text>
+                <Text style={styles.importModalHint}>
+                  Strength (default): one exercise per line — e.g. Bench Press 3x10, Squat 5x5 @ 225.{'\n'}
+                  Use PATH: Running (or any category) for cardio lines; e.g. Morning Run 5km 30min. Lines with # are comments.
+                </Text>
+                <TextInput
+                  style={styles.importTextArea}
+                  multiline
+                  value={importText}
+                  onChangeText={setImportText}
+                  placeholder={'Bench Press 4x8\nSquat 5x5 @ 225\nPATH: Running\nEasy Jog 5km 30min'}
+                  placeholderTextColor="#475569"
+                  textAlignVertical="top"
+                />
+                <View style={styles.importActions}>
+                  <TouchableOpacity style={styles.importSecondaryBtn} onPress={pasteProgramFromClipboard}>
+                    <Text style={styles.importSecondaryBtnText}>FROM CLIPBOARD</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.importSecondaryBtn} onPress={() => { setImportModalOpen(false); setImportText(''); }}>
+                    <Text style={styles.importSecondaryBtnText}>CANCEL</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.importPrimaryBtn} onPress={handleImportProgram} disabled={loading}>
+                    {loading ? (
+                      <ActivityIndicator color="#020617" />
+                    ) : (
+                      <Text style={styles.importPrimaryBtnText}>IMPORT</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </BlurView>
+        </Modal>
+
+        <Modal visible={isFoodModalOpen} transparent animationType="slide">
+          <BlurView intensity={20} tint="dark" style={styles.nestedBackdrop}>
+            <View style={[styles.nestedModalShell, styles.nestedModalShellFood]}>
+              <AddFoodForm
+                day={selectedJournalDay}
+                user={user}
+                isToday={isTodaySelected}
+                onCancel={() => setIsFoodModalOpen(false)}
+                onConfirm={handleSaveFood}
+              />
+            </View>
+          </BlurView>
+        </Modal>
+
+        {step === 'TRAINING_LOG_MODAL' && <HologramOverlay />}
+        {step === 'TRAINING_LOG_DIET' && <HologramOverlay />}
+
+        <HunterLogModal
+          visible={showReward}
+          expAmount={earnedExp}
+          coinsAmount={earnedCoins}
+          onClose={() => setShowReward(false)}
         />
       </BlurView>
     </Modal>
@@ -687,56 +945,155 @@ export default function TrainingLogModal({
 }
 
 const styles = StyleSheet.create({
-  headerBlock: {
-    paddingHorizontal: 16,
-    paddingTop: 48,
-    paddingBottom: 16,
-    backgroundColor: '#131524',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 4, 10, 0.88)',
   },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  titleBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  modalWindow: {
+    flex: 1,
+    width: '100%',
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(4, 12, 28, 0.96)',
     borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.3)',
+    borderColor: 'rgba(0, 210, 255, 0.32)',
+    borderRadius: 2,
+    overflow: 'visible',
+    position: 'relative',
+    shadowColor: '#0066ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 28,
+    elevation: 12,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 40,
+    padding: 8,
+    backgroundColor: 'rgba(2, 12, 32, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 210, 255, 0.35)',
+    borderRadius: 4,
+  },
+  chromeHeader: {
+    paddingHorizontal: 8,
+    paddingTop: 20,
+    paddingBottom: 0,
+    alignItems: 'center',
+  },
+  importRow: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: 'rgba(6, 182, 212, 0.08)',
+    marginTop: 12,
+    paddingTop: 4,
+    marginBottom: 10,
+    alignItems: 'flex-end',
   },
-  titleIcon: {
-    width: 18,
-    height: 18,
-    marginRight: 8,
+  importBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 210, 255, 0.35)',
+    backgroundColor: 'rgba(2, 12, 32, 0.75)',
   },
-  titleText: {
-    color: '#22d3ee',
-    fontWeight: '900',
-    textTransform: 'uppercase',
+  importBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    color: THEME.primary,
+    fontFamily: 'Exo2-Bold',
+  },
+  importKeyboardAvoid: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 16,
+  },
+  importModalShell: {
+    backgroundColor: 'rgba(4, 12, 28, 0.98)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 210, 255, 0.38)',
+    borderRadius: 8,
+    padding: 16,
+    maxHeight: Dimensions.get('window').height * 0.85,
+  },
+  importModalTitle: {
+    fontSize: 13,
+    fontWeight: '800',
     letterSpacing: 2,
-    fontSize: 12,
-    fontFamily: 'Exo2-Regular',
+    color: THEME.primary,
+    marginBottom: 10,
+    fontFamily: 'Exo2-Bold',
   },
-  closeBtn: {
-    padding: 10,
-    backgroundColor: '#334155',
-    borderRadius: 10,
+  importModalHint: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#94a3b8',
+    marginBottom: 12,
+  },
+  importTextArea: {
+    minHeight: 160,
+    maxHeight: 280,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 210, 255, 0.22)',
+    borderRadius: 8,
+    padding: 12,
+    color: '#e2e8f0',
+    fontSize: 13,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    marginBottom: 14,
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+  },
+  importActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  importSecondaryBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  importSecondaryBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+    letterSpacing: 0.5,
+  },
+  importPrimaryBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 6,
+    backgroundColor: THEME.primary,
+    minWidth: 100,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  importPrimaryBtnText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#020617',
+    letterSpacing: 1,
+  },
+  trainingLogHeaderChrome: {
+    marginBottom: 4,
+    paddingBottom: 0,
+    marginTop: 0,
+    width: '100%',
+    paddingHorizontal: 0,
   },
   daysRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-    gap: 6,
+    marginBottom: 14,
+    gap: 5,
+    paddingHorizontal: 10,
+    marginTop: 4,
   },
   dayPill: {
     flex: 1,
@@ -769,28 +1126,105 @@ const styles = StyleSheet.create({
   tabsRow: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: 'rgba(0, 210, 255, 0.28)',
+    marginHorizontal: 10,
   },
   tab: {
     flex: 1,
-    paddingVertical: 14,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
-  tabTraining: { borderBottomColor: '#22d3ee' },
-  tabNutrition: { borderBottomColor: '#f59e0b' },
+  tabTraining: {
+    borderBottomColor: '#22d3ee',
+    shadowColor: '#22d3ee',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+  },
+  tabNutrition: {
+    borderBottomColor: '#f59e0b',
+    shadowColor: '#f59e0b',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+  },
   tabText: {
     fontFamily: 'Exo2-Regular',
-    fontWeight: '900',
+    fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 2,
     fontSize: 11,
-    color: '#6b7280',
+    color: 'rgba(0, 210, 255, 0.45)',
   },
-  tabTextTraining: { color: '#22d3ee' },
-  tabTextNutrition: { color: '#f59e0b' },
+  tabTextTraining: {
+    color: '#e6ffff',
+    textShadowColor: '#00d2ff',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
+    fontFamily: 'Exo2-Bold',
+  },
+  tabTextNutrition: {
+    color: '#e6ffff',
+    textShadowColor: 'rgba(245, 158, 11, 0.9)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
+    fontFamily: 'Exo2-Bold',
+  },
+  contentArea: {
+    flex: 1,
+    minHeight: 0,
+  },
+  trainingTabColumn: {
+    flex: 1,
+    minHeight: 0,
+    paddingBottom: 8,
+  },
+  trainingScroll: {
+    flex: 1,
+  },
+  trainingScrollContent: {
+    paddingBottom: 100,
+  },
+  dietTabColumn: {
+    flex: 1,
+    minHeight: 0,
+    paddingBottom: 8,
+  },
+  nestedBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 4, 10, 0.92)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  dietEntriesScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
+  dietEntriesScrollContent: {
+    paddingBottom: 12,
+    flexGrow: 1,
+  },
+  nestedModalShell: {
+    backgroundColor: 'rgba(4, 12, 28, 0.98)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 210, 255, 0.38)',
+    borderRadius: 4,
+    padding: 20,
+    height: 500,
+    maxHeight: Math.min(Dimensions.get('window').height * 0.9, 800),
+    shadowColor: '#0066ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  nestedModalShellFood: {
+    borderColor: 'rgba(245, 158, 11, 0.45)',
+    height: 600,
+  },
   primaryButton: {
     width: '100%',
     paddingVertical: 14,
@@ -804,7 +1238,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   primaryButtonText: {
-    color: '#22d3ee',
+    color: '#00d2ff',
     fontWeight: '700',
     textTransform: 'uppercase',
     fontSize: 12,
@@ -939,7 +1373,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   pathLabelStrength: { color: '#22c55e' },
-  pathLabelCardio: { color: '#22d3ee' },
+  pathLabelCardio: { color: '#00d2ff' },
   emptyStateText: {
     fontFamily: 'Exo2-Regular',
     color: '#64748b',
@@ -952,6 +1386,17 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontWeight: '700',
     textTransform: 'uppercase',
+  },
+  dietEntryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 34, 68, 0.35)',
+    padding: 12,
+    borderRadius: 2,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 210, 255, 0.18)',
   },
   dietEntryName: {
     fontFamily: 'Exo2-Regular',

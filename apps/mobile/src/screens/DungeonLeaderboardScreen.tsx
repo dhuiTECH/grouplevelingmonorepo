@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { supabase } from '@/lib/supabase';
@@ -25,11 +25,14 @@ export default function DungeonLeaderboardScreen() {
   const fetchLeaderboard = useCallback(async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('best_dungeon_times')
-        .select('*')
-        .eq('dungeon_tier', dungeon?.tier || '5k')
-        .order('best_time_seconds', { ascending: true })
+      let leaderboardQuery = supabase.from('best_dungeon_times').select('*');
+      if (dungeon?.id) {
+        leaderboardQuery = leaderboardQuery.eq('dungeon_id', dungeon.id);
+      } else {
+        leaderboardQuery = leaderboardQuery.eq('dungeon_tier', dungeon?.tier || '5k');
+      }
+      const { data, error } = await leaderboardQuery
+        .order('leaderboard_score', { ascending: false })
         .limit(20);
 
       if (error) throw error;
@@ -65,13 +68,13 @@ export default function DungeonLeaderboardScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dungeon?.tier]);
+  }, [dungeon?.tier, dungeon?.id]);
 
   // Fetch on mount and whenever screen comes back into focus (e.g. after completing a run)
   useFocusEffect(
     useCallback(() => {
-      if (dungeon?.tier) fetchLeaderboard();
-    }, [dungeon?.tier, fetchLeaderboard])
+      if (dungeon?.tier || dungeon?.id) fetchLeaderboard();
+    }, [dungeon?.tier, dungeon?.id, fetchLeaderboard])
   );
 
   const onRefresh = useCallback(() => {
@@ -80,9 +83,16 @@ export default function DungeonLeaderboardScreen() {
   }, [fetchLeaderboard]);
 
   const formatTime = (totalSeconds: number) => {
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
+    const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const formatScore = (raw: unknown) => {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return '—';
+    return n >= 100 ? n.toFixed(0) : n.toFixed(1);
   };
 
   const renderRankItem = ({ item, index }: { item: any, index: number }) => {
@@ -116,9 +126,12 @@ export default function DungeonLeaderboardScreen() {
           <Text style={styles.hunterTitle}>{profile.current_title || 'Novice'}</Text>
         </View>
 
-        <View style={styles.timeContainer}>
-          <Text style={styles.timeValue}>{formatTime(item.best_time_seconds)}</Text>
-          <Text style={styles.timeLabel}>TIME</Text>
+        <View style={styles.statsColumn}>
+          <Text style={styles.scoreValue}>{formatScore(item.leaderboard_score)}</Text>
+          <Text style={styles.scoreLabel}>SCORE</Text>
+          <Text style={styles.subStat}>
+            {formatTime(item.best_time_seconds)} · {Math.round(Number(item.best_elevation_gain_meters) || 0)}m elev
+          </Text>
         </View>
       </View>
     );
@@ -251,19 +264,27 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  timeContainer: {
+  statsColumn: {
     alignItems: 'flex-end',
+    maxWidth: '46%',
   },
-  timeValue: {
+  scoreValue: {
     color: '#22d3ee',
     fontSize: 16,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
   },
-  timeLabel: {
+  scoreLabel: {
     color: '#64748b',
     fontSize: 8,
     fontWeight: 'bold',
+  },
+  subStat: {
+    color: '#94a3b8',
+    fontSize: 9,
+    fontWeight: '600',
+    marginTop: 4,
+    textAlign: 'right',
   },
   emptyText: {
     color: '#64748b',

@@ -37,7 +37,7 @@ const TutorialContext = createContext<TutorialContextType | null>(null);
 
 export const TutorialProvider = ({ children }: { children: React.ReactNode }) => {
   const { user, setUser } = useAuth();
-  const { stopBackgroundMusic } = useAudio();
+  const { stopBackgroundMusic, clearBgmDisabledForGameplay } = useAudio();
   const [step, setStep] = useState<TutorialStep>('IDLE');
   const [position, setPosition] = useState<LayoutRectangle | null>(null);
   const [showTutorialChest, setShowTutorialChest] = useState(false);
@@ -47,6 +47,28 @@ export const TutorialProvider = ({ children }: { children: React.ReactNode }) =>
     setStep('IDLE');
     setPosition(null);
   }, [user?.id]);
+
+  // Tutorial start sets @app/bgm_disabled_after_tutorial; clear it whenever the user is considered done so BGM works again.
+  useEffect(() => {
+    if (!user?.id || !user?.onboarding_completed) return;
+    let cancelled = false;
+    (async () => {
+      const dbCompleted = user.tutorial_completed;
+      const key = `tutorial_completed_v1_${user.id}`;
+      let localCompleted = false;
+      try {
+        localCompleted = !!(await AsyncStorage.getItem(key));
+      } catch {
+        /* ignore */
+      }
+      const isCompleted = dbCompleted || localCompleted;
+      if (!isCompleted || cancelled) return;
+      await clearBgmDisabledForGameplay();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.onboarding_completed, user?.tutorial_completed, clearBgmDisabledForGameplay]);
 
   useEffect(() => {
     const checkTutorialStatus = async () => {
@@ -186,6 +208,7 @@ export const TutorialProvider = ({ children }: { children: React.ReactNode }) =>
         console.warn('[Tutorial] setUser after completion failed:', e);
       }
     }
+    await clearBgmDisabledForGameplay();
   };
 
   return (

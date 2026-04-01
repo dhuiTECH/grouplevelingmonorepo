@@ -28,8 +28,10 @@ export const InteractionModal = ({ visible, onClose, activeInteraction }) => {
   const [shopLoading, setShopLoading] = useState(false);
 
   // 1. All Hooks First
+  // Defer so first frame paints the dialogue UI (party count only needed for battle nav)
   useEffect(() => {
-    if (visible && user?.current_party_id) {
+    if (!visible || !user?.current_party_id) return;
+    const t = setTimeout(() => {
       supabase
         .from('party_members')
         .select('*', { count: 'exact', head: true })
@@ -37,7 +39,8 @@ export const InteractionModal = ({ visible, onClose, activeInteraction }) => {
         .then(({ count }) => {
           if (count) setPartySize(count);
         });
-    }
+    }, 0);
+    return () => clearTimeout(t);
   }, [visible, user?.current_party_id]);
 
   const dialogueScript = useMemo(() => {
@@ -164,7 +167,7 @@ export const InteractionModal = ({ visible, onClose, activeInteraction }) => {
   // 2. Early Return (Must be after all hooks)
   if (!activeInteraction) {
     return (
-      <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
         <View style={styles.overlay} />
       </Modal>
     );
@@ -180,7 +183,7 @@ export const InteractionModal = ({ visible, onClose, activeInteraction }) => {
 
   // 4. Main Return
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={styles.overlay}>
         {showVictory && <VictoryBanner rewards={activeInteraction.metadata?.rewards || {}} />}
         {showShop && (

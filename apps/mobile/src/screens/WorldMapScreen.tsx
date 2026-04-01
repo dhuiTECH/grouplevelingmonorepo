@@ -48,13 +48,10 @@ import { PartyMembersLayer } from "@/components/world-map/PartyMembersLayer";
 import { usePartyPresence } from "@/hooks/usePartyPresence";
 import { useMapUIAnimations } from "@/hooks/useMapUIAnimations";
 import { useMapData } from "@/hooks/useMapData";
-import { useWalkingSound } from "@/hooks/useWalkingSound";
+import { playWorldMapFootstep } from "@/utils/audio";
 import { useSystemNews } from "@/hooks/useSystemNews";
 import { useMapCharacter } from "@/hooks/useMapCharacter";
-import {
-  useLocalMovementBudget,
-  STEPS_PER_TILE,
-} from "@/hooks/useLocalMovementBudget";
+import { STEPS_PER_TILE } from "@/hooks/useLocalMovementBudget";
 
 import type { User } from "@/types/user";
 import { worldMapStyles } from "./WorldMapScreen.styles";
@@ -77,7 +74,11 @@ function logWorldMapScreenSync(
 export const WorldMapScreen = () => {
   const navigation = useNavigation<any>();
   const { user, setUser, refreshProfile } = useAuth();
-  const { playTrack } = useAudio();
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+  const { playTrack, startBackgroundMusic } = useAudio();
   const { pets } = usePets();
   const { activePetId } = useActivePet();
   const activePet =
@@ -204,12 +205,28 @@ export const WorldMapScreen = () => {
     stableVisionGridRef.current = rawVisionGrid;
   }
 
-  const {
-    movementBudget,
-    displayBudget,
-    spendMovementBudget,
-    addMovementBudget,
-  } = useLocalMovementBudget();
+  /** Mirrors `profiles.steps_banked` for UI-thread movement gate (Skia). */
+  const movementBudget = useSharedValue(user?.steps_banked ?? 0);
+  useEffect(() => {
+    if (user == null) return;
+    movementBudget.value = user.steps_banked ?? 0;
+  }, [user?.id, user?.steps_banked]);
+
+  const spendStepsBank = useCallback(
+    (cost: number) => {
+      if (cost <= 0) return true;
+      if (movementBudget.value < cost) return false;
+      movementBudget.value -= cost;
+      const prev = userRef.current;
+      if (!prev) return false;
+      const nextBank = Math.max(0, Math.floor(movementBudget.value));
+      const next = { ...prev, steps_banked: nextBank };
+      setUser(next);
+      userRef.current = next;
+      return true;
+    },
+    [movementBudget, setUser],
+  );
 
   // Ref keeps saveSessionPosition stable; do not call setUser inside it (avoids focus blur/enter loops).
   const flushPendingVisionRef = useRef(flushPendingVision);
@@ -221,10 +238,12 @@ export const WorldMapScreen = () => {
   const saveSessionPosition = useCallback(() => {
     const pos = latestPos.current;
     const uid = userIdRef.current;
-    if (!pos || !uid) {
+    const u = userRef.current;
+    if (!pos || !uid || !u) {
       logWorldMapScreenSync("saveSessionPosition:skip", {
         hasPos: Boolean(pos),
         hasUserId: Boolean(uid),
+        hasUser: Boolean(u),
       });
       return;
     }
@@ -233,12 +252,14 @@ export const WorldMapScreen = () => {
       y: pos.y,
       userId: uid,
     });
+    const now = new Date().toISOString();
     supabase
       .from("profiles")
       .update({
         world_x: pos.x,
         world_y: pos.y,
-        last_sync_time: new Date().toISOString(),
+        steps_banked: u.steps_banked ?? 0,
+        last_sync_time: now,
       })
       .eq("id", uid)
       .then();
@@ -282,7 +303,25 @@ export const WorldMapScreen = () => {
     mapTop,
   );
 
-  useWalkingSound(activeDirection);
+  /** One footstep per tile step while D-pad is held (`SkiaWorldMap` moveNext → invokeTileMoveStart). */
+  const onTileMoveStartStable = useCallback((running: boolean) => {
+    void playWorldMapFootstep(running);
+  }, []);
+
+  const lastTileBlockedAt = useRef(0);
+  const onTileMoveBlockedStable = useCallback(
+    (reason: "stamina" | "collision") => {
+      const now = Date.now();
+      if (now - lastTileBlockedAt.current < 180) return;
+      lastTileBlockedAt.current = now;
+      void Haptics.impactAsync(
+        reason === "collision"
+          ? Haptics.ImpactFeedbackStyle.Medium
+          : Haptics.ImpactFeedbackStyle.Light,
+      );
+    },
+    [],
+  );
 
   useEffect(() => {
     activeDirection.value = null;
@@ -303,13 +342,16 @@ export const WorldMapScreen = () => {
   useFocusEffect(
     useCallback(() => {
       logWorldMapScreenSync("focus:enter");
-      playTrack("Beginning Map");
+      void (async () => {
+        await playTrack("Beginning Map");
+        await startBackgroundMusic();
+      })();
       refreshProfile();
       return () => {
         logWorldMapScreenSync("focus:blur:saveSessionPosition");
         saveSessionPosition();
       };
-    }, [playTrack, refreshProfile, saveSessionPosition]),
+    }, [playTrack, startBackgroundMusic, refreshProfile, saveSessionPosition]),
   );
 
   const handleUnstuck = useCallback(async () => {
@@ -342,19 +384,35 @@ export const WorldMapScreen = () => {
     useSystemNews();
 
   const handleTravelSuccess = useCallback(
-    (newX: number, newY: number, cost: number) => {
-      if (!user) return;
-      if (!spendMovementBudget(cost)) return;
+    async (newX: number, newY: number, cost: number) => {
+      const u = userRef.current;
+      if (!u || (u.steps_banked ?? 0) < cost) return;
+      const newSteps = Math.max(0, (u.steps_banked ?? 0) - cost);
+      movementBudget.value = newSteps;
       const now = new Date().toISOString();
       setUser({
-        ...user,
+        ...u,
         world_x: newX,
         world_y: newY,
+        steps_banked: newSteps,
         last_sync_time: now,
       });
+      try {
+        await supabase
+          .from("profiles")
+          .update({
+            world_x: newX,
+            world_y: newY,
+            steps_banked: newSteps,
+            last_sync_time: now,
+          })
+          .eq("id", u.id);
+      } catch (e) {
+        console.warn("[WorldMap] Travel sync failed:", e);
+      }
       refreshVision(newX, newY, true, flushPendingVision);
     },
-    [user, setUser, spendMovementBudget, refreshVision, flushPendingVision],
+    [movementBudget, setUser, refreshVision, flushPendingVision],
   );
 
   const fastTravel = useCallback(
@@ -362,7 +420,14 @@ export const WorldMapScreen = () => {
       if (!user) return;
       const tilesToMove = Math.floor(stepsAvailable / STEPS_PER_TILE);
       if (tilesToMove < 1) {
-        addMovementBudget(stepsAvailable);
+        const newBank = (user.steps_banked ?? 0) + stepsAvailable;
+        movementBudget.value = newBank;
+        const now = new Date().toISOString();
+        setUser({ ...user, steps_banked: newBank, last_sync_time: now });
+        await supabase
+          .from("profiles")
+          .update({ steps_banked: newBank, last_sync_time: now })
+          .eq("id", user.id);
         return;
       }
       const ny = (user.world_y || 0) + tilesToMove;
@@ -379,14 +444,22 @@ export const WorldMapScreen = () => {
         itemsFound: Math.random() > 0.5 ? ["Mana Crystal"] : [],
       });
     },
-    [user, setUser, addMovementBudget, setAutoTravelReport],
+    [user, setUser, movementBudget, setAutoTravelReport],
   );
 
   const bankSteps = useCallback(
-    (steps: number) => {
-      addMovementBudget(steps);
+    async (steps: number) => {
+      if (!user || steps <= 0) return;
+      const newBank = (user.steps_banked ?? 0) + steps;
+      movementBudget.value = newBank;
+      const now = new Date().toISOString();
+      setUser({ ...user, steps_banked: newBank, last_sync_time: now });
+      await supabase
+        .from("profiles")
+        .update({ steps_banked: newBank, last_sync_time: now })
+        .eq("id", user.id);
     },
-    [addMovementBudget],
+    [user, setUser, movementBudget],
   );
 
   const handleSystemChoice = useCallback(
@@ -396,7 +469,7 @@ export const WorldMapScreen = () => {
       // Invalidate any in-flight pedometer read so it cannot re-set pending after dismiss
       acknowledgeOfflineStepsPrompt();
       if (choice === "AUTO") await fastTravel(steps);
-      else bankSteps(steps);
+      else await bankSteps(steps);
       // Advance sync anchor so getStepCountAsync(last_sync, now) does not re-count this batch
       const now = new Date().toISOString();
       (setUser as Dispatch<SetStateAction<User | null>>)((prev) =>
@@ -499,9 +572,12 @@ export const WorldMapScreen = () => {
           isRunning={isRunning}
           isMoving={isMoving}
           movementBudget={movementBudget}
+          spendMovementBudget={spendStepsBank}
           mapLeft={mapLeft}
           mapTop={mapTop}
           onTileEnter={onTileEnter}
+          onTileMoveStart={onTileMoveStartStable}
+          onTileMoveBlocked={onTileMoveBlockedStable}
           playerBaseX={playerBaseX}
           playerBaseY={playerBaseY}
           facingScaleX={facingScaleX}
@@ -529,7 +605,6 @@ export const WorldMapScreen = () => {
           onPressWorld={() => setTravelMenuVisible(true)}
           onPressBattle={startTestBattle}
           floatAnim={floatAnim}
-          localSteps={displayBudget}
         />
 
         <View style={worldMapStyles.dpadLayer} pointerEvents="box-none">
@@ -540,7 +615,6 @@ export const WorldMapScreen = () => {
           visible={travelMenuVisible}
           onClose={() => setTravelMenuVisible(false)}
           user={user}
-          availableMovementSteps={displayBudget}
           onTravelSuccess={handleTravelSuccess}
           onUnstuck={handleUnstuck}
         />

@@ -50,11 +50,8 @@ export interface CloudLayerProps {
   enableMotion?: boolean;
   /** When false, skip the black duplicate under each cloud. Default true. */
   enableShadows?: boolean;
-  /** Base shadow opacity multiplier (0–1). Default 0.28. */
+  /** Shadow pass opacity (soft diffuse; no blur). Default 0.12. */
   shadowOpacity?: number;
-  /** Shadow offset as fractions of each cloud's width/height. Defaults tuned for “sun high left”. */
-  shadowOffsetXFactor?: number;
-  shadowOffsetYFactor?: number;
 }
 
 interface CloudSpec {
@@ -92,6 +89,13 @@ function buildCloudSpecs(
   return specs;
 }
 
+/** Sun from west/left: shadow falls toward the right (+X) and slightly down */
+const SHADOW_TRANSFORM = [
+  { translateX: 56 },
+  { translateY: 44 },
+  { scale: 1.05 },
+] as const;
+
 function renderCloudInstances(
   cloudSpecs: CloudSpec[],
   images: readonly (unknown | null)[],
@@ -99,31 +103,26 @@ function renderCloudInstances(
   options: {
     enableShadows: boolean;
     shadowOpacity: number;
-    shadowOffsetXFactor: number;
-    shadowOffsetYFactor: number;
   },
 ) {
-  const {
-    enableShadows,
-    shadowOpacity,
-    shadowOffsetXFactor,
-    shadowOffsetYFactor,
-  } = options;
+  const { enableShadows, shadowOpacity } = options;
 
   return cloudSpecs.flatMap((spec, index) => {
     const img = images[spec.variantIndex];
     if (!img) return [];
 
-    const ox = spec.width * shadowOffsetXFactor;
-    const oy = spec.height * shadowOffsetYFactor;
-    const shadowGroupOpacity = spec.opacityFactor * shadowOpacity;
+    const cxMain = spec.x + spec.width / 2;
+    const cyMain = spec.y + spec.height / 2;
+    const cxDup = spec.x + wrapWidth + spec.width / 2;
+    const cyDup = spec.y + spec.height / 2;
 
     const shadowMain =
       enableShadows && shadowOpacity > 0 ? (
         <Group
           key={`cloud-${index}-${spec.variantIndex}-sh`}
-          opacity={shadowGroupOpacity}
-          transform={[{ translateX: ox }, { translateY: oy }]}
+          opacity={shadowOpacity}
+          origin={{ x: cxMain, y: cyMain }}
+          transform={[...SHADOW_TRANSFORM]}
         >
           <ColorMatrix matrix={BLACK_TINT_MATRIX} />
           <SkiaImage
@@ -141,8 +140,9 @@ function renderCloudInstances(
       enableShadows && shadowOpacity > 0 ? (
         <Group
           key={`cloud-${index}-${spec.variantIndex}-sh-dup`}
-          opacity={shadowGroupOpacity}
-          transform={[{ translateX: ox }, { translateY: oy }]}
+          opacity={shadowOpacity}
+          origin={{ x: cxDup, y: cyDup }}
+          transform={[...SHADOW_TRANSFORM]}
         >
           <ColorMatrix matrix={BLACK_TINT_MATRIX} />
           <SkiaImage
@@ -201,9 +201,7 @@ export function CloudLayer({
   speedMs = 28000,
   enableMotion = true,
   enableShadows = true,
-  shadowOpacity = 0.28,
-  shadowOffsetXFactor = 0.1,
-  shadowOffsetYFactor = 0.38,
+  shadowOpacity = 0.12,
 }: CloudLayerProps) {
   const img0 = useImage(CLOUD_SOURCES[0]);
   const img1 = useImage(CLOUD_SOURCES[1]);
@@ -268,8 +266,6 @@ export function CloudLayer({
         {renderCloudInstances(cloudSpecs, images, wrapWidth, {
           enableShadows,
           shadowOpacity,
-          shadowOffsetXFactor,
-          shadowOffsetYFactor,
         })}
       </Group>
     </Group>

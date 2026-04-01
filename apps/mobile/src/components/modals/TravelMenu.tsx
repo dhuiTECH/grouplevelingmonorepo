@@ -21,9 +21,7 @@ interface TravelMenuProps {
   visible: boolean;
   onClose: () => void;
   user: User | null;
-  /** Client-side movement budget (device steps); travel cost is deducted in onTravelSuccess */
-  availableMovementSteps: number;
-  onTravelSuccess: (newX: number, newY: number, cost: number) => void;
+  onTravelSuccess: (newX: number, newY: number, cost: number) => void | Promise<void>;
   onUnstuck?: () => void;
 }
 
@@ -31,7 +29,6 @@ export const TravelMenu: React.FC<TravelMenuProps> = ({
   visible,
   onClose,
   user,
-  availableMovementSteps,
   onTravelSuccess,
   onUnstuck,
 }) => {
@@ -88,7 +85,7 @@ export const TravelMenu: React.FC<TravelMenuProps> = ({
     if (!user) return;
     const cost = calculateTravelCost(location.x, location.y);
 
-    if (availableMovementSteps < cost) {
+    if ((user.steps_banked ?? 0) < cost) {
       alert("Insufficient Stamina! Walk more to travel here.");
       return;
     }
@@ -226,10 +223,11 @@ export const TravelMenu: React.FC<TravelMenuProps> = ({
             )}
           </ScrollView>
 
-          {/* Footer Info */}
           <View style={styles.footer}>
-            <Text style={styles.staminaLabel}>AVAILABLE STAMINA:</Text>
-            <Text style={styles.staminaValue}>{availableMovementSteps} STEPS</Text>
+            <Text style={styles.staminaLabel}>AVAILABLE STAMINA</Text>
+            <Text style={styles.staminaValue}>
+              {(user?.steps_banked ?? 0).toLocaleString()} STEPS
+            </Text>
           </View>
         </View>
       </View>

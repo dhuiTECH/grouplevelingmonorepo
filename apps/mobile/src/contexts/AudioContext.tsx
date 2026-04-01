@@ -9,12 +9,29 @@ import { fetchGameMusic } from '@/api/music';
 const MUTE_STORAGE_KEY = '@app/music_muted';
 const BGM_DISABLED_KEY = '@app/bgm_disabled_after_tutorial';
 
+/** Resolve Supabase game_music.name → file_url (exact, trim, then case-insensitive). */
+function findTrackUrl(
+  map: Record<string, string>,
+  trackName: string,
+): string | undefined {
+  if (map[trackName]) return map[trackName];
+  const trimmed = trackName.trim();
+  if (map[trimmed]) return map[trimmed];
+  const key = Object.keys(map).find(
+    (k) => k.trim().toLowerCase() === trimmed.toLowerCase(),
+  );
+  if (key) return map[key];
+  return undefined;
+}
+
 interface AudioContextType {
   isMuted: boolean;
   setMuted: (value: boolean) => Promise<void>;
   startBackgroundMusic: () => Promise<void>;
   stopBackgroundMusic: () => Promise<void>;
   playTrack: (trackName: string) => Promise<void>;
+  /** Clears the tutorial-time BGM lock so normal tracks can play again (call when tutorial is done or already completed). */
+  clearBgmDisabledForGameplay: () => Promise<void>;
 }
 
 const AudioContext = createContext<AudioContextType | undefined>(undefined);
@@ -35,6 +52,8 @@ export function AudioProvider({ children }: AudioProviderProps): JSX.Element {
   const currentTrackNameRef = useRef<string | null>(null);
   const loadingTrackNameRef = useRef<string | null>(null);
   const registryVersionRef = useRef(0);
+  /** Set when playTrack ran before the Supabase registry finished loading (no retry otherwise). */
+  const pendingTrackNameRef = useRef<string | null>(null);
 
   // SFX use this getter to respect mute (reads ref so always current)
   useEffect(() => {
@@ -48,10 +67,10 @@ export function AudioProvider({ children }: AudioProviderProps): JSX.Element {
     const init = async () => {
       try {
         await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: false,
+          playsInSilentModeIOS: true,
           allowsRecordingIOS: false,
           staysActiveInBackground: false,
-          interruptionModeIOS: 0,
+          interruptionModeIOS: 1,
           shouldDuckAndroid: true,
           interruptionModeAndroid: 2,
           playThroughEarpieceAndroid: false,
@@ -61,7 +80,6 @@ export function AudioProvider({ children }: AudioProviderProps): JSX.Element {
         const disabledStored = await AsyncStorage.getItem(BGM_DISABLED_KEY);
         const muted = stored === 'true';
         const bgmDisabled = disabledStored === 'true';
-        
         if (isMounted) {
           isMutedRef.current = muted;
           setIsMutedState(muted);
@@ -73,16 +91,28 @@ export function AudioProvider({ children }: AudioProviderProps): JSX.Element {
         if (isMounted && tracks.length > 0) {
           const map: Record<string, string> = {};
           tracks.forEach(t => {
-            if (t.name && t.file_url) map[t.name] = t.file_url;
+            if (t.name && t.file_url) {
+              map[t.name] = t.file_url;
+              const trimmed = t.name.trim();
+              if (trimmed) map[trimmed] = t.file_url;
+            }
           });
           musicRegistryRef.current = map;
           registryVersionRef.current += 1;
           console.log('[AudioContext] Music registry loaded:', Object.keys(map));
 
+          // Retry a track that was requested while the registry was still empty (e.g. WorldMap on cold start).
+          const pending = pendingTrackNameRef.current;
+          if (pending && findTrackUrl(map, pending) && isMounted) {
+            pendingTrackNameRef.current = null;
+            currentTrackNameRef.current = null;
+            playTrack(pending);
+          }
+
           // If a screen already requested a track before registry loaded (e.g. Dashboard on first load),
           // we might be playing a local fallback. Call playTrack again to upgrade to the remote URL.
           const requestedTrack = currentTrackNameRef.current;
-          if (requestedTrack && map[requestedTrack] && isMounted) {
+          if (requestedTrack && findTrackUrl(map, requestedTrack) && isMounted) {
             console.log(`[AudioContext] Upgrading track '${requestedTrack}' to remote URL.`);
             // We clear currentTrackNameRef so playTrack doesn't think it's already playing.
             // Note: playTrack will handle unloading the current sound.
@@ -108,6 +138,19 @@ export function AudioProvider({ children }: AudioProviderProps): JSX.Element {
     };
   }, []);
 
+  const clearBgmDisabledForGameplay = useCallback(async () => {
+    await AsyncStorage.removeItem(BGM_DISABLED_KEY);
+    bgmDisabledRef.current = false;
+    const sound = bgmRef.current;
+    if (!sound || isMutedRef.current) return;
+    try {
+      const status = await sound.getStatusAsync();
+      if (status.isLoaded && !status.isPlaying) await sound.playAsync();
+    } catch (e) {
+      console.warn('[AudioContext] clearBgmDisabledForGameplay resume failed:', e);
+    }
+  }, []);
+
   const setMuted = useCallback(async (value: boolean) => {
     await AsyncStorage.setItem(MUTE_STORAGE_KEY, value ? 'true' : 'false');
     isMutedRef.current = value;
@@ -126,9 +169,25 @@ export function AudioProvider({ children }: AudioProviderProps): JSX.Element {
   }, []);
 
   const playTrack = useCallback(async (trackName: string) => {
-    // If we're already on this track or already loading it, do nothing
-    if (currentTrackNameRef.current === trackName || loadingTrackNameRef.current === trackName) return;
-    
+    if (loadingTrackNameRef.current === trackName) return;
+
+    // Same track requested again (e.g. tab focus): resume if paused/stopped; reload if refs are stale.
+    if (currentTrackNameRef.current === trackName) {
+      const sound = bgmRef.current;
+      if (sound) {
+        try {
+          const status = await sound.getStatusAsync();
+          if (status.isLoaded && !isMutedRef.current && !bgmDisabledRef.current) {
+            if (!status.isPlaying) await sound.playAsync();
+          }
+        } catch (e) {
+          console.warn("[AudioContext] Same-track resume failed:", e);
+        }
+        return;
+      }
+      currentTrackNameRef.current = null;
+    }
+
     console.log(`[AudioContext] Switching track to: ${trackName}`);
     loadingTrackNameRef.current = trackName;
     const versionWhenStarted = registryVersionRef.current;
@@ -144,7 +203,7 @@ export function AudioProvider({ children }: AudioProviderProps): JSX.Element {
     }
 
     // Read registry right before creating sound so we use the URL if it just finished loading
-    let remoteUrl = musicRegistryRef.current[trackName];
+    let remoteUrl = findTrackUrl(musicRegistryRef.current, trackName);
 
     // Support direct URLs (e.g. from metadata)
     if (!remoteUrl && (trackName.startsWith('http') || trackName.startsWith('file://'))) {
@@ -153,7 +212,18 @@ export function AudioProvider({ children }: AudioProviderProps): JSX.Element {
 
     // If there's still no URL for this track, bail out (no legacy local fallback)
     if (!remoteUrl) {
-      console.warn(`[AudioContext] No URL registered for track '${trackName}', skipping playback.`);
+      const registry = musicRegistryRef.current;
+      const keys = Object.keys(registry);
+      if (keys.length === 0) {
+        pendingTrackNameRef.current = trackName;
+        console.warn(
+          `[AudioContext] Music registry not ready; queued '${trackName}' for playback when loaded.`,
+        );
+      } else {
+        console.warn(
+          `[AudioContext] No URL registered for track '${trackName}'. Known tracks: ${keys.join(', ')}`,
+        );
+      }
       loadingTrackNameRef.current = null;
       return;
     }
@@ -227,6 +297,7 @@ export function AudioProvider({ children }: AudioProviderProps): JSX.Element {
     startBackgroundMusic,
     stopBackgroundMusic,
     playTrack,
+    clearBgmDisabledForGameplay,
   };
 
   return (

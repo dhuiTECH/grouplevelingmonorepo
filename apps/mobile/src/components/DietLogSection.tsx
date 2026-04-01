@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
-import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop, Path } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import RecoveryTimerSection from './RecoveryTimerSection';
+import {
+  BeefIcon,
+  DropletsIcon,
+  FlameIcon,
+  WheatIcon,
+} from '@/components/icons/MacroNutrientIcons';
 
 interface DietLogSectionProps {
   nutritionTotals?: {
@@ -18,6 +24,8 @@ interface DietLogSectionProps {
   entryCount?: number;
   onLogNewEntry?: () => void;
   children?: React.ReactNode;
+  /** Passed to recovery timer in full-screen modals (safe area). */
+  recoveryTimerBottomInset?: number;
 }
 
 export default function DietLogSection({
@@ -28,7 +36,8 @@ export default function DietLogSection({
   targetFats = 65,
   entryCount = 0,
   onLogNewEntry,
-  children
+  children,
+  recoveryTimerBottomInset = 0,
 }: DietLogSectionProps) {
   // --- Timer State ---
   const [timeLeft, setTimeLeft] = useState(0); 
@@ -88,11 +97,7 @@ export default function DietLogSection({
             />
           </Svg>
           <View style={styles.circleTextContainer}>
-            {/* Calories (Power) icon */}
-            <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff8c00" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 2 }}>
-              <Path d="M12 2v10" />
-              <Path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
-            </Svg>
+            <FlameIcon size={16} color="#ff8c00" style={{ marginBottom: 2 }} />
             <Text style={styles.calNumber}>{nutritionTotals.cals}</Text>
             <Text style={styles.calMax}>/ {targetCalories}</Text>
           </View>
@@ -133,8 +138,8 @@ export default function DietLogSection({
         <Text style={styles.entryCount}>{entryCount} ENTRIES</Text>
       </View>
 
-      {/* Children entries list */}
-      <View style={{ paddingHorizontal: 20, marginBottom: 10 }}>
+      {/* Children entries list — grows when parent is full-screen (e.g. training log modal) */}
+      <View style={styles.childrenSlot}>
         {children}
       </View>
 
@@ -149,14 +154,12 @@ export default function DietLogSection({
         </LinearGradient>
       </TouchableOpacity>
 
-      {/* Spacer to push timer to bottom if this is part of a flex-1 screen */}
-      <View style={{ flex: 1, minHeight: 40 }} />
-
       <RecoveryTimerSection
         timeLeft={timeLeft}
         initialSeconds={activePreset || 300}
         onPresetPress={startTimer}
         isActive={timerActive}
+        bottomInset={recoveryTimerBottomInset}
       />
     </View>
   );
@@ -164,35 +167,20 @@ export default function DietLogSection({
 
 // --- SUB COMPONENTS ---
 
+const MACRO_ICON_STYLE = { marginRight: 6 };
+
 const MacroBar = ({ label, value, progress, colorStart, colorEnd, isBlue = false, icon = 'protein' }: { label: string; value: string; progress: number; colorStart: string; colorEnd: string; isBlue?: boolean; icon?: 'protein' | 'carbs' | 'fats' }) => {
-  const iconStyle = { marginRight: 6 };
-  const IconSvg = () => {
-    if (icon === 'protein') {
-      return (
-        <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d4a040" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={iconStyle}>
-          <Path d="M15.4 15.4 11.1 19.7a4.5 4.5 0 0 1-6.4-6.4l4.3-4.3" />
-          <Path d="m21.2 5.5-5.7 5.7a3 3 0 0 0 4.2 4.2l5.7-5.7a3 3 0 0 0-4.2-4.2Z" />
-          <Path d="m15.4 15.4-3.1 3.1" />
-        </Svg>
-      );
-    }
-    if (icon === 'carbs') {
-      return (
-        <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d4a040" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={iconStyle}>
-          <Path d="M4 12h16a8 8 0 0 1-16 0z" />
-          <Path d="M4 12C4 9 8 9 12 9s8 0 8 3" />
-        </Svg>
-      );
-    }
-    return (
-      <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#385b88" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={iconStyle}>
-        <Path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-7.5c-.5 3.5-2 5.9-4 7.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" />
-      </Svg>
+  const macroIcon =
+    icon === 'protein' ? (
+      <BeefIcon size={14} color="#d4a040" style={MACRO_ICON_STYLE} />
+    ) : icon === 'carbs' ? (
+      <WheatIcon size={14} color="#d4a040" style={MACRO_ICON_STYLE} />
+    ) : (
+      <DropletsIcon size={14} color="#385b88" style={MACRO_ICON_STYLE} />
     );
-  };
   return (
     <View style={[styles.macroPill, isBlue ? styles.macroPillBlue : styles.macroPillGold]}>
-      <IconSvg />
+      {macroIcon}
       <Text style={styles.macroLabel}>{label}</Text>
       <View style={styles.track}>
         <View style={[styles.fillContainer, { width: `${progress * 100}%` }]}>
@@ -324,6 +312,12 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 10,
     fontWeight: '800',
+  },
+  childrenSlot: {
+    flex: 1,
+    minHeight: 0,
+    paddingHorizontal: 20,
+    marginBottom: 10,
   },
 
   // Main Action Button

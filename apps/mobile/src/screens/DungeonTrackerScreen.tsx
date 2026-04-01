@@ -141,7 +141,10 @@ const DungeonTrackerScreen = () => {
                  </Text>
                </TouchableOpacity>
 
-               <TouchableOpacity style={styles.btnStart} onPress={startRun}>
+               <TouchableOpacity
+                style={styles.btnStart}
+                onPress={() => startRun(dungeon?.target_distance_meters || 5000)}
+              >
                  <Text style={styles.btnText}>INITIALIZE TRACKING</Text>
                </TouchableOpacity>
              </>
