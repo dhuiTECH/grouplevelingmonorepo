@@ -183,6 +183,8 @@ export const WorldMapScreen = () => {
   const viewRef = useAnimatedRef<View>();
   const { startTransition } = useTransition();
 
+  const flushPendingVisionRef = useRef<() => void>(() => {});
+
   const {
     explorationOptions: jeffreyExplorationOptions,
     ensureShopItemsForPreview,
@@ -196,9 +198,10 @@ export const WorldMapScreen = () => {
     viewRef,
     navigation,
     startTransition,
+    activeDirection,
+    isMoving,
+    flushPendingVisionRef,
   });
-
-  const flushPendingVisionRef = useRef<() => void>(() => {});
 
   const {
     onTileEnter,

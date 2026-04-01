@@ -1,10 +1,12 @@
-import { useRef, useMemo, useCallback } from "react";
+import { useRef, useMemo, useCallback, useEffect } from "react";
 import { Alert } from "react-native";
 import * as Haptics from "expo-haptics";
 import { makeImageFromView } from "@shopify/react-native-skia";
 import type { SkImage } from "@shopify/react-native-skia";
 import type { AnimatedRef } from "react-native-reanimated";
+import type { SharedValue } from "react-native-reanimated";
 import type { View } from "react-native";
+import { Pedometer } from "expo-sensors";
 import { supabase } from "@/lib/supabase";
 import type { PartyPreviewItem } from "@/context/TransitionContext";
 import type { UseExplorationOptions } from "@/hooks/useExploration";
@@ -14,8 +16,8 @@ import type { User } from "@/types/user";
 export const JEFFREY_MAP_DEMO_ENCOUNTER_ID =
   "48a4be65-2fd1-42de-a5fe-2ef71c6b6f8e";
 
-/** Processed grid tile enters (from `useExploration`) before battle starts. */
-export const JEFFREY_MAP_DEMO_TRIGGER_TILES = 3;
+/** Real pedometer steps required to trigger the Jeffrey battle. */
+export const JEFFREY_MAP_DEMO_TRIGGER_STEPS = 300;
 
 const LOG_PREFIX = "[JeffreyMapDemo]";
 
@@ -40,6 +42,15 @@ export interface UseJeffreyMapDemoParams {
     onHalfway: () => void,
     preview?: PartyPreviewItem[],
   ) => void;
+  /** Shared value controlling movement direction — set to null to stop movement before snapshot. */
+  activeDirection: SharedValue<"UP" | "DOWN" | "LEFT" | "RIGHT" | null>;
+  /** Shared value for movement state — set to false to stop movement before snapshot. */
+  isMoving: SharedValue<boolean>;
+  /**
+   * Ref that always points to `flushPendingVision` from useExploration.
+   * Using a ref avoids hook-ordering constraints (Jeffrey is constructed before useExploration).
+   */
+  flushPendingVisionRef: React.MutableRefObject<() => void>;
 }
 
 export function useJeffreyMapDemo({
@@ -51,13 +62,12 @@ export function useJeffreyMapDemo({
   viewRef,
   navigation,
   startTransition,
+  activeDirection,
+  isMoving,
+  flushPendingVisionRef,
 }: UseJeffreyMapDemoParams) {
   const suppressEncounterRollRef = useRef(false);
-  const tilesProcessedRef = useRef(0);
   const demoDoneRef = useRef(false);
-  const onProcessedTileEnterRef = useRef<(nx: number, ny: number) => void>(
-    () => {},
-  );
   const triggerBattleRef = useRef<() => void | Promise<void>>(() => {});
 
   const ensureShopItemsForPreview = useCallback(async () => {
@@ -68,17 +78,24 @@ export function useJeffreyMapDemo({
     return data ?? [];
   }, [allShopItemsRef]);
 
-  /** Avoid `InteractionManager.runAfterInteractions` — it can block until the D-pad touch ends. */
+  /**
+   * Stop movement, flush deferred vision, then wait for the animation to fully
+   * settle before capturing — mirrors what happens when the player taps the
+   * battle button while standing still.
+   */
   const captureMapSnapshotForBattle = useCallback(async (): Promise<SkImage | null> => {
-    await new Promise<void>((r) => requestAnimationFrame(() => r()));
-    await new Promise<void>((r) => setTimeout(r, 50));
+    activeDirection.value = null;
+    isMoving.value = false;
+    flushPendingVisionRef.current();
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    await new Promise<void>((r) => setTimeout(r, 150));
     try {
       return await makeImageFromView(viewRef);
     } catch (e) {
       logDev("makeImageFromView failed", { error: String(e) });
       return null;
     }
-  }, [viewRef]);
+  }, [viewRef, activeDirection, isMoving, flushPendingVisionRef]);
 
   const startJeffreyBattleTransition = useCallback(async () => {
     if (!encounterId) return;
@@ -128,25 +145,58 @@ export function useJeffreyMapDemo({
 
   triggerBattleRef.current = startJeffreyBattleTransition;
 
-  onProcessedTileEnterRef.current = (_nx: number, _ny: number) => {
-    if (!encounterId || demoDoneRef.current) return;
-    tilesProcessedRef.current += 1;
-    logDev("processed tile", {
-      count: tilesProcessedRef.current,
-      need: JEFFREY_MAP_DEMO_TRIGGER_TILES,
-    });
-    if (tilesProcessedRef.current < JEFFREY_MAP_DEMO_TRIGGER_TILES) return;
-    demoDoneRef.current = true;
-    suppressEncounterRollRef.current = true;
-    logDev("threshold reached — trigger battle");
-    void triggerBattleRef.current();
-  };
+  /**
+   * Live pedometer subscription — triggers Jeffrey after JEFFREY_MAP_DEMO_TRIGGER_STEPS
+   * real steps taken on the world map.  Unsubscribes automatically after firing or on unmount.
+   */
+  useEffect(() => {
+    if (!encounterId) return;
+
+    let cancelled = false;
+    let subscription: { remove: () => void } | null = null;
+    let stepBaseline: number | null = null;
+
+    (async () => {
+      const available = await Pedometer.isAvailableAsync();
+      if (!available || cancelled) {
+        logDev("pedometer unavailable or cancelled before start");
+        return;
+      }
+
+      logDev("pedometer subscription started", { need: JEFFREY_MAP_DEMO_TRIGGER_STEPS });
+
+      subscription = Pedometer.watchStepCount((result) => {
+        if (cancelled || demoDoneRef.current) return;
+
+        if (stepBaseline === null) {
+          stepBaseline = result.steps;
+          logDev("step baseline set", { baseline: stepBaseline });
+          return;
+        }
+
+        const delta = result.steps - stepBaseline;
+        logDev("step update", { delta, need: JEFFREY_MAP_DEMO_TRIGGER_STEPS });
+
+        if (delta >= JEFFREY_MAP_DEMO_TRIGGER_STEPS) {
+          demoDoneRef.current = true;
+          suppressEncounterRollRef.current = true;
+          subscription?.remove();
+          subscription = null;
+          logDev("step threshold reached — triggering battle");
+          void triggerBattleRef.current();
+        }
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      subscription?.remove();
+    };
+  }, [encounterId]);
 
   const explorationOptions: UseExplorationOptions = useMemo(
     () => ({
       suppressEncounterRollRef: suppressEncounterRollRef,
-      onProcessedTileEnter: (nx: number, ny: number) =>
-        onProcessedTileEnterRef.current(nx, ny),
     }),
     [],
   );
