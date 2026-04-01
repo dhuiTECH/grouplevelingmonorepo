@@ -45,11 +45,6 @@ export interface UseJeffreyMapDemoParams {
   activeDirection: SharedValue<"UP" | "DOWN" | "LEFT" | "RIGHT" | null>;
   /** Shared value for movement state — set to false to stop movement before snapshot. */
   isMoving: SharedValue<boolean>;
-  /**
-   * Ref that always points to `flushPendingVision` from useExploration.
-   * Using a ref avoids hook-ordering constraints (Jeffrey is constructed before useExploration).
-   */
-  flushPendingVisionRef: React.MutableRefObject<() => void>;
 }
 
 export function useJeffreyMapDemo({
@@ -63,7 +58,6 @@ export function useJeffreyMapDemo({
   startTransition,
   activeDirection,
   isMoving,
-  flushPendingVisionRef,
 }: UseJeffreyMapDemoParams) {
   const suppressEncounterRollRef = useRef(false);
   const demoDoneRef = useRef(false);
@@ -78,24 +72,17 @@ export function useJeffreyMapDemo({
     return data ?? [];
   }, [allShopItemsRef]);
 
-  /**
-   * Stop movement, flush deferred vision, then wait for the animation to fully
-   * settle before capturing — mirrors what happens when the player taps the
-   * battle button while standing still.
-   */
+  /** Wait one frame + 50ms for the current animation to settle, then capture. */
   const captureMapSnapshotForBattle = useCallback(async (): Promise<SkImage | null> => {
-    activeDirection.value = null;
-    isMoving.value = false;
-    flushPendingVisionRef.current();
-    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-    await new Promise<void>((r) => setTimeout(r, 150));
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    await new Promise<void>((r) => setTimeout(r, 50));
     try {
       return await makeImageFromView(viewRef);
     } catch (e) {
       logDev("makeImageFromView failed", { error: String(e) });
       return null;
     }
-  }, [viewRef, activeDirection, isMoving, flushPendingVisionRef]);
+  }, [viewRef]);
 
   const startJeffreyBattleTransition = useCallback(async () => {
     if (!encounterId) return;
@@ -107,6 +94,10 @@ export function useJeffreyMapDemo({
       }
       return;
     }
+    // Stop movement immediately — before any awaits — so the player halts
+    // the instant Jeffrey fires, not after the DB fetch completes.
+    activeDirection.value = null;
+    isMoving.value = false;
     try {
       logDev("starting battle transition");
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

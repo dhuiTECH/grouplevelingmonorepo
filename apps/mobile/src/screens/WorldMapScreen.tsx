@@ -201,7 +201,6 @@ export const WorldMapScreen = () => {
     startTransition,
     activeDirection,
     isMoving,
-    flushPendingVisionRef,
   });
 
   const {
