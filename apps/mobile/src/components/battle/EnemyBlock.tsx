@@ -9,7 +9,7 @@ import { useBattleStore } from '@/store/useBattleStore';
 import { PHASE } from '@/store/useBattleStore';
 
 /** Layout reference; icon + spritesheet enemies share the same rendered sprite size. */
-const ENEMY_REFERENCE = 260;
+const ENEMY_REFERENCE = 290;
 const ENEMY_ICON_SIZE = Math.round(ENEMY_REFERENCE * 0.82);
 /**
  * OptimizedPetAvatar applies a 0.8 internal scale to its sprites, so the
