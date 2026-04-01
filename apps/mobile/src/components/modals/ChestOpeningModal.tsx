@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useId } from 'react';
 import { View, StyleSheet, Image, Text, TouchableWithoutFeedback, Pressable } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -10,16 +10,38 @@ import Animated, {
   withDelay,
   Easing,
   interpolate,
-  Extrapolate,
+  Extrapolation,
 } from 'react-native-reanimated';
-import Svg, { Path, Line, Rect, Defs, Pattern } from 'react-native-svg';
+import Svg, {
+  Path,
+  Line,
+  Rect,
+  Defs,
+  Pattern,
+  Polygon,
+  Stop,
+  LinearGradient as SvgLinearGradient,
+} from 'react-native-svg';
 import { BlurView } from 'expo-blur';
 import { Audio } from 'expo-av';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
+import { SystemWindowHeader, SYSTEM_MECH_GLOW_GRADIENT_COLORS } from '@/components/ui/SystemWindowHeader';
 
 // Constants matching the reference layout
 const MODAL_WIDTH = 380;
 const MODAL_HEIGHT = 580;
+
+/** Upward cone / spotlight: narrow at chest (bottom), wide at top */
+const BEAM_CONE_W = 200;
+const BEAM_CONE_H = 400;
+const BEAM_BOTTOM_W = 40;
+const BEAM_TOP_W = BEAM_CONE_W;
+const BEAM_CONE_POINTS = (() => {
+  const cx = BEAM_CONE_W / 2;
+  const halfB = BEAM_BOTTOM_W / 2;
+  const halfT = BEAM_TOP_W / 2;
+  return `${cx - halfB},${BEAM_CONE_H} ${cx + halfB},${BEAM_CONE_H} ${cx + halfT},0 ${cx - halfT},0`;
+})();
 
 const chestImages = {
   small: require('../../../assets/icons/smallchestmodal.png'),
@@ -51,6 +73,8 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
   chestType,
   onAnimationComplete,
 }) => {
+  const scanlinePatternId = `chest-scan-${useId().replace(/:/g, '_')}`;
+  const beamConeGradId = `chest-beam-cone-${useId().replace(/:/g, '_')}`;
   const [phase, setPhase] = useState<'idle' | 'opening' | 'opened'>('idle');
   const [sound, setSound] = useState<Audio.Sound>();
   const shakingSoundRef = useRef<Audio.Sound | null>(null);
@@ -172,7 +196,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     }
   }, [isOpen]);
 
-  const handleOpen = async () => {
+  const runOpenSequence = async () => {
     if (phase !== 'idle') return;
 
     setPhase('opening');
@@ -183,7 +207,9 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
       try {
         await shakingSoundRef.current.stopAsync();
         await shakingSoundRef.current.unloadAsync();
-      } catch (_) {}
+      } catch (_) {
+        /* ignore */
+      }
       shakingSoundRef.current = null;
     }
 
@@ -195,22 +221,21 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
       await glowSound.playAsync();
       glowSound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded && status.didJustFinish) {
-          glowSound.unloadAsync();
+          glowSound.unloadAsync().catch(() => {});
         }
       });
     } catch (error) {
-      console.log('Error playing glowing chest sound:', error);
+      console.warn('[ChestModal] glow sound:', error);
     }
 
-    // Play chest opening sound
     try {
       const { sound: newSound } = await Audio.Sound.createAsync(
-         require('../../../assets/sounds/chestopening.mp3')
+        require('../../../assets/sounds/chestopening.mp3')
       );
       setSound(newSound);
       await newSound.playAsync();
     } catch (error) {
-      console.log('Error playing sound:', error);
+      console.warn('[ChestModal] open sound:', error);
     }
 
     // 1. Violent Charge Up (0 -> 800ms)
@@ -257,47 +282,52 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
 
     // 3. Loot Reveal (Phase 'opened') - Trigger shortly after explosion
     setTimeout(() => {
-        setPhase('opened');
-        phaseShared.value = 2;
-        animateLoot();
+      setPhase('opened');
+      phaseShared.value = 2;
+      animateLoot();
     }, 900);
   };
 
+  /** No withSpring completion callbacks — chaining animations in callbacks is fragile on Reanimated 4 / native. */
   const animateLoot = () => {
-    const floatLoop = () => withRepeat(
+    const floatLoop = () =>
+      withRepeat(
         withSequence(
-            withTiming(-6, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
-            withTiming(0, { duration: 1500, easing: Easing.inOut(Easing.ease) })
-        ), -1, true
-    );
+          withTiming(-6, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
+          withTiming(0, { duration: 1500, easing: Easing.inOut(Easing.ease) })
+        ),
+        -1,
+        true
+      );
 
-    // Item 1: Delay 100ms
     loot1Opacity.value = withDelay(100, withTiming(1, { duration: 600 }));
-    loot1TranslateY.value = withDelay(100, withSpring(0, { damping: 12 }, (finished) => {
-        if (finished) loot1Float.value = floatLoop();
-    }));
+    loot1TranslateY.value = withDelay(100, withSpring(0, { damping: 12 }));
+    loot1Float.value = withDelay(900, floatLoop());
 
-    // Item 2: Delay 250ms
     loot2Opacity.value = withDelay(250, withTiming(1, { duration: 600 }));
-    loot2TranslateY.value = withDelay(250, withSpring(0, { damping: 12 }, (finished) => {
-        if (finished) loot2Float.value = withDelay(250, floatLoop()); // Offset float
-    }));
+    loot2TranslateY.value = withDelay(250, withSpring(0, { damping: 12 }));
+    loot2Float.value = withDelay(1100, floatLoop());
 
-    // Item 3: Delay 400ms
     loot3Opacity.value = withDelay(400, withTiming(1, { duration: 600 }));
-    loot3TranslateY.value = withDelay(400, withSpring(0, { damping: 12 }, (finished) => {
-        if (finished) loot3Float.value = withDelay(500, floatLoop()); // Offset float
-    }));
+    loot3TranslateY.value = withDelay(400, withSpring(0, { damping: 12 }));
+    loot3Float.value = withDelay(1300, floatLoop());
 
-    // Item 4: Delay 550ms
     loot4Opacity.value = withDelay(550, withTiming(1, { duration: 600 }));
-    loot4TranslateY.value = withDelay(550, withSpring(0, { damping: 12 }, (finished) => {
-        if (finished) loot4Float.value = withDelay(750, floatLoop()); // Offset float
-    }));
+    loot4TranslateY.value = withDelay(550, withSpring(0, { damping: 12 }));
+    loot4Float.value = withDelay(1500, floatLoop());
+  };
+
+  const handleOpen = () => {
+    if (phase !== 'idle') return;
+    requestAnimationFrame(() => {
+      void runOpenSequence();
+    });
   };
 
   const handleClaim = () => {
-    onAnimationComplete();
+    requestAnimationFrame(() => {
+      onAnimationComplete();
+    });
   };
 
   // --- Animated Styles ---
@@ -330,22 +360,24 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     transform: [{ scale: flashScale.value }]
   }));
 
+  // Do not animate borderWidth — it triggers native crashes on some Android devices with Reanimated.
   const shockwaveStyle = useAnimatedStyle(() => ({
     opacity: shockwaveOpacity.value,
     transform: [{ scale: shockwaveScale.value }],
-    borderWidth: interpolate(shockwaveScale.value, [0.5, 8], [10, 1])
   }));
 
   const beamStyle = useAnimatedStyle(() => ({
     opacity: beamOpacity.value,
-    transform: [{ scaleY: beamScaleY.value }, { scaleX: interpolate(beamScaleY.value, [0, 1.2], [0.2, 2]) }]
+    transform: [{ scaleY: beamScaleY.value }, { scaleX: interpolate(beamScaleY.value, [0, 1.2], [0.2, 2]) }],
+    // Grow from bottom center (chest) upward like a cone opening
+    transformOrigin: '50% 100%' as const,
   }));
 
   const loot1Style = useAnimatedStyle(() => ({
     opacity: loot1Opacity.value,
     transform: [
       { translateY: loot1TranslateY.value + loot1Float.value },
-      { scale: interpolate(loot1TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolate.CLAMP) }
+      { scale: interpolate(loot1TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolation.CLAMP) }
     ]
   }));
 
@@ -353,7 +385,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     opacity: loot2Opacity.value,
     transform: [
       { translateY: loot2TranslateY.value + loot2Float.value },
-      { scale: interpolate(loot2TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolate.CLAMP) }
+      { scale: interpolate(loot2TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolation.CLAMP) }
     ]
   }));
 
@@ -361,7 +393,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     opacity: loot3Opacity.value,
     transform: [
       { translateY: loot3TranslateY.value + loot3Float.value },
-      { scale: interpolate(loot3TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolate.CLAMP) }
+      { scale: interpolate(loot3TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolation.CLAMP) }
     ]
   }));
 
@@ -369,7 +401,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     opacity: loot4Opacity.value,
     transform: [
       { translateY: loot4TranslateY.value + loot4Float.value },
-      { scale: interpolate(loot4TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolate.CLAMP) }
+      { scale: interpolate(loot4TranslateY.value, [100, -10, 0], [0.2, 1.1, 1], Extrapolation.CLAMP) }
     ]
   }));
 
@@ -387,7 +419,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
         {/* TOP MECHANICAL BORDER */}
         <View style={styles.mechBorderTop}>
             <ExpoLinearGradient
-                colors={['transparent', '#00d2ff', '#e6ffff', '#00d2ff', 'transparent']}
+                colors={SYSTEM_MECH_GLOW_GRADIENT_COLORS}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={StyleSheet.absoluteFill}
@@ -398,7 +430,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
         {/* BOTTOM MECHANICAL BORDER */}
         <View style={styles.mechBorderBottom}>
             <ExpoLinearGradient
-                colors={['transparent', '#00d2ff', '#e6ffff', '#00d2ff', 'transparent']}
+                colors={SYSTEM_MECH_GLOW_GRADIENT_COLORS}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={StyleSheet.absoluteFill}
@@ -412,11 +444,11 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
             <View style={StyleSheet.absoluteFill} pointerEvents="none">
                 <Svg width={MODAL_WIDTH} height={MODAL_HEIGHT}>
                     <Defs>
-                        <Pattern id="scanlines" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+                        <Pattern id={scanlinePatternId} x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
                             <Rect x="0" y="0" width="4" height="1" fill="#00d2ff" fillOpacity="0.05" />
                         </Pattern>
                     </Defs>
-                    <Rect x="0" y="0" width={MODAL_WIDTH} height={MODAL_HEIGHT} fill="url(#scanlines)" />
+                    <Rect x="0" y="0" width={MODAL_WIDTH} height={MODAL_HEIGHT} fill={`url(#${scanlinePatternId})`} />
                 </Svg>
             </View>
 
@@ -442,19 +474,12 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
                 </Svg>
             </View>
 
-            {/* HEADER */}
+            {/* HEADER — same chrome as login / signup */}
             <View style={styles.headerContainer}>
-                <View style={styles.headerRow}>
-                    <View style={styles.titleBox}>
-                        <View style={styles.exclamationIcon}>
-                            <Text style={styles.exclamationText}>!</Text>
-                        </View>
-                        <Text style={styles.headerTitle}>
-                            {phase === 'opened' ? "CACHE OPENED" : "CHEST FOUND"}
-                        </Text>
-                    </View>
-                </View>
-
+                <SystemWindowHeader
+                  title={phase === 'opened' ? 'CACHE OPENED' : 'CHEST FOUND'}
+                  containerStyle={styles.chestHeaderChrome}
+                />
                 <Text style={styles.subText}>
                     YOU HAVE ACQUIRED THE{'\n'}FOLLOWING REWARDS.
                 </Text>
@@ -463,12 +488,33 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
             {/* LOOT STAGE */}
             <View style={styles.lootStage}>
 
-                {/* Beam */}
-                <AnimatedView style={[styles.beam, beamStyle]}>
-                    <ExpoLinearGradient
-                        colors={['white', '#00e5ff', 'transparent']}
-                        style={{ flex: 1 }}
+                {/* Beam — trapezoid cone (narrow at chest, wide above) */}
+                <AnimatedView style={[styles.beam, beamStyle]} pointerEvents="none">
+                  <Svg
+                    width={BEAM_CONE_W}
+                    height={BEAM_CONE_H}
+                    style={StyleSheet.absoluteFill}
+                  >
+                    <Defs>
+                      <SvgLinearGradient
+                        id={beamConeGradId}
+                        x1="0"
+                        y1={BEAM_CONE_H}
+                        x2="0"
+                        y2="0"
+                        gradientUnits="userSpaceOnUse"
+                      >
+                        <Stop offset="0" stopColor="#ffffff" stopOpacity={0.92} />
+                        <Stop offset="0.1" stopColor="#00e5ff" stopOpacity={0.55} />
+                        <Stop offset="0.42" stopColor="#00e5ff" stopOpacity={0.18} />
+                        <Stop offset="1" stopColor="#00e5ff" stopOpacity={0} />
+                      </SvgLinearGradient>
+                    </Defs>
+                    <Polygon
+                      points={BEAM_CONE_POINTS}
+                      fill={`url(#${beamConeGradId})`}
                     />
+                  </Svg>
                 </AnimatedView>
 
                 {/* Shockwave */}
@@ -599,6 +645,10 @@ const styles = StyleSheet.create({
     right: 0,
     height: 8,
     zIndex: 20,
+    shadowColor: '#00e5ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 15,
   },
   mechBorderBottom: {
     position: 'absolute',
@@ -607,6 +657,10 @@ const styles = StyleSheet.create({
     right: 0,
     height: 8,
     zIndex: 20,
+    shadowColor: '#00e5ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 15,
   },
   mechInnerLine: {
     position: 'absolute',
@@ -627,57 +681,10 @@ const styles = StyleSheet.create({
     paddingTop: 32,
     paddingHorizontal: 24,
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  titleBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 210, 255, 0.5)',
-    backgroundColor: 'rgba(0, 102, 255, 0.2)',
-    paddingHorizontal: 24,
-    paddingVertical: 8,
-    shadowColor: '#00d2ff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.3,
-    shadowRadius: 15,
-  },
-  exclamationIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 8,
-  },
-  exclamationText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-    textShadowColor: '#FFFFFF',
-    textShadowRadius: 4,
-  },
-  headerTitle: {
-    color: '#e6ffff',
-    fontSize: 20,
-    fontWeight: 'bold',
-    fontFamily: 'Exo2-Bold',
-    letterSpacing: 4,
-    textShadowColor: '#00d2ff',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
-    textTransform: 'uppercase',
+  /** Tighter spacing under title line vs full login panel */
+  chestHeaderChrome: {
+    marginBottom: 12,
+    paddingBottom: 12,
   },
   subText: {
     color: '#00d2ff',
@@ -703,9 +710,10 @@ const styles = StyleSheet.create({
   beam: {
     position: 'absolute',
     bottom: 40,
-    width: 96,
-    height: 400,
-    opacity: 0,
+    width: BEAM_CONE_W,
+    height: BEAM_CONE_H,
+    alignSelf: 'center',
+    zIndex: 5,
   },
   shockwave: {
     position: 'absolute',
@@ -792,7 +800,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 20,
     fontWeight: 'bold',
-    fontFamily: 'Montserrat-SemiBold',
+    fontFamily: 'Exo2-Bold',
     textShadowColor: 'rgba(255, 255, 255, 0.4)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 8,
@@ -834,7 +842,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: 'bold',
-    fontFamily: 'Montserrat-SemiBold',
+    fontFamily: 'Exo2-Bold',
     letterSpacing: 3,
     textShadowColor: 'rgba(0, 229, 255, 0.8)',
     textShadowOffset: { width: 0, height: 0 },

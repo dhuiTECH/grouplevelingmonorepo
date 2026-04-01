@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity, ViewStyle, Animated, Easing } from 'react-native';
 import { Image } from 'expo-image';
+import { DEFAULT_HAIR_TINT_HEX } from '@repo/avatar-constants';
 import { User } from '@/types/user';
 import { ShopItemMedia } from '../ShopItemMedia';
 import { getEffectiveGender } from './LayeredAvatarUtils';
@@ -8,6 +9,8 @@ import SkiaTintedLayer from './layers/SkiaTintedLayer';
 import StaticOverlayLayer from './layers/StaticOverlayLayer';
 import SkiaBaseLayer from './layers/SkiaBaseLayer';
 import MaskedStaticOverlayLayer from './layers/MaskedStaticOverlayLayer';
+import { WeaponAttackAnimatedInner } from './WeaponAttackAnimatedInner';
+import { resolveWeaponAttackPreset } from '@/utils/resolveWeaponAttackPreset';
 
 interface LayeredAvatarProps {
   user: User;
@@ -18,6 +21,11 @@ interface LayeredAvatarProps {
   square?: boolean;
   allShopItems?: any[];
   isMoving?: boolean;
+  /** When set with equipped weapon, animates weapon + hand_grip on battle skill resolve */
+  weaponGripAttackKey?: number;
+  weaponGripAttackDurationMs?: number;
+  /** When true, avatar root does not clip — hand_grip / weapon can extend outside the frame (e.g. battle swings). */
+  allowOverflow?: boolean;
 }
 
 const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({ 
@@ -28,7 +36,10 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
   hideBackground = false,
   square = false,
   allShopItems = [],
-  isMoving = false
+  isMoving = false,
+  weaponGripAttackKey,
+  weaponGripAttackDurationMs,
+  allowOverflow = false,
 }) => {
   // Create the breathing value
   const breatheAnim = useRef(new Animated.Value(0)).current;
@@ -117,11 +128,16 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
   // If we have an active skin item from the shop, use its image
   const baseBodyImage = activeSkinItem?.shop_items?.image_url || user?.base_body_url || user?.avatar_url;
   
-  // Determine the skin color to use for hands/accessories:
-  // 1. If it's a unique avatar, it might have its own hardcoded skin_tint_hex
-  // 2. Otherwise, use the user's custom base_body_tint_hex chosen in AvatarLab
-  // 3. Fallback to default
-  const activeSkinColor = activeSkinItem?.shop_items?.skin_tint_hex || user?.base_body_tint_hex || "#FFDBAC";
+  // Skin tint: profile / preview (Avatar screen) must override the shop item default,
+  // otherwise changing skin tone in the creator has no effect.
+  const profileSkinHex =
+    typeof user?.base_body_tint_hex === 'string' && user.base_body_tint_hex.trim().length > 0
+      ? user.base_body_tint_hex.trim()
+      : null;
+  const activeSkinColor =
+    profileSkinHex ||
+    activeSkinItem?.shop_items?.skin_tint_hex ||
+    '#FFDBAC';
 
   // Determine if the base body itself should be tinted
   // ONLY base_body items use the tinted silhouette system, unique avatars are static images
@@ -137,7 +153,17 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
   // Find equipped weapon to determine grip
   const equippedWeapon = equippedCosmetics.find((c: any) => getSlot(c.shop_items) === 'weapon');
   const handGripZIndexOverride = equippedWeapon?.shop_items?.hand_grip_z_index_override;
-  
+
+  const attackPresetResolved = resolveWeaponAttackPreset(equippedWeapon?.shop_items);
+  const weaponAttackLayer =
+    weaponGripAttackKey != null && attackPresetResolved != null
+      ? {
+          attackKey: weaponGripAttackKey,
+          preset: attackPresetResolved,
+          durationMs: weaponGripAttackDurationMs ?? 500,
+        }
+      : null;
+
   let handGripCosmetic = null;
   if (equippedWeapon?.shop_items?.grip_type) {
       const gripType = equippedWeapon.shop_items.grip_type;
@@ -295,7 +321,17 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
 
   return (
     <Container 
-      style={[styles.container, { width: size, height: size, borderRadius: square ? 16 : size / 2 }, style]}
+      style={[
+        styles.container,
+        {
+          width: size,
+          height: size,
+          // Rounded corners + overflow visible still clips on some platforms; battle uses allowOverflow for swings.
+          borderRadius: allowOverflow ? 0 : square ? 16 : size / 2,
+          overflow: allowOverflow ? 'visible' : 'hidden',
+        },
+        style,
+      ]}
       onPress={() => onAvatarClick?.(user)}
       activeOpacity={0.9}
     >
@@ -316,6 +352,7 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
         style={[
           StyleSheet.absoluteFill, 
           { 
+            overflow: allowOverflow ? 'visible' : undefined,
             transform: [{ translateY }, { scaleY }],
             // @ts-ignore - transformOrigin is available in newer RN versions or Expo
             transformOrigin: 'bottom' 
@@ -359,13 +396,24 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
         {overlayLayers.map((cosmetic: any) => {
             const item = cosmetic.shop_items;
             if (!item) return null; // Safety check
+
+            const slot = getSlot(item);
+            const hairTintEffective =
+              slot === 'hair'
+                ? (user?.hair_tint_hex?.trim() || item.skin_tint_hex || DEFAULT_HAIR_TINT_HEX)
+                : null;
+            const itemForRender =
+              slot === 'hair'
+                ? { ...item, skin_tint_hex: hairTintEffective }
+                : item;
             
             const { offsetX, offsetY, scale: dbScale, rotation } = getItemPositioning(item);
 
             const leftPercent = ((ADMIN_ANCHOR_POINT + offsetX) / ADMIN_CONTAINER_SIZE) * 100;
             const topPercent = ((ADMIN_ANCHOR_POINT + offsetY) / ADMIN_CONTAINER_SIZE) * 100;
 
-            const isHandGrip = getSlot(item) === 'hand_grip';
+            const isHandGrip = slot === 'hand_grip';
+            const isWeaponOrGrip = slot === 'weapon' || isHandGrip;
             const zIndex = (isHandGrip && handGripZIndexOverride !== null && handGripZIndexOverride !== undefined) 
               ? Number(handGripZIndexOverride) 
               : Number(item.z_index || 10);
@@ -405,16 +453,16 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
             // For standard tinting we used silhouetteUrl, but for Skia multiplying we just use the main image_url inside SkiaTintedLayer
             // Safely get image_base_url or image_url as a fallback
             const silhouetteUrl = isHandGrip ? (item.image_base_url || item.image_url) : null;
-            
+
             // Check for active mask
-            const activeMask = activeMasks.find(m => m.targets.includes(getSlot(item)));
+            const activeMask = activeMasks.find(m => m.targets.includes(slot));
             const maskUrl = activeMask?.url;
 
             if (maskUrl) {
               return (
                 <MaskedStaticOverlayLayer
                   key={cosmetic.id}
-                  item={item}
+                  item={itemForRender}
                   maskUrl={maskUrl}
                   leftPercent={leftPercent}
                   topPercent={topPercent}
@@ -423,12 +471,17 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
                   scaleRatio={scaleRatio}
                   rotation={rotation}
                   size={size}
-                  tintColor={tintColor}
+                  tintColor={isHandGrip ? activeSkinColor : null}
+                  hairFillHex={slot === 'hair' ? hairTintEffective : null}
+                  weaponAttack={isWeaponOrGrip ? weaponAttackLayer : null}
                 />
               );
             }
 
-            if (isAnimated) {
+            // Web LayeredAvatar always uses mask+fill hair stack; spritesheet path skips ShopItemMedia tint.
+            const useHairTintStack = slot === 'hair' && !!item.image_url;
+
+            if (isAnimated && !useHairTintStack) {
               const finalWidth = frameWidth * dbScale * scaleRatio;
               const finalHeight = frameHeight * dbScale * scaleRatio;
               
@@ -442,6 +495,7 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
                     top: `${topPercent}%`,
                     width: finalWidth,
                     height: finalHeight,
+                    overflow: 'visible',
                     transform: [
                       { translateX: -finalWidth / 2 },
                       { translateY: -finalHeight / 2 },
@@ -449,14 +503,21 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
                     ],
                   }}
                   pointerEvents="none"
+                  collapsable={false}
                 >
-                  <ShopItemMedia 
-                    item={item} 
-                    animate={true} 
-                    forceFullImage={true}
-                    style={styles.fullSize}
-                    resizeMode="contain"
-                  />
+                  <WeaponAttackAnimatedInner
+                    attackKey={isWeaponOrGrip ? weaponAttackLayer?.attackKey : undefined}
+                    attackPreset={isWeaponOrGrip ? weaponAttackLayer?.preset ?? null : null}
+                    durationMs={weaponAttackLayer?.durationMs ?? 500}
+                  >
+                    <ShopItemMedia 
+                      item={itemForRender} 
+                      animate={true} 
+                      forceFullImage={true}
+                      style={styles.fullSize}
+                      resizeMode="contain"
+                    />
+                  </WeaponAttackAnimatedInner>
                 </View>
               );
             } else {
@@ -476,16 +537,17 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
                     scaleRatio={scaleRatio}
                     rotation={rotation}
                     tintColor={tintColor}
+                    weaponAttack={isWeaponOrGrip ? weaponAttackLayer : null}
                   />
                 );
               }
 
-              // Standard static layer for hair, eyes, etc.
+              // Standard static layer for hair, eyes, etc. (use itemForRender so hair picks up user hair_tint_hex)
               return (
                 <StaticOverlayLayer
                   key={cosmetic.id}
                   cosmetic={cosmetic}
-                  item={item}
+                  item={itemForRender}
                   leftPercent={leftPercent}
                   topPercent={topPercent}
                   zIndex={zIndex}
@@ -494,6 +556,7 @@ const LayeredAvatarInternal: React.FC<LayeredAvatarProps> = ({
                   rotation={rotation}
                   tintColor={tintColor}
                   silhouetteUrl={silhouetteUrl}
+                  weaponAttack={isWeaponOrGrip ? weaponAttackLayer : null}
                 />
               );
             }
@@ -514,6 +577,7 @@ export const LayeredAvatar = React.memo(LayeredAvatarInternal, (prev, next) => {
   if (prev.user?.avatar_url !== next.user?.avatar_url) return false;
   if (prev.user?.base_body_url !== next.user?.base_body_url) return false;
   if (prev.user?.base_body_tint_hex !== next.user?.base_body_tint_hex) return false;
+  if (prev.user?.hair_tint_hex !== next.user?.hair_tint_hex) return false;
   if (prev.user?.gender !== next.user?.gender) return false;
   
   // Check if shop items loaded
@@ -531,12 +595,15 @@ export const LayeredAvatar = React.memo(LayeredAvatarInternal, (prev, next) => {
     return false; 
   }
 
+  if (prev.weaponGripAttackKey !== next.weaponGripAttackKey) return false;
+  if (prev.weaponGripAttackDurationMs !== next.weaponGripAttackDurationMs) return false;
+  if (prev.allowOverflow !== next.allowOverflow) return false;
+
   return true;
 });
 
 const styles = StyleSheet.create({
   container: {
-    overflow: 'hidden', // RESTORED CLIPPING
     backgroundColor: 'transparent',
     position: 'relative',
   },

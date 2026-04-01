@@ -6,6 +6,10 @@ import {
 } from 'lucide-react';
 import LayeredAvatar from '@/components/LayeredAvatar';
 import type { User } from '@/lib/types';
+import {
+  HAIR_CREATOR_SWATCHES,
+  DEFAULT_HAIR_TINT_HEX,
+} from '@repo/avatar-constants';
 
 // --- Shared Types ---
 type PartItem = { 
@@ -121,6 +125,7 @@ function SimulatorView({ shopItems }: { shopItems: PartItem[] }) {
   }, [gender, apiBases]);
 
   const [activeCategory, setActiveCategory] = useState<"base" | (typeof PART_SLOTS)[number]>("base");
+  const [hairTintHex, setHairTintHex] = useState(DEFAULT_HAIR_TINT_HEX);
   const [selectedBaseIndex, setSelectedBaseIndex] = useState(0);
   const [selectedPartIndex, setSelectedPartIndex] = useState<Record<string, number>>(() => {
     const o: Record<string, number> = {};
@@ -193,11 +198,13 @@ function SimulatorView({ shopItems }: { shopItems: PartItem[] }) {
       const idx = selectedPartIndex[slot] ?? 0;
       const item = partsBySlot[slot]?.[idx];
       if (item && item.image_url) {
-        list.push({ shop_items: item, equipped: true });
+        const shop_items =
+          slot === 'hair' ? { ...item, skin_tint_hex: hairTintHex } : item;
+        list.push({ shop_items, equipped: true });
       }
     });
     return list.sort((a, b) => (Number(a.shop_items.z_index ?? 1) - Number(b.shop_items.z_index ?? 1)));
-  }, [selectedPartIndex, partsBySlot, selectedBase]);
+  }, [selectedPartIndex, partsBySlot, selectedBase, hairTintHex]);
 
   const syntheticUser: User = useMemo(() => ({
     id: "sim-preview", name: "Preview", hunter_name: "Preview",
@@ -205,10 +212,11 @@ function SimulatorView({ shopItems }: { shopItems: PartItem[] }) {
     base_body_url: baseImage,
     base_body_silhouette_url: baseSilhouetteUrl || undefined,
     base_body_tint_hex: baseTintHex && baseTintHex.trim() ? baseTintHex.trim() : '#FFDBAC',
+    hair_tint_hex: hairTintHex,
     exp: 0, coins: 0, gems: 0, level: 1, skill_points: 0, rank: "E", slotsUsed: 0,
     inventory: [], equipped: {}, submittedIds: [], completedDungeons: [],
     cosmetics: equippedCosmetics
-  }), [baseImage, baseSilhouetteUrl, baseTintHex, equippedCosmetics]);
+  }), [baseImage, baseSilhouetteUrl, baseTintHex, hairTintHex, equippedCosmetics]);
 
   return (
     <div className="bg-black text-white flex flex-col items-center justify-center p-8 rounded-xl border border-gray-800 min-h-[600px]">
@@ -233,6 +241,26 @@ function SimulatorView({ shopItems }: { shopItems: PartItem[] }) {
           ))}
         </div>
 
+        {activeCategory === 'hair' && (
+          <div className="space-y-1 pb-2 border-b border-gray-700">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-400/90">Hair color</p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {HAIR_CREATOR_SWATCHES.map(({ hex, label }) => (
+                <button
+                  key={hex}
+                  type="button"
+                  title={label}
+                  onClick={() => setHairTintHex(hex)}
+                  className={`w-8 h-8 rounded-full border-2 transition-all ${
+                    hairTintHex === hex ? 'border-purple-400 ring-2 ring-purple-500/50' : 'border-cyan-500/50'
+                  }`}
+                  style={{ backgroundColor: hex }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="py-4">
           <div className="flex flex-wrap justify-center gap-4 max-h-[280px] overflow-y-auto p-2">
             {currentOptions.map((item, index) => {
@@ -250,14 +278,15 @@ function SimulatorView({ shopItems }: { shopItems: PartItem[] }) {
                   aria-label={item.name}
                 >
                   <div className="w-full h-full rounded-lg overflow-hidden flex items-center justify-center bg-gray-800/50">
-                    {(item.slot !== 'avatar' && (item.slot === 'base_body' || item.image_base_url)) ? (
-                      <div className="relative w-full h-full">
-                        {/* Silhouette/Base Layer */}
+                    {(item.slot !== 'avatar' && (item.slot === 'base_body' || item.image_base_url || item.slot === 'hair')) ? (
+                      <div className="relative w-full h-full" style={{ isolation: 'isolate' }}>
+                        {/* Tinted fill layer */}
                         {(item.image_base_url || item.image_url) && (
                           <div
                             className="absolute inset-0 w-full h-full"
                             style={{
-                              backgroundColor: item.skin_tint_hex || '#FFDBAC',
+                              backgroundColor:
+                                item.slot === 'hair' ? (hairTintHex || '#5D4037') : (item.skin_tint_hex || '#FFDBAC'),
                               WebkitMaskImage: `url(${item.image_base_url || item.image_url})`,
                               maskImage: `url(${item.image_base_url || item.image_url})`,
                               WebkitMaskSize: 'contain',
@@ -269,7 +298,7 @@ function SimulatorView({ shopItems }: { shopItems: PartItem[] }) {
                             }}
                           />
                         )}
-                        {/* Outlines/Detail Layer */}
+                        {/* Detail / outline layer */}
                         {item.image_url && (
                           <img 
                             src={item.image_url} 

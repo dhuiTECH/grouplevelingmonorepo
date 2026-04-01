@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Exo_2, Orbitron, Rajdhani } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
+import { DEFAULT_OG_IMAGE, SITE_NAME, SITE_URL } from "@/lib/site";
 
 const exo2 = Exo_2({
   subsets: ['latin'],
@@ -25,9 +26,22 @@ const rajdhani = Rajdhani({
 });
 
 export const metadata: Metadata = {
-  title: 'Gamified Fitness RPG & Workout Tracker | Group Leveling',
-  description: 'Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hero, and join guilds in the ultimate fitness game.',
-  keywords: ['gamified fitness', 'workout RPG', 'fitness game', 'run tracker RPG', 'weight loss game', 'fitness motivation', 'step tracker game'],
+  title: `${SITE_NAME} | RPG Fitness App & Walking Game.`,
+  description:
+    "Experience leveling up in real life with Group Leveling. Turn your daily steps into an RPG quest walking adventure with manhwa-style calorie tracking and fitness rewards.",
+  keywords: [
+    'gamified fitness',
+    'workout RPG',
+    'walking RPG',
+    'fantasy fitness app',
+    'solo leveling style fitness',
+    'hunter fantasy workout game',
+    'dungeon RPG fitness tracker',
+    'run tracker RPG',
+    'weight loss game',
+    'fitness motivation',
+    'step tracker game',
+  ],
   authors: [{ name: 'Group Leveling' }],
   creator: 'Group Leveling',
   publisher: 'Group Leveling',
@@ -36,21 +50,21 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
-  metadataBase: new URL('https://www.groupleveling.app'),
+  metadataBase: new URL(SITE_URL),
   alternates: {
     canonical: '/',
   },
   openGraph: {
-    title: 'Gamified Fitness RPG & Workout Tracker | Group Leveling',
-    description: 'Turn your runs and workouts into an RPG adventure. Track calories, conquer dungeons, level up your hero, and join guilds in the ultimate fitness game.',
+    title: `${SITE_NAME} | RPG Fitness App & Walking Game.`,
+    description: 'Experience leveling up in real life with Group Leveling. Turn your daily steps into an RPG quest walking adventure with manhwa-style calorie tracking and fitness rewards.',
     url: '/',
-    siteName: 'Hunter System',
+    siteName: SITE_NAME,
     images: [
       {
-        url: '/og-image.png',
+        url: DEFAULT_OG_IMAGE,
         width: 1200,
         height: 630,
-        alt: 'Hunter System - Level Up Through Fitness',
+        alt: 'Group Leveling fantasy walking RPG and fitness app',
       },
     ],
     locale: 'en_US',
@@ -58,30 +72,32 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Hunter System | Level Up Through Fitness',
-    description: 'Awaken your inner hunter. Track runs, conquer dungeons, level up, and climb the elite rankings in this immersive fitness RPG system.',
-    images: ['/og-image.png'],
+    title: `${SITE_NAME} | RPG Fitness App & Walking Game.`,
+    description: 'Experience leveling up in real life with Group Leveling. Turn your daily steps into an RPG quest walking adventure with manhwa-style calorie tracking and fitness rewards.',
+    images: [DEFAULT_OG_IMAGE],
     creator: '@huntersystem',
   },
   robots: {
     index: true,
     follow: true,
-    nocache: true,
     googleBot: {
       index: true,
-      follow: false,
-      noimageindex: true,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
     },
   },
   icons: {
-    icon: '/favicon.ico',
-    shortcut: '/favicon-16x16.png',
+    icon: [
+      { url: '/favicon.ico', sizes: '48x48' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon-96x96.png', sizes: '96x96', type: 'image/png' },
+    ],
+    shortcut: '/favicon-96x96.png',
     apple: '/apple-touch-icon.png',
   },
-  manifest: '/manifest.json',
+  manifest: '/site.webmanifest',
 };
 
 export default function RootLayout({

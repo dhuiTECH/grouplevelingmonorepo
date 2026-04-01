@@ -3,6 +3,13 @@ import { supabaseAdmin } from '@/lib/supabase'
 
 const CREATOR_SLOTS = ['avatar', 'base_body', 'face_eyes', 'face_mouth', 'hair', 'face', 'body']
 
+function normalizeHex6(v: unknown): string | null {
+  if (typeof v !== 'string') return null
+  const t = v.trim()
+  if (!/^#[0-9A-Fa-f]{6}$/.test(t)) return null
+  return t
+}
+
 function toIdList(val: string | number | (string | number)[] | undefined): (string | number)[] {
   if (val == null) return []
   if (Array.isArray(val)) return val.filter((id) => id !== '' && id !== null && id !== undefined)
@@ -12,7 +19,13 @@ function toIdList(val: string | number | (string | number)[] | undefined): (stri
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { hunterId, baseId, partIds = [], base_body_tint_hex: overrideTintHex } = body as { hunterId?: string; baseId?: string | number; partIds?: (string | number)[]; base_body_tint_hex?: string }
+    const { hunterId, baseId, partIds = [], base_body_tint_hex: overrideTintHex, hair_tint_hex: hairTintBody } = body as {
+      hunterId?: string
+      baseId?: string | number
+      partIds?: (string | number)[]
+      base_body_tint_hex?: string
+      hair_tint_hex?: string
+    }
 
     if (!hunterId) {
       return NextResponse.json({ error: 'hunterId is required' }, { status: 400 })
@@ -79,16 +92,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const profileUpdate: Record<string, unknown> = {}
+
     // Update profile avatar and base body (detail + silhouette + tint) from selected base (avatar/base_body slot)
     const baseItem = selectedItems.find((i: any) => (i.slot || '').toLowerCase() === 'avatar' || (i.slot || '').toLowerCase() === 'base_body') || (baseId != null ? selectedItems.find((i: any) => i.id === baseId || String(i.id) === String(baseId)) : null)
     if (baseItem?.image_url) {
-      const profileUpdate: Record<string, unknown> = {
-        avatar: baseItem.image_url,
-        base_body_url: baseItem.image_url
-      }
+      profileUpdate.avatar = baseItem.image_url
+      profileUpdate.base_body_url = baseItem.image_url
       if (baseItem.image_base_url) profileUpdate.base_body_silhouette_url = baseItem.image_base_url
       const tintHex = overrideTintHex && typeof overrideTintHex === 'string' ? overrideTintHex.trim() : (baseItem.skin_tint_hex && typeof baseItem.skin_tint_hex === 'string' ? baseItem.skin_tint_hex.trim() : null)
       profileUpdate.base_body_tint_hex = tintHex || '#FFDBAC'
+    }
+
+    const hairHex = normalizeHex6(hairTintBody)
+    if (hairHex) profileUpdate.hair_tint_hex = hairHex
+
+    if (Object.keys(profileUpdate).length > 0) {
       await supabaseAdmin
         .from('profiles')
         .update(profileUpdate)

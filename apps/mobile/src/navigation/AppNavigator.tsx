@@ -16,7 +16,7 @@ import SocialScreen from '@/screens/SocialScreen';
 import InventoryScreen from '@/screens/InventoryScreen';
 import AdminScreen from '@/screens/AdminScreen';
 import ClassSelectionScreen from '@/screens/ClassSelectionScreen';
-import AvatarScreen from '@/screens/AvatarScreen';
+import { OnboardingFlowNavigator } from '@/navigation/OnboardingFlowNavigator';
 import { TempleScreen } from '@/screens/TempleScreen';
 import WorldMapScreen from '@/screens/WorldMapScreen';
 import BattleScreen from '@/screens/BattleScreen';
@@ -74,16 +74,7 @@ export function AppNavigator(): JSX.Element {
       {user ? (
         // Authenticated Stack
         !user.onboarding_completed ? (
-          <>
-            <Stack.Screen 
-                name="Avatar" 
-                component={AvatarScreen}
-            />
-            <Stack.Screen 
-                name="ClassSelection" 
-                component={ClassSelectionScreen}
-            />
-          </>
+          <Stack.Screen name="OnboardingFlow" component={OnboardingFlowNavigator} />
         ) : (
           <>
             <Stack.Screen 

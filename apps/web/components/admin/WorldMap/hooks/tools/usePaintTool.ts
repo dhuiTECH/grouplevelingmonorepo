@@ -6,7 +6,7 @@ const WORLD_SIZE = 100000;
 const generateId = () => crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
 
 export const usePaintTool = () => {
-  const { paintTiles } = useMapStore();
+  const paintTiles = useMapStore((s) => s.paintTiles);
 
   const executePaint = async (gx: number, gy: number, worldX: number, worldY: number, isMove: boolean, isShift: boolean, brushArea: {dx: number, dy: number}[]) => {
     const state = useMapStore.getState();
@@ -24,15 +24,24 @@ export const usePaintTool = () => {
     const undoSubActions: any[] = [];
     const autoTileQueue: any[] = [];
     const touchedChunks = new Set<string>();
-    
-    // 1. Find existing tiles in the brush area on the target layer (Optimized)
-    const tilesInBrushArea = state.tiles.filter(t => {
-      if ((t.layer || 0) !== layerKey) return false;
-      for (let i = 0; i < brushArea.length; i++) {
-        if (t.x === gx + brushArea[i].dx && t.y === gy + brushArea[i].dy) return true;
+
+    const tileById = new Map(state.tiles.map((t) => [t.id, t]));
+    const indexReady = state.tiles.length === 0 || Object.keys(state.tileIdsByCellKey).length > 0;
+    const candidateIds = new Set<string>();
+    if (indexReady) {
+      for (const { dx, dy } of brushArea) {
+        const list = state.tileIdsByCellKey[`${gx + dx},${gy + dy}`];
+        if (list) list.forEach((id) => candidateIds.add(id));
       }
-      return false;
-    });
+    }
+    const tilesInBrushArea = indexReady
+      ? [...candidateIds]
+          .map((id) => tileById.get(id))
+          .filter((t): t is Tile => !!t && (t.layer || 0) === layerKey)
+      : state.tiles.filter((t) => {
+          if ((t.layer || 0) !== layerKey) return false;
+          return brushArea.some((b) => t.x === gx + b.dx && t.y === gy + b.dy);
+        });
     
     const prevTileMap = new Map<string, Tile[]>();
     tilesInBrushArea.forEach(t => {
@@ -156,12 +165,18 @@ export const usePaintTool = () => {
     const autoTileQueue: any[] = [];
     const touchedChunks = new Set<string>();
 
-    const tilesInBrushArea = state.tiles.filter(t => {
-      for (let i = 0; i < brushArea.length; i++) {
-        if (t.x === gx + brushArea[i].dx && t.y === gy + brushArea[i].dy) return true;
+    const tileById = new Map(state.tiles.map((t) => [t.id, t]));
+    const indexReady = state.tiles.length === 0 || Object.keys(state.tileIdsByCellKey).length > 0;
+    const candidateIds = new Set<string>();
+    if (indexReady) {
+      for (const { dx, dy } of brushArea) {
+        const list = state.tileIdsByCellKey[`${gx + dx},${gy + dy}`];
+        if (list) list.forEach((id) => candidateIds.add(id));
       }
-      return false;
-    });
+    }
+    const tilesInBrushArea = indexReady
+      ? [...candidateIds].map((id) => tileById.get(id)).filter((t): t is Tile => !!t)
+      : state.tiles.filter((t) => brushArea.some((b) => t.x === gx + b.dx && t.y === gy + b.dy));
     
     const tilesByPos = new Map<string, Tile[]>();
     tilesInBrushArea.forEach(t => {

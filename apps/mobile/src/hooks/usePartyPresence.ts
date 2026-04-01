@@ -12,6 +12,7 @@ interface PartyMember {
   base_body_url?: string | null;
   base_body_silhouette_url?: string | null;
   base_body_tint_hex?: string | null;
+  hair_tint_hex?: string | null;
   gender?: string | null;
   cosmetics?: any[];
   lastSeen: number;
@@ -85,6 +86,7 @@ export const usePartyPresence = () => {
             base_body_url: user.base_body_url,
             base_body_silhouette_url: user.base_body_silhouette_url,
             base_body_tint_hex: user.base_body_tint_hex,
+            hair_tint_hex: user.hair_tint_hex,
             gender: user.gender,
             cosmetics: user.cosmetics,
           });
@@ -112,10 +114,11 @@ export const usePartyPresence = () => {
       base_body_url: user.base_body_url,
       base_body_silhouette_url: user.base_body_silhouette_url,
       base_body_tint_hex: user.base_body_tint_hex,
+      hair_tint_hex: user.hair_tint_hex,
       gender: user.gender,
       cosmetics: user.cosmetics,
     });
-  }, [user?.world_x, user?.world_y, user?.current_party_id, user?.id]);
+  }, [user?.world_x, user?.world_y, user?.current_party_id, user?.id, user?.hair_tint_hex]);
 
   return { partyMembersOnline };
 };

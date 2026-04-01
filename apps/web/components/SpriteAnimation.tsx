@@ -73,6 +73,8 @@ export default function SpriteAnimation() {
           {/* Cat Sprite */}
           <div
             className="w-32 h-32"
+            role="img"
+            aria-label="Group Leveling system pet mascot"
             style={{
               backgroundImage: "url('/website/azurecat_spritesheet.png')",
               backgroundRepeat: "no-repeat",

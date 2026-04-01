@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     // Get profile data - all progress data is in profiles table now
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('id, hunter_name, email, avatar, base_body_url, base_body_silhouette_url, base_body_tint_hex, gender, current_class, rank_tier, current_title, next_advancement_attempt, str_stat, spd_stat, end_stat, int_stat, lck_stat, per_stat, wil_stat, current_hp, max_hp, current_mp, max_mp, unassigned_stat_points, exp, coins, gems, level, hunter_rank, weekly_slots_used, last_reset, last_nutrition_reward_at, onboarding_completed, status, is_admin, created_at, referral_code, referral_used, active_skin, daily_completions, weekly_streak_count, manual_daily_completions, manual_weekly_streak, daily_steps, last_steps_reset_at, is_private, world_x, world_y, steps_banked')
+      .select('id, hunter_name, email, avatar, base_body_url, base_body_silhouette_url, base_body_tint_hex, hair_tint_hex, gender, current_class, rank_tier, current_title, next_advancement_attempt, str_stat, spd_stat, end_stat, int_stat, lck_stat, per_stat, wil_stat, current_hp, max_hp, current_mp, max_mp, unassigned_stat_points, exp, coins, gems, level, hunter_rank, weekly_slots_used, last_reset, last_nutrition_reward_at, onboarding_completed, status, is_admin, created_at, referral_code, referral_used, active_skin, daily_completions, weekly_streak_count, manual_daily_completions, manual_weekly_streak, daily_steps, last_steps_reset_at, is_private, world_x, world_y, steps_banked')
       .eq('id', hunterId)
       .single()
 
@@ -118,6 +118,9 @@ export async function GET(request: NextRequest) {
         email: profile.email,
         avatar: profile.avatar,
         base_body_url: profile.base_body_url,
+        base_body_silhouette_url: profile.base_body_silhouette_url ?? undefined,
+        base_body_tint_hex: profile.base_body_tint_hex ?? undefined,
+        hair_tint_hex: profile.hair_tint_hex ?? undefined,
         gender: profile.gender,
         current_class: profile.current_class,
         rank_tier: profile.rank_tier,
@@ -375,7 +378,7 @@ export async function PATCH(request: NextRequest) {
       .from('profiles')
       .update(updateData)
       .eq('id', hunterId)
-      .select('id, hunter_name, email, avatar, base_body_url, base_body_silhouette_url, base_body_tint_hex, gender, current_class, rank_tier, current_title, next_advancement_attempt, str_stat, spd_stat, end_stat, int_stat, lck_stat, per_stat, wil_stat, current_hp, max_hp, current_mp, max_mp, unassigned_stat_points, exp, coins, gems, level, hunter_rank, status, is_admin, referral_code, referral_used, active_skin, daily_completions, weekly_streak_count, manual_daily_completions, manual_weekly_streak, daily_steps, last_reset, last_nutrition_reward_at, is_private, world_x, world_y, steps_banked')
+      .select('id, hunter_name, email, avatar, base_body_url, base_body_silhouette_url, base_body_tint_hex, hair_tint_hex, gender, current_class, rank_tier, current_title, next_advancement_attempt, str_stat, spd_stat, end_stat, int_stat, lck_stat, per_stat, wil_stat, current_hp, max_hp, current_mp, max_mp, unassigned_stat_points, exp, coins, gems, level, hunter_rank, status, is_admin, referral_code, referral_used, active_skin, daily_completions, weekly_streak_count, manual_daily_completions, manual_weekly_streak, daily_steps, last_reset, last_nutrition_reward_at, is_private, world_x, world_y, steps_banked')
       .single()
 
     if (updateError) {
@@ -394,6 +397,7 @@ export async function PATCH(request: NextRequest) {
         base_body_url: profile.base_body_url,
         base_body_silhouette_url: profile.base_body_silhouette_url ?? undefined,
         base_body_tint_hex: profile.base_body_tint_hex ?? undefined,
+        hair_tint_hex: profile.hair_tint_hex ?? undefined,
         gender: profile.gender,
         current_class: profile.current_class,
         rank_tier: profile.rank_tier,

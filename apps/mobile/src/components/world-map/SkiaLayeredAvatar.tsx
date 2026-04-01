@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { DEFAULT_HAIR_TINT_HEX } from '@repo/avatar-constants';
 import {
   Group,
   Image as SkiaImage,
@@ -496,6 +497,10 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
       const rotation = Number(rawRotation) || 0;
       
       const isHandGrip = slot === 'hand_grip';
+      const hairHex =
+        slot === 'hair'
+          ? (user?.hair_tint_hex?.trim() || item.skin_tint_hex || DEFAULT_HAIR_TINT_HEX)
+          : null;
       const tintColor = isHandGrip ? activeSkinColor : undefined;
 
       // MATCHED UI PARSING:
@@ -568,9 +573,7 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
       const activeMask = activeMasks.find(m => m.targets.includes(slot));
       const maskUrl = activeMask?.url;
 
-      layers.push({
-        id: cosmetic.id,
-        uri: item.image_url,
+      const common = {
         x: lx,
         y: ly,
         width: layerWidth,
@@ -581,16 +584,45 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
         scaleRatio,
         isBackground: isBackgroundSlot,
         skipBreathing: isBackgroundSlot,
-        zIndex: calculatedZIndex,
-        tintColor,
-        isAnimated,
         frameWidth,
         frameHeight,
-        totalFrames,
-        fps,
         maskUrl,
-        rotation
-      });
+        rotation,
+      };
+
+      if (slot === 'hair' && item.image_base_url && hairHex && !isAnimated) {
+        layers.push({
+          ...common,
+          id: `${cosmetic.id}-hair-sil`,
+          uri: item.image_base_url,
+          zIndex: calculatedZIndex,
+          tintColor: hairHex,
+          isAnimated: false,
+          totalFrames: 1,
+          fps: 10,
+        });
+        layers.push({
+          ...common,
+          id: cosmetic.id,
+          uri: item.image_url,
+          zIndex: calculatedZIndex + 0.01,
+          tintColor: undefined,
+          isAnimated: false,
+          totalFrames: 1,
+          fps: 10,
+        });
+      } else {
+        layers.push({
+          ...common,
+          id: cosmetic.id,
+          uri: item.image_url,
+          zIndex: calculatedZIndex,
+          tintColor,
+          isAnimated,
+          totalFrames,
+          fps,
+        });
+      }
     });
 
     return layers.sort((a, b) => a.zIndex - b.zIndex);

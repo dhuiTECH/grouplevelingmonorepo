@@ -6,6 +6,10 @@ import LayeredAvatar from "@/components/LayeredAvatar";
 import type { User } from "@/lib/types";
 import { ShopItemMedia } from "@/components/ShopItemMedia";
 import Image from "next/image"; // Assuming Next.js for optimized images
+import {
+  HAIR_CREATOR_SWATCHES,
+  DEFAULT_HAIR_TINT_HEX,
+} from "@repo/avatar-constants";
 
 // ==========================================
 // ASSET PATHS - UPDATE THESE IF NECESSARY
@@ -52,6 +56,7 @@ export interface AvatarLabConfig {
   baseBodyUrl?: string;
   baseBodySilhouetteUrl?: string;
   baseBodyTintHex?: string;
+  hairTintHex?: string;
   baseId?: number | string;
   selectedParts?: Array<{ shop_item_id: number; slot: string }>;
 }
@@ -136,6 +141,7 @@ export default function AvatarCustomizationView({
   >("base");
   const [selectedBaseIndex, setSelectedBaseIndex] = useState(0);
   const [skinTintHex, setSkinTintHex] = useState("#FFDBAC");
+  const [hairTintHex, setHairTintHex] = useState(DEFAULT_HAIR_TINT_HEX);
   const [selectedPartIndex, setSelectedPartIndex] = useState<
     Record<string, number>
   >(() => {
@@ -281,9 +287,14 @@ export default function AvatarCustomizationView({
         item.id != null &&
         (item.image_url || (item as any).image_url)
       ) {
+        const raw = item as OptionItem;
+        const shop_items =
+          slot === "hair"
+            ? { ...raw, skin_tint_hex: hairTintHex }
+            : raw;
         list.push({
           id: `preview-${slot}-${item.id}`,
-          shop_items: item as any,
+          shop_items: shop_items as any,
           equipped: true,
         });
       }
@@ -292,7 +303,7 @@ export default function AvatarCustomizationView({
       (a, b) =>
         Number(a.shop_items.z_index ?? 1) - Number(b.shop_items.z_index ?? 1),
     );
-  }, [selectedPartIndex, partsBySlot]);
+  }, [selectedPartIndex, partsBySlot, hairTintHex]);
 
   const syntheticUser: User = useMemo(
     () => ({
@@ -303,6 +314,7 @@ export default function AvatarCustomizationView({
       base_body_url: baseImage,
       base_body_silhouette_url: hasSilhouette ? baseSilhouetteUrl : undefined,
       base_body_tint_hex: hasSilhouette ? skinTintHex : undefined,
+      hair_tint_hex: hairTintHex,
       exp: 0,
       coins: 0,
       gems: 0,
@@ -316,7 +328,7 @@ export default function AvatarCustomizationView({
       submittedIds: [],
       completedDungeons: [],
     }),
-    [baseImage, baseSilhouetteUrl, hasSilhouette, skinTintHex, equippedCosmetics],
+    [baseImage, baseSilhouetteUrl, hasSilhouette, skinTintHex, hairTintHex, equippedCosmetics],
   );
 
   const handleFinalize = () => {
@@ -342,6 +354,7 @@ export default function AvatarCustomizationView({
       baseBodyUrl: baseImage,
       baseBodySilhouetteUrl: hasSilhouette ? baseSilhouetteUrl : undefined,
       baseBodyTintHex: hasSilhouette ? skinTintHex : undefined,
+      hairTintHex,
       baseId,
       selectedParts: selectedParts.length ? selectedParts : undefined,
     });
@@ -454,6 +467,30 @@ export default function AvatarCustomizationView({
         </div>
 
         {/* Skin color presets — only when Base is selected and base has silhouette */}
+        {activeCategory === "hair" && (
+          <div className="py-2 shrink-0 space-y-1">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-400/90">
+              Hair color
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {HAIR_CREATOR_SWATCHES.map(({ hex, label }) => (
+                <button
+                  key={hex}
+                  type="button"
+                  onClick={() => setHairTintHex(hex)}
+                  className={`w-8 h-8 rounded-full border-2 hover:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-[#0c1423] transition-all ${
+                    hairTintHex === hex
+                      ? "border-purple-400 ring-2 ring-purple-500/60"
+                      : "border-cyan-500/50"
+                  }`}
+                  style={{ backgroundColor: hex }}
+                  title={label}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         {activeCategory === "base" && hasSilhouette && (
           <div className="py-2 shrink-0 space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-400/90">

@@ -13,7 +13,7 @@ import { ChestOpeningModal } from '@/components/modals/ChestOpeningModal';
 const { width: WINDOW_WIDTH } = Dimensions.get('window');
 
 const CAVE_OF_SHADOWS_DEMO = {
-  runData: { distance: 7500, duration: 45 * 60 + 33, routeCoordinates: [] },
+  runData: { distance: 10000, duration: 55 * 60 + 33, routeCoordinates: [] },
   dungeon: {
     id: '425dc861-6ce0-4ef3-bde3-79c71ae47f8e', name: 'Cave of Shadows', difficulty: 'E-Rank',
     tier: '5k', target_distance_meters: 5000, xp_reward: 500, coin_reward: 100,

@@ -5,15 +5,22 @@ import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import LayeredAvatar from '@/components/LayeredAvatar';
+import { useGameData } from '@/hooks/useGameData';
+import { User } from '@/types/user';
+import { useAuth } from '@/contexts/AuthContext';
+import { OptimizedAvatarModal } from '@/components/modals/OptimizedAvatarModal';
 
 export default function DungeonLeaderboardScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation();
   const { dungeon } = route.params || {};
+  const { shopItems } = useGameData();
+  const { user: currentUser } = useAuth();
   
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [rankings, setRankings] = useState<any[]>([]);
+  const [selectedAvatar, setSelectedAvatar] = useState<User | null>(null);
 
   const fetchLeaderboard = useCallback(async () => {
     try {
@@ -26,7 +33,32 @@ export default function DungeonLeaderboardScreen() {
         .limit(20);
 
       if (error) throw error;
-      setRankings(data || []);
+      
+      if (data && data.length > 0) {
+        // Fetch cosmetics for these users so LayeredAvatar displays correctly
+        const userIds = [...new Set(data.map(d => d.user_id))];
+        const { data: profilesWithCosmetics } = await supabase
+          .from('profiles')
+          .select(`
+            id,
+            cosmetics:user_cosmetics(
+              *,
+              shop_items:shop_item_id(*)
+            )
+          `)
+          .in('id', userIds);
+          
+        const profileMap = new Map(profilesWithCosmetics?.map(p => [p.id, p]));
+        
+        const mergedData = data.map(d => ({
+          ...d,
+          cosmetics: profileMap.get(d.user_id)?.cosmetics || []
+        }));
+        
+        setRankings(mergedData);
+      } else {
+        setRankings([]);
+      }
     } catch (err) {
       console.error('Error fetching leaderboard:', err);
     } finally {
@@ -54,16 +86,30 @@ export default function DungeonLeaderboardScreen() {
   };
 
   const renderRankItem = ({ item, index }: { item: any, index: number }) => {
-    const profile = item;
+    // Construct user object for LayeredAvatar
+    const profile = {
+      ...item,
+      name: item.hunter_name || 'Unknown',
+      cosmetics: item.cosmetics || []
+    };
+    
     return (
       <View style={styles.rankItem}>
         <Text style={[styles.rankNumber, index < 3 && styles.topRankText]}>
           {index + 1}
         </Text>
         
-        <View style={styles.avatarContainer}>
-          <LayeredAvatar user={profile} size={40} />
-        </View>
+        <TouchableOpacity 
+          style={styles.avatarContainer}
+          onPress={() => setSelectedAvatar(profile as any)}
+        >
+          <LayeredAvatar 
+            user={profile} 
+            size={40} 
+            allShopItems={shopItems} 
+            onAvatarClick={() => setSelectedAvatar(profile as any)}
+          />
+        </TouchableOpacity>
 
         <View style={styles.hunterInfo}>
           <Text style={styles.hunterName}>{profile.hunter_name || 'Hunter'}</Text>
@@ -117,6 +163,16 @@ export default function DungeonLeaderboardScreen() {
           />
         )}
       </SafeAreaView>
+
+      {/* Player Detail Modal */}
+      {currentUser && (
+        <OptimizedAvatarModal
+          visible={!!selectedAvatar}
+          onClose={() => setSelectedAvatar(null)}
+          user={selectedAvatar}
+          currentUser={currentUser}
+        />
+      )}
     </View>
   );
 }

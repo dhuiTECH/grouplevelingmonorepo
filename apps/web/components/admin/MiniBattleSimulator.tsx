@@ -1,7 +1,11 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Sword, Battery, Wifi, Signal } from 'lucide-react';
+
+/** Matches `EnemyBlock` + `OptimizedPetAvatar` battle mob (size=172, inset 0.8 vs max frame dim). */
+const MOB_BATTLE_SLOT_PX = 172;
+const MOB_FRAME_INSET = 0.8;
 
 interface MiniBattleSimulatorProps {
   monsterUrl: string;
@@ -38,6 +42,22 @@ export default function MiniBattleSimulator({
   baseHP,
   metadata
 }: MiniBattleSimulatorProps) {
+  const fw = Math.max(1, monsterFrameWidth || 64);
+  const fh = Math.max(1, monsterFrameHeight || 64);
+  const maxDim = Math.max(fw, fh);
+  const frameCount = Math.max(1, monsterFrameCount || 1);
+
+  /** Same formula as mobile `OptimizedPetAvatar`: (safeSize * 0.8) / max(frameW, frameH), then admin preview multiplier. */
+  const mobSpriteScale = useMemo(() => {
+    const base = (MOB_BATTLE_SLOT_PX * MOB_FRAME_INSET) / maxDim;
+    return base * (previewScale || 1);
+  }, [maxDim, previewScale]);
+
+  const displayW = fw * mobSpriteScale;
+  const displayH = fh * mobSpriteScale;
+  const sheetBgW = frameCount * fw * mobSpriteScale;
+  const sheetBgH = fh * mobSpriteScale;
+
   const [battleLogs, setBattleLogs] = useState<string[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isAttacking, setIsAttacking] = useState(false);
@@ -137,9 +157,13 @@ export default function MiniBattleSimulator({
 
   return (
     <div className="mt-4 p-4 bg-black/60 rounded-2xl border border-gray-800 shadow-2xl">
-      <h3 className="text-[10px] font-black uppercase text-gray-400 mb-4 flex items-center gap-2">
+      <h3 className="text-[10px] font-black uppercase text-gray-400 mb-1 flex items-center gap-2">
         <Sword size={12} className="text-red-500" /> Mobile Battle Preview (SIDE_VIEW)
       </h3>
+      <p className="text-[9px] text-gray-500 mb-4 leading-relaxed">
+        Mob size matches the app battle screen: {MOB_BATTLE_SLOT_PX}×{MOB_BATTLE_SLOT_PX} slot,{' '}
+        <span className="text-gray-400">{MOB_FRAME_INSET * 100}%</span> fit to the larger frame side (same as mobile), × preview scale below.
+      </p>
       
       {/* Mobile Device Frame */}
       <div className="relative mx-auto w-full max-w-[300px] aspect-[1/2] rounded-[3rem] border-[8px] border-gray-800 bg-black overflow-hidden shadow-2xl ring-1 ring-gray-700">
@@ -190,26 +214,22 @@ export default function MiniBattleSimulator({
                     </div>
                 </div>
 
-                {/* Monster Side (Right) */}
+                {/* Monster Side (Right) — sprite scale aligned with mobile EnemyBlock / OptimizedPetAvatar */}
                 <div className="relative flex flex-col items-center gap-2 mb-32 z-10 max-w-[50%]">
                      {monsterUrl ? (
+                        monsterIsSpritesheet ? (
                         <div
                             key={`monster-${spawnReplayKey}-${currentStart}-${currentEnd}-${monsterIsSpritesheet}`}
-                            className={`transition-transform duration-300 ${isAttacking ? 'translate-x-2' : ''}`}
+                            className={`transition-transform duration-300 shrink-0 ${isAttacking ? 'translate-x-2' : ''}`}
                             style={{
-                                width: monsterIsSpritesheet ? (monsterFrameWidth || 64) : '100%',
-                                height: monsterIsSpritesheet ? (monsterFrameHeight || 64) : '150px',
-                                minWidth: monsterIsSpritesheet ? 'none' : '100px',
-                                transform: `scale(${previewScale || 1}) ${isAttacking ? 'translateX(10px)' : ''}`,
+                                width: displayW,
+                                height: displayH,
+                                transform: isAttacking ? 'translateX(10px)' : undefined,
                                 transformOrigin: 'center bottom',
                                 backgroundImage: `url(${monsterUrl})`,
-                                backgroundSize: monsterIsSpritesheet
-                                    ? `${(monsterFrameCount || 1) * (monsterFrameWidth || 64)}px ${(monsterFrameHeight || 64)}px`
-                                    : 'contain',
+                                backgroundSize: `${sheetBgW}px ${sheetBgH}px`,
                                 backgroundRepeat: 'no-repeat',
-                                backgroundPosition: monsterIsSpritesheet 
-                                    ? `-${currentFrame * (monsterFrameWidth || 64)}px 0px` 
-                                    : 'center bottom',
+                                backgroundPosition: `-${currentFrame * fw * mobSpriteScale}px 0px`,
                                 imageRendering: 'pixelated',
                                 transition: 'none'
                             }}
@@ -219,6 +239,31 @@ export default function MiniBattleSimulator({
                                 }
                             }}
                         />
+                        ) : (
+                        <div
+                            key={`monster-img-${spawnReplayKey}`}
+                            className={`flex items-end justify-center shrink-0 transition-transform duration-300 ${isAttacking ? 'translate-x-2' : ''}`}
+                            style={{
+                                width: MOB_BATTLE_SLOT_PX,
+                                height: MOB_BATTLE_SLOT_PX,
+                                transform: isAttacking ? 'translateX(10px)' : undefined,
+                            }}
+                        >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                                src={monsterUrl}
+                            alt=""
+                            className="max-w-full max-h-full object-contain object-bottom"
+                            style={{
+                                width: 'auto',
+                                height: 'auto',
+                                maxWidth: MOB_BATTLE_SLOT_PX * MOB_FRAME_INSET * (previewScale || 1),
+                                maxHeight: MOB_BATTLE_SLOT_PX * MOB_FRAME_INSET * (previewScale || 1),
+                                imageRendering: 'pixelated',
+                            }}
+                            />
+                        </div>
+                        )
                     ) : (
                         <div className="w-16 h-16 bg-red-500/20 rounded-full border-2 border-red-500/30 flex items-center justify-center">
                              <span className="text-[8px] font-black text-red-500 opacity-50 uppercase">No Sprite</span>

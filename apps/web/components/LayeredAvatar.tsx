@@ -110,6 +110,7 @@ export default function LayeredAvatar({
     })
     .sort((a: any, b: any) => Number(a.shop_items.z_index || 1) - Number(b.shop_items.z_index || 1));
 
+
   // 4. Inject Hand Grip if Weapon has grip_type
   const weaponItem = overlayLayers.find(c => getSlot(c.shop_items) === 'weapon');
   const gripType = weaponItem?.shop_items?.grip_type;
@@ -296,6 +297,11 @@ export default function LayeredAvatar({
 
         {overlayLayers.map((cosmetic, index) => {
           const item = cosmetic.shop_items;
+          const hairTint = (user as { hair_tint_hex?: string | null }).hair_tint_hex?.trim();
+          const itemForMedia =
+            getSlot(item) === 'hair' && hairTint
+              ? { ...item, skin_tint_hex: hairTint }
+              : item;
           const isFemale = activeVisualGender === 'female';
           
           // Use female-specific positioning if available and character is female
@@ -410,6 +416,62 @@ export default function LayeredAvatar({
              );
           }
 
+          // Hair: dedicated inline render — uses a real <img> for intrinsic sizing
+          // (the 1px + scale trick doesn't work for mask/tint stacks that have only absolute children)
+          if (currentSlot === 'hair' && item.image_url) {
+            const hairColor = hairTint || item.skin_tint_hex || '#5D4037';
+            const maskSrc = item.image_base_url || item.image_url;
+            return applyMasksToLayer(
+              <div
+                key={cosmetic.id ?? `overlay-${index}-${item?.id ?? index}`}
+                className="absolute pointer-events-none flex items-center justify-center"
+                style={{
+                  zIndex: finalZIndex,
+                  left: `${leftPercent}%`,
+                  top: `${topPercent}%`,
+                  transform: transformValue,
+                  transformOrigin: 'center',
+                  width: '1px',
+                  height: '1px',
+                }}
+              >
+                <div className="relative inline-block max-w-none" style={{ isolation: 'isolate', lineHeight: 0 }}>
+                  {/* In-flow img establishes intrinsic size for the absolute layers */}
+                  <img
+                    src={item.image_url}
+                    alt=""
+                    aria-hidden
+                    className="block max-w-none h-auto w-auto pointer-events-none select-none"
+                    style={{ opacity: 0 }}
+                  />
+                  {/* Tinted fill masked by silhouette (or image_url if no base) */}
+                  <div
+                    className="absolute inset-0 w-full h-full"
+                    style={{
+                      backgroundColor: hairColor,
+                      WebkitMaskImage: `url(${maskSrc})`,
+                      maskImage: `url(${maskSrc})`,
+                      WebkitMaskSize: 'contain',
+                      maskSize: 'contain',
+                      WebkitMaskPosition: 'center',
+                      maskPosition: 'center',
+                      WebkitMaskRepeat: 'no-repeat',
+                      maskRepeat: 'no-repeat',
+                    }}
+                  />
+                  {/* Detail / outline layer (multiply for shading) */}
+                  <img
+                    src={item.image_url}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-contain"
+                    style={{ mixBlendMode: 'multiply' }}
+                  />
+                </div>
+              </div>,
+              currentSlot
+            );
+          }
+
           return applyMasksToLayer(
             <div
               key={cosmetic.id ?? `overlay-${index}-${item?.id ?? index}`}
@@ -432,7 +494,7 @@ export default function LayeredAvatar({
             >
               {/* For the live avatar preview, always use the original upload (image/video), not the thumbnail */}
               <ShopItemMedia
-                item={{ ...item, thumbnail_url: undefined }}
+                item={{ ...itemForMedia, thumbnail_url: undefined }}
                 animate={true}
                 className={mediaClassName}
               />

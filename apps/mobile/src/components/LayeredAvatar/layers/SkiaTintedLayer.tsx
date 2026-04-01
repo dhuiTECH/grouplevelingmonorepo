@@ -3,6 +3,8 @@ import { View, Image as RNImage } from 'react-native';
 import { Canvas, Image as SkiaImage, useImage, ColorMatrix } from '@shopify/react-native-skia';
 import { ShopItemMedia } from '../../ShopItemMedia';
 import { FALLBACK_STATIC_SIZE, hexToRgb } from '../LayeredAvatarUtils';
+import { WeaponAttackAnimatedInner } from '../WeaponAttackAnimatedInner';
+import type { WeaponAttackPresetId } from '../weaponGripAttackPresets';
 
 /**
  * A specialized layer that uses Skia to apply a multiply blend mode.
@@ -18,7 +20,8 @@ const SkiaTintedLayer: React.FC<{
   scaleRatio: number;
   rotation: number;
   tintColor: string;
-}> = ({ item, leftPercent, topPercent, zIndex, dbScale, scaleRatio, rotation, tintColor }) => {
+  weaponAttack?: { attackKey: number; preset: WeaponAttackPresetId; durationMs: number } | null;
+}> = ({ item, leftPercent, topPercent, zIndex, dbScale, scaleRatio, rotation, tintColor, weaponAttack }) => {
   const [intrinsicSize, setIntrinsicSize] = useState<number | null>(null);
   const uri = item?.image_url;
 
@@ -57,6 +60,7 @@ const SkiaTintedLayer: React.FC<{
         top: `${topPercent}%`,
         width: finalSize,
         height: finalSize,
+        overflow: 'visible',
         transform: [
           { translateX: -finalSize / 2 },
           { translateY: -finalSize / 2 },
@@ -64,30 +68,36 @@ const SkiaTintedLayer: React.FC<{
         ],
       }}
       pointerEvents="none"
+      collapsable={false}
     >
-      {skiaImg ? (
-        <Canvas style={{ width: finalSize, height: finalSize }}>
-          <SkiaImage
-            image={skiaImg}
-            fit="contain"
-            x={0}
-            y={0}
-            width={finalSize}
-            height={finalSize}
-          >
-            <ColorMatrix matrix={multiplyMatrix} />
-          </SkiaImage>
-        </Canvas>
-      ) : (
-        // Fallback while loading
-        <ShopItemMedia
-          item={item}
-          animate={false}
-          forceFullImage={true}
-          style={{ width: finalSize, height: finalSize, opacity: 0 }} // Hidden until loaded
-          resizeMode="contain"
-        />
-      )}
+      <WeaponAttackAnimatedInner
+        attackKey={weaponAttack?.attackKey}
+        attackPreset={weaponAttack?.preset ?? null}
+        durationMs={weaponAttack?.durationMs ?? 500}
+      >
+        {skiaImg ? (
+          <Canvas style={{ width: finalSize, height: finalSize }}>
+            <SkiaImage
+              image={skiaImg}
+              fit="contain"
+              x={0}
+              y={0}
+              width={finalSize}
+              height={finalSize}
+            >
+              <ColorMatrix matrix={multiplyMatrix} />
+            </SkiaImage>
+          </Canvas>
+        ) : (
+          <ShopItemMedia
+            item={item}
+            animate={false}
+            forceFullImage={true}
+            style={{ width: finalSize, height: finalSize, opacity: 0 }}
+            resizeMode="contain"
+          />
+        )}
+      </WeaponAttackAnimatedInner>
     </View>
   );
 };

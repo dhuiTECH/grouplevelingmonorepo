@@ -107,7 +107,7 @@ export const useAutoTiling = () => {
         tile.layer, tile.offsetX, tile.offsetY, tile.isWalkable, tile.snapToGrid, tile.isAutoFill,
         true, newBitmask, elevation, useMapStore.getState().isFoamEnabled, newFoamBitmask,
         tile.smartType, tile.rotation || 0,
-        tile.blockCol, tile.blockRow
+        tile.blockCol, tile.blockRow, tile.edgeBlocks, tile.flipX
       );
     }
   };

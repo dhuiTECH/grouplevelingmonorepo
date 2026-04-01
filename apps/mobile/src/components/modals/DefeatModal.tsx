@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, useWindowDimensions, Text, TouchableOpacity, Platform, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, {
   Path,
   Rect,
@@ -80,18 +81,24 @@ export const DefeatModal: React.FC<DefeatModalProps> = ({
     <AnimatePresence>
       {visible && (
         <MotiView
-          from={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ type: 'timing', duration: 300 }}
+          from={{ opacity: 0, translateY: 52 }}
+          animate={{ opacity: 1, translateY: 0 }}
+          exit={{ opacity: 0, translateY: 36 }}
+          transition={{ type: 'timing', duration: 320 }}
           style={styles.overlay}
         >
+          <SafeAreaView style={styles.safeFill} edges={['top', 'bottom']}>
           <View style={styles.container}>
-            {/* Main Scaled Canvas */}
+            {/* Main Scaled Canvas — expand from below like system modals (SettingsModal) */}
             <MotiView
-              from={{ scaleX: 0.9, scaleY: 0.9, opacity: 0 }}
-              animate={{ scaleX, scaleY, opacity: 1 }}
-              transition={{ type: 'spring', damping: 15 }}
+              from={{
+                scaleX: scaleX * 0.88,
+                scaleY: scaleY * 0.88,
+                opacity: 0,
+                translateY: 40,
+              }}
+              animate={{ scaleX, scaleY, opacity: 1, translateY: 0 }}
+              transition={{ type: 'spring', damping: 18, stiffness: 220 }}
               style={{ width: VIEWBOX_WIDTH, height: VIEWBOX_HEIGHT, justifyContent: 'center', alignItems: 'center' }}
             >
               
@@ -118,6 +125,12 @@ export const DefeatModal: React.FC<DefeatModalProps> = ({
                     <Stop offset="0.4" stopColor="#ff4d6d" />
                     <Stop offset="1" stopColor="#660018" />
                   </LinearGradient>
+                  {/* Title fill only — stroke+fill on SvgText breaks counters (e.g. “A”) in react-native-svg */}
+                  <LinearGradient id="defeat-title-fill" x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0" stopColor="#ffc4cf" />
+                    <Stop offset="0.45" stopColor="#ff4d6d" />
+                    <Stop offset="1" stopColor="#8e0000" />
+                  </LinearGradient>
                   <ClipPath id="def-exp-clip">
                     <Path d="M320,335 L680,335 L675,350 L315,350 Z" />
                   </ClipPath>
@@ -133,7 +146,7 @@ export const DefeatModal: React.FC<DefeatModalProps> = ({
                 <Polyline points="840,934 855,934 855,919" stroke="#ff4d6d" strokeWidth="2.5" fill="none" opacity="0.9" />
 
             {/* Main Title */}
-            <SvgText x="500" y="70" fontSize={72} textAnchor="middle" fill="#8e0000" fontWeight="900" letterSpacing="6" stroke="#ff4d6d" strokeWidth="2">
+            <SvgText x="500" y="70" fontSize={72} textAnchor="middle" fill="url(#defeat-title-fill)" fontWeight="700" letterSpacing="6">
               DEFEAT
             </SvgText>
 
@@ -297,6 +310,7 @@ export const DefeatModal: React.FC<DefeatModalProps> = ({
 
             </MotiView>
           </View>
+          </SafeAreaView>
         </MotiView>
       )}
     </AnimatePresence>
@@ -309,6 +323,10 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     elevation: 9999,
     backgroundColor: 'rgba(0,0,0,0.85)',
+  },
+  safeFill: {
+    flex: 1,
+    width: '100%',
   },
   container: {
     flex: 1,

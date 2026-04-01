@@ -26,7 +26,7 @@ export type AnimationAction = 'Idle' | 'Walk' | 'Run' | 'Attack' | 'Jump' | 'Dea
 
 export type SkillType = 'Projectile' | 'Melee Slash' | 'Impact/Hit' | 'Area of Effect' | 'Buff/Aura' | 'Beam' | 'Explosion';
 
-export type ModelType = 'gemini-3-pro-image-preview' | 'gemini-2.5-flash-image' | 'gemini-3.1-flash-image';
+export type ModelType = 'gemini-3-pro-image-preview' | 'gemini-2.5-flash-image' | 'gemini-3.1-flash-image-preview';
 
 export type BaseBodyType = 'none' | 'male' | 'female';
 

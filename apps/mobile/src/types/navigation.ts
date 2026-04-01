@@ -11,6 +11,7 @@ export type RootStackParamList = {
   Login: undefined;
   Shop: undefined;
   Signup: undefined;
+  OnboardingFlow: undefined;
   Social: undefined;
   Temple: undefined;
   Training: undefined;

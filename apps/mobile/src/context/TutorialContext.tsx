@@ -36,7 +36,7 @@ interface TutorialContextType {
 const TutorialContext = createContext<TutorialContextType | null>(null);
 
 export const TutorialProvider = ({ children }: { children: React.ReactNode }) => {
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
   const { stopBackgroundMusic } = useAudio();
   const [step, setStep] = useState<TutorialStep>('IDLE');
   const [position, setPosition] = useState<LayoutRectangle | null>(null);
@@ -162,19 +162,28 @@ export const TutorialProvider = ({ children }: { children: React.ReactNode }) =>
     setStep('COMPLETED');
     setShowTutorialChest(false);
     if (user?.id) {
-      // 1. Save locally
-      AsyncStorage.setItem(`tutorial_completed_v1_${user.id}`, 'true');
-      
-      // 2. Save to DB
+      try {
+        await AsyncStorage.setItem(`tutorial_completed_v1_${user.id}`, 'true');
+      } catch (e) {
+        console.warn('[Tutorial] AsyncStorage save failed:', e);
+      }
+
       try {
         const { error } = await supabase
           .from('profiles')
           .update({ tutorial_completed: true })
           .eq('id', user.id);
-          
+
         if (error) throw error;
       } catch (err) {
         console.error('[Tutorial] Failed to save completion to DB:', err);
+      }
+
+      // Keep auth context in sync so HomeScreen / audio hooks see completion immediately
+      try {
+        setUser({ ...user, tutorial_completed: true });
+      } catch (e) {
+        console.warn('[Tutorial] setUser after completion failed:', e);
       }
     }
   };

@@ -54,7 +54,6 @@ export const MaskPainter = ({
   onSaveMask 
 }: MaskPainterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
   const [brushSize, setBrushSize] = useState(15);
   const [previewZoom, setPreviewZoom] = useState(1.0);
   const [itemOpacity, setItemOpacity] = useState(0.7);
@@ -66,99 +65,118 @@ export const MaskPainter = ({
   const [autoMaskOn, setAutoMaskOn] = useState(false);
   const cachedStampDataRef = useRef<ImageData | null>(null);
   const cachedItemUrlRef = useRef<string | null>(null);
-  const hasLoadedMaskRef = useRef(false);
+  const isDrawingRef = useRef(false);
+  const lastStrokeRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Load existing mask
+  // Load existing mask (re-run when maskUrl changes; cancel in-flight loads)
   useEffect(() => {
-    if (!maskUrl || hasLoadedMaskRef.current) return;
+    if (!maskUrl) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    let cancelled = false;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      // To get the "holes" (strokes) back from the mask:
-      // The mask is Black where kept, Transparent where erased.
-      // We want the canvas to be Black where the mask is Transparent.
-      
+      if (cancelled) return;
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = canvas.width;
       tempCanvas.height = canvas.height;
       const tCtx = tempCanvas.getContext('2d');
       if (!tCtx) return;
 
-      // 1. Draw solid green (for visibility while editing)
       tCtx.fillStyle = '#00ff00';
       tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-
-      // 2. Punch out the mask's opaque areas
       tCtx.globalCompositeOperation = 'destination-out';
       tCtx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-      // 3. Now tempCanvas has Green where the mask was Transparent.
-      // This is exactly our "strokes" canvas.
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.globalCompositeOperation = 'source-over';
       ctx.drawImage(tempCanvas, 0, 0);
-      hasLoadedMaskRef.current = true;
     };
     img.src = maskUrl;
+    return () => {
+      cancelled = true;
+    };
   }, [maskUrl]);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#00ff00'; // Light green brush for visibility
-    ctx.lineWidth = brushSize;
-  }, [brushSize]);
+  function stampAlongSegment(
+    ctx: CanvasRenderingContext2D,
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    radius: number,
+    erasing: boolean
+  ) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dist = Math.hypot(dx, dy);
+    const step = Math.max(1, radius * 0.35);
+    const n = Math.max(1, Math.ceil(dist / step));
+    const prevComposite = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = erasing ? 'destination-out' : 'source-over';
+    if (!erasing) ctx.fillStyle = '#00ff00';
+    for (let i = 0; i <= n; i++) {
+      const t = n === 0 ? 0 : i / n;
+      const x = from.x + dx * t;
+      const y = from.y + dy * t;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = prevComposite;
+  }
 
   // Adjust coordinates for zoom
-  const getMousePos = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const getCanvasPos = (clientX: number, clientY: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
     return {
-      x: (e.clientX - rect.left) / previewZoom,
-      y: (e.clientY - rect.top) / previewZoom
+      x: (clientX - rect.left) / previewZoom,
+      y: (clientY - rect.top) / previewZoom
     };
   };
 
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const ctx = canvasRef.current?.getContext('2d');
+  const startDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.setPointerCapture(e.pointerId);
+    const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
-    ctx.strokeStyle = '#00ff00'; // Ensure green brush for visibility
-    ctx.lineWidth = brushSize;
-    const pos = getMousePos(e);
+    const pos = getCanvasPos(e.clientX, e.clientY);
     setMousePos(pos);
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
-    setIsDrawing(true);
+    isDrawingRef.current = true;
+    lastStrokeRef.current = pos;
+    stampAlongSegment(ctx, pos, pos, brushSize / 2, isEraser);
   };
 
-  const draw = (pos: { x: number, y: number }) => {
-    if (!isDrawing) return;
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const pos = getCanvasPos(e.clientX, e.clientY);
+    setMousePos(pos);
+    if (!isDrawingRef.current) return;
     const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
-    ctx.lineWidth = brushSize;
-    ctx.lineTo(pos.x, pos.y);
-    ctx.stroke();
+    const last = lastStrokeRef.current;
+    if (!ctx || !last) return;
+    stampAlongSegment(ctx, last, pos, brushSize / 2, isEraser);
+    lastStrokeRef.current = pos;
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const pos = getMousePos(e);
-    setMousePos(pos);
-    if (isDrawing) {
-      draw(pos);
+  const endDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    isDrawingRef.current = false;
+    lastStrokeRef.current = null;
+  };
+
+  const handlePointerLeave = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) {
+      setShowBrush(false);
     }
   };
-
-  const stopDrawing = () => setIsDrawing(false);
 
   const clearCanvas = () => {
     const canvas = canvasRef.current;
@@ -348,22 +366,20 @@ export const MaskPainter = ({
               ref={canvasRef}
               width={512}
               height={512}
-              className={`absolute inset-0 z-10 ${showBrush ? 'cursor-none' : 'cursor-crosshair'}`}
-              onMouseDown={startDrawing}
-              onMouseMove={handleMouseMove}
-              onMouseUp={stopDrawing}
-              onMouseEnter={() => setShowBrush(true)}
-              onMouseLeave={() => {
-                stopDrawing();
-                setShowBrush(false);
-              }}
+              className={`absolute inset-0 z-[100] touch-none ${showBrush ? 'cursor-none' : 'cursor-crosshair'}`}
+              onPointerDown={startDrawing}
+              onPointerMove={handlePointerMove}
+              onPointerUp={endDrawing}
+              onPointerCancel={endDrawing}
+              onPointerEnter={() => setShowBrush(true)}
+              onPointerLeave={handlePointerLeave}
               style={{ opacity: 0.8 }} // Slight transparency so we can see the canvas bounds vs item
             />
 
             {/* Brush Preview Circle */}
             {showBrush && (
               <div
-                className="absolute rounded-full border border-white pointer-events-none z-50"
+                className="absolute rounded-full border border-white pointer-events-none z-[110]"
                 style={{
                   width: brushSize,
                   height: brushSize,

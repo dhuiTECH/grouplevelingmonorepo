@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Skull, Lock, Loader2, Smartphone, Volume2, VolumeX } from 'lucide-react';
-import { signInWithOTP, stabilizeConnection } from '@/app/actions/auth';
+import { Skull, Volume2, VolumeX } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import AvatarCustomizationView, { type AvatarLabConfig } from '@/components/views/AvatarCustomizationView';
 
 interface OnboardingProps {
@@ -18,11 +18,17 @@ export default function OnboardingView({ onAuthenticated, isAuthenticated, isOnb
   const searchParams = useSearchParams();
 
   // --- STATE ---
-  const [step, setStep] = useState<'register' | 'verify' | 'avatar_customize' | 'class_path'>(
-    isAuthenticated && !isOnboarded ? 'class_path' : 'register'
-  );
-  const [otpEmail, setOtpEmail] = useState('');
-  const [otpToken, setOtpToken] = useState('');
+  const [step, setStep] = useState<
+    'guest_gate' | 'register' | 'avatar_customize' | 'class_path'
+  >(() => {
+    if (isAuthenticated && !isOnboarded) {
+      const s = initialUser?.onboarding_step as string | undefined;
+      if (s === 'avatar') return 'avatar_customize';
+      if (s === 'class') return 'class_path';
+      return 'register';
+    }
+    return 'guest_gate';
+  });
   const [isLoadingOTP, setIsLoadingOTP] = useState(false);
   const [systemError, setSystemError] = useState<string | null>(null);
   const [genderError, setGenderError] = useState(false);
@@ -96,15 +102,37 @@ export default function OnboardingView({ onAuthenticated, isAuthenticated, isOnb
     selectedParts: undefined as AvatarLabConfig['selectedParts'],
   });
 
+  useEffect(() => {
+    if (!isAuthenticated || isOnboarded) return;
+    const s = initialUser?.onboarding_step as string | undefined;
+    if (s === 'avatar') setStep('avatar_customize');
+    else if (s === 'class') setStep('class_path');
+    else setStep('register');
+  }, [isAuthenticated, isOnboarded, initialUser?.id, initialUser?.onboarding_step]);
+
   // --- HANDLERS ---
-  
-  const handleAwaken = async (e: React.FormEvent) => {
+
+  const handleEnterGate = async () => {
+    setIsLoadingOTP(true);
+    setSystemError(null);
+    try {
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) throw error;
+      setStep('register');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Could not start guest session.';
+      setSystemError(msg);
+    } finally {
+      setIsLoadingOTP(false);
+    }
+  };
+
+  const handleRegisterContinue = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!onboardingData.name.trim()) return;
-    if (!onboardingData.email?.trim()) return;
     if (!onboardingData.gender) {
-        setGenderError(true);
-        return;
+      setGenderError(true);
+      return;
     }
 
     setIsLoadingOTP(true);
@@ -112,31 +140,64 @@ export default function OnboardingView({ onAuthenticated, isAuthenticated, isOnb
     setHunterNameError(null);
     setSystemError(null);
 
-    const formData = new FormData();
-    formData.append('email', onboardingData.email);
-    formData.append('characterName', onboardingData.name);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user) {
+        setSystemError('No session. Tap Enter the gate again.');
+        setIsLoadingOTP(false);
+        return;
+      }
 
-    const result = await signInWithOTP(formData);
+      const trimmed = onboardingData.name.trim();
+      const { data: nameRow } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('hunter_name', trimmed)
+        .maybeSingle();
+      if (nameRow && nameRow.id !== session.user.id) {
+        setHunterNameError('That hunter name is already taken.');
+        setIsLoadingOTP(false);
+        return;
+      }
 
-    if (result.error) {
-        if (result.error.includes('Duplicate') || result.error.includes('taken')) {
-            setHunterNameError(result.error);
+      let finalAvatar = onboardingData.avatar || '/NoobMan.png';
+      if (!onboardingData.avatar) {
+        if (onboardingData.gender === 'Female') finalAvatar = '/NoobWoman.png';
+        else if (onboardingData.gender === 'Non-binary')
+          finalAvatar =
+            onboardingData.base_body_url === '/NoobWoman.png' ? '/NoobWoman.png' : '/NoobMan.png';
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          hunter_name: trimmed,
+          gender: onboardingData.gender,
+          avatar: finalAvatar,
+          onboarding_step: 'avatar',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', session.user.id);
+
+      if (error) {
+        if (error.code === '23505') {
+          setHunterNameError('That hunter name is already taken.');
         } else {
-            setSystemError(result.error);
+          setSystemError(error.message);
         }
         setIsLoadingOTP(false);
-    } else {
-        setOtpEmail(onboardingData.email);
-        setStep('verify');
-        setIsLoadingOTP(false);
+        return;
+      }
+
+      setOnboardingData((prev) => ({ ...prev, name: trimmed, avatar: finalAvatar }));
+      setStep('avatar_customize');
+    } catch (err: unknown) {
+      setSystemError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setIsLoadingOTP(false);
     }
-  };
-
-  const handleVerifyOTP = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!otpToken || otpToken.length !== 6) return;
-
-    setStep('avatar_customize');
   };
 
   const handleClassAwaken = async (selectedClass: string) => {
@@ -145,54 +206,131 @@ export default function OnboardingView({ onAuthenticated, isAuthenticated, isOnb
 
     let finalAvatar = onboardingData.avatar;
     if (!finalAvatar) {
-        if (onboardingData.gender === 'Female') finalAvatar = '/NoobWoman.png';
-        else if (onboardingData.gender === 'Non-binary') finalAvatar = onboardingData.base_body_url || '/NoobMan.png';
-        else finalAvatar = '/NoobMan.png';
+      if (onboardingData.gender === 'Female') finalAvatar = '/NoobWoman.png';
+      else if (onboardingData.gender === 'Non-binary')
+        finalAvatar = onboardingData.base_body_url || '/NoobMan.png';
+      else finalAvatar = '/NoobMan.png';
     }
 
-    const formData = new FormData();
-    formData.append('email', otpEmail || onboardingData.email);
-    formData.append('token', otpToken);
-    formData.append('characterName', onboardingData.name);
-    formData.append('gender', onboardingData.gender);
-    formData.append('avatar', finalAvatar);
-    if (onboardingData.gender === 'Non-binary' && onboardingData.base_body_url) {
-      formData.append('base_body_url', onboardingData.base_body_url);
-    }
-    formData.append('current_class', selectedClass);
-    if (referralCode?.trim()) {
-      formData.append('referral_code', referralCode.trim());
-    }
-
-    const result = await stabilizeConnection(formData);
-
-    if (result.error) {
-        setSystemError(result.error);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user) {
+        setSystemError('Session expired. Refresh and try again.');
         setIsLoadingOTP(false);
-        // If it's an authentication error, go back to verify
-        if (result.error.toLowerCase().includes('token') || result.error.toLowerCase().includes('code')) {
-            setStep('verify');
+        return;
+      }
+
+      const userId = session.user.id;
+      const hunterName = onboardingData.name.trim();
+      const gender = onboardingData.gender;
+      const referralCodeUsed = referralCode?.trim() || null;
+
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('status, referral_used')
+        .eq('id', userId)
+        .single();
+
+      const userStatus = existingProfile?.status || 'pending';
+      const alreadyUsedReferral = !!existingProfile?.referral_used;
+      const applyReferralBonus = !!referralCodeUsed && !alreadyUsedReferral;
+      const newUserReferralCode = `HUNT-${hunterName.substring(0, 3).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`;
+
+      const upsertPayload: Record<string, unknown> = {
+        id: userId,
+        hunter_name: hunterName,
+        gender,
+        avatar: finalAvatar,
+        current_class: selectedClass || 'None',
+        rank_tier: 0,
+        current_title: 'Novice Hunter',
+        next_advancement_attempt: null,
+        str_stat: 10,
+        spd_stat: 10,
+        end_stat: 10,
+        int_stat: 10,
+        lck_stat: 10,
+        per_stat: 10,
+        wil_stat: 10,
+        current_hp: 100,
+        max_hp: 100,
+        current_mp: 50,
+        max_mp: 50,
+        unassigned_stat_points: 5,
+        status: userStatus,
+        exp: 0,
+        coins: applyReferralBonus ? 1000 : 100,
+        gems: applyReferralBonus ? 2 : 0,
+        level: 1,
+        hunter_rank: 'E',
+        weekly_slots_used: 0,
+        last_reset: new Date().toISOString(),
+        onboarding_completed: true,
+        onboarding_step: 'done',
+        referral_code: newUserReferralCode,
+        ...(applyReferralBonus && { referral_used: referralCodeUsed }),
+        updated_at: new Date().toISOString(),
+      };
+
+      if (
+        onboardingData.gender === 'Non-binary' &&
+        onboardingData.base_body_url &&
+        (onboardingData.base_body_url === '/NoobMan.png' ||
+          onboardingData.base_body_url === '/NoobWoman.png')
+      ) {
+        upsertPayload.base_body_url = onboardingData.base_body_url;
+      }
+
+      if (existingProfile) {
+        delete upsertPayload.referral_code;
+        if (!applyReferralBonus) {
+          delete upsertPayload.coins;
+          delete upsertPayload.gems;
+          delete upsertPayload.referral_used;
         }
-    } else if (result.profile) {
-        const hunterId = result.profile.id;
-        const baseId = onboardingData.avatarLabConfig?.baseId;
-        const partIds = onboardingData.selectedParts?.map((p) => p.shop_item_id).filter((id): id is number => id != null) ?? [];
-        if (hunterId && (baseId != null || partIds.length > 0)) {
-            try {
-                await fetch('/api/avatar/save', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        hunterId,
-                        baseId: baseId != null ? baseId : undefined,
-                        partIds: partIds.length > 0 ? partIds : undefined,
-                    }),
-                });
-            } catch (e) {
-                console.warn('Avatar save (creator parts) failed:', e);
-            }
+      }
+
+      const { data: profile, error: dbError } = await supabase
+        .from('profiles')
+        .upsert(upsertPayload, { onConflict: 'id' })
+        .select()
+        .single();
+
+      if (dbError) {
+        setSystemError(dbError.message);
+        setIsLoadingOTP(false);
+        return;
+      }
+
+      const hunterId = profile?.id;
+      const baseId = onboardingData.avatarLabConfig?.baseId;
+      const partIds =
+        onboardingData.selectedParts?.map((p) => p.shop_item_id).filter((id): id is number => id != null) ??
+        [];
+      if (hunterId && (baseId != null || partIds.length > 0)) {
+        try {
+          await fetch('/api/avatar/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              hunterId,
+              baseId: baseId != null ? baseId : undefined,
+              partIds: partIds.length > 0 ? partIds : undefined,
+              base_body_tint_hex: onboardingData.avatarLabConfig?.baseBodyTintHex,
+              hair_tint_hex: onboardingData.avatarLabConfig?.hairTintHex,
+            }),
+          });
+        } catch (e) {
+          console.warn('Avatar save (creator parts) failed:', e);
         }
-        onAuthenticated(result.profile);
+      }
+      if (profile) onAuthenticated(profile);
+    } catch (e: unknown) {
+      setSystemError(e instanceof Error ? e.message : 'Finalize failed');
+    } finally {
+      setIsLoadingOTP(false);
     }
   };
 
@@ -226,52 +364,31 @@ export default function OnboardingView({ onAuthenticated, isAuthenticated, isOnb
           </div>
 
           <div className="tech-panel clip-tech-card tech-border-container p-3 md:p-6 lg:p-10">
-            {step === 'verify' ? (
-              // --- VERIFICATION FORM ---
-              <div className="verification-screen animate-pulse">
-                <div className="text-center mb-3">
-                  <div className="inline-block mb-2">
-                    <div className="w-16 h-16 mx-auto mb-3 border-2 border-blue-500 rounded-full animate-spin border-t-transparent"></div>
-                  </div>
-                  <h2 className="text-xl uppercase tracking-tight text-blue-400 font-black" style={{textShadow: '0 0 10px #3b82f6, 0 0 20px #3b82f6, 0 0 30px #3b82f6'}}>
-                    SYSTEM VERIFICATION REQUIRED
-                  </h2>
-                </div>
-                <p className="text-xs text-gray-400 text-center mb-3 tracking-wider">
-                  Enter the 6-digit key sent to your communication device.
+            {step === 'guest_gate' ? (
+              <div className="space-y-6 text-center">
+                <h2 className="text-sm md:text-base uppercase tracking-tight text-white font-black">
+                  Guest access
+                </h2>
+                <p className="text-xs text-gray-400 tracking-wider px-2">
+                  Play immediately as a guest. Link Google or Apple from Settings later to secure your hunter.
                 </p>
-
-                <form onSubmit={handleVerifyOTP} className="space-y-6">
-                  <div>
-                    <input
-                      type="text"
-                      value={otpToken}
-                      onChange={(e) => setOtpToken(e.target.value)}
-                      maxLength={6}
-                      placeholder="000000"
-                      className="w-full bg-black border-b-2 border-blue-500 text-center tracking-widest text-xl text-white font-ui font-bold placeholder-cyan-400/50 focus:border-cyan-400 focus:outline-none transition-colors"
-                      required
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={isLoadingOTP}
-                    className="w-full relative px-3 sm:px-4 font-black uppercase tracking-widest text-white bg-green-600 border-b-4 border-green-900 shadow-lg shadow-green-500/40 transition-all duration-75 hover:brightness-110 active:border-b-0 active:translate-y-[4px] clip-tech-button py-3 sm:py-4 text-[10px] sm:text-xs flex items-center justify-center gap-2 shimmer-effect group disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    VERIFY & PROCEED
-                  </button>
-                </form>
-                <button onClick={() => setStep('register')} className="w-full mt-4 text-blue-400 hover:text-blue-300 text-sm uppercase tracking-wider transition-colors">
-                  ← RECONNECT TO SYSTEM
+                {systemError && <p className="text-red-400 text-[10px]">{systemError}</p>}
+                <button
+                  type="button"
+                  onClick={handleEnterGate}
+                  disabled={isLoadingOTP}
+                  className="w-full relative px-4 py-3 md:py-4 font-black uppercase tracking-widest text-white bg-blue-600 border-b-4 border-blue-900 shadow-lg shadow-blue-500/40 transition-all duration-75 hover:brightness-110 active:border-b-0 active:translate-y-[4px] clip-tech-button text-[10px] md:text-xs flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isLoadingOTP ? 'CONNECTING...' : 'ENTER THE GATE'}
+                  <Skull size={14} className="opacity-70" />
                 </button>
               </div>
-
             ) : step === 'avatar_customize' ? (
               <div className="space-y-4">
                 <AvatarCustomizationView
                   gender={onboardingData.gender}
                   initialBaseBodyUrl={onboardingData.gender === 'Non-binary' ? onboardingData.base_body_url : undefined}
-                  onComplete={(config) => {
+                  onComplete={async (config) => {
                     setOnboardingData((prev) => ({
                       ...prev,
                       avatarLabConfig: config,
@@ -279,10 +396,22 @@ export default function OnboardingView({ onAuthenticated, isAuthenticated, isOnb
                       base_body_url: config.baseBodyUrl ?? config.avatarUrl ?? prev.base_body_url,
                       selectedParts: config.selectedParts,
                     }));
+                    const {
+                      data: { session },
+                    } = await supabase.auth.getSession();
+                    if (session?.user) {
+                      await supabase
+                        .from('profiles')
+                        .update({
+                          onboarding_step: 'class',
+                          updated_at: new Date().toISOString(),
+                        })
+                        .eq('id', session.user.id);
+                    }
                     setStep('class_path');
                   }}
                 />
-                <button onClick={() => setStep('verify')} className="w-full text-center text-cyan-400 hover:text-cyan-300 text-sm uppercase tracking-wider transition-colors">
+                <button onClick={() => setStep('register')} className="w-full text-center text-cyan-400 hover:text-cyan-300 text-sm uppercase tracking-wider transition-colors">
                   ← Back
                 </button>
               </div>
@@ -383,7 +512,7 @@ export default function OnboardingView({ onAuthenticated, isAuthenticated, isOnb
               </div>
 
             ) : (
-              // --- REGISTRATION FORM ---
+              // --- REGISTRATION (name / gender after guest session) ---
               <>
                 <h2 className="text-sm md:text-base uppercase tracking-tight mb-2 md:mb-3 flex items-center justify-center gap-0">
                   <img 
@@ -399,14 +528,10 @@ export default function OnboardingView({ onAuthenticated, isAuthenticated, isOnb
                   </span>
                 </h2>
 
-                <form onSubmit={handleAwaken} className="space-y-3 md:space-y-6 pb-10 md:pb-0">
+                <form onSubmit={handleRegisterContinue} className="space-y-3 md:space-y-6 pb-10 md:pb-0">
                   <div className="space-y-1 md:space-y-2">
                     <label className="text-[9px] md:text-[10px] font-black uppercase text-white tracking-widest ml-1">Character Name</label>
                     <input required type="text" value={onboardingData.name} onChange={(e) => setOnboardingData({...onboardingData, name: e.target.value})} placeholder="Hunter Name..." className="w-full system-glass rounded-xl px-3 sm:px-4 py-2 md:py-3 text-sm sm:text-base font-ui font-bold focus:outline-none focus:border-cyan-400 transition-colors text-white placeholder-cyan-400/50" />
-                  </div>
-                  <div className="space-y-1 md:space-y-2">
-                    <label className="text-[9px] md:text-[10px] font-black uppercase text-white tracking-widest ml-1">Email Address <span className="text-red-400">*</span></label>
-                    <input required type="email" value={onboardingData.email} onChange={(e) => setOnboardingData({...onboardingData, email: e.target.value})} placeholder="hunter@email.com" className="w-full system-glass rounded-xl px-3 sm:px-4 py-2 md:py-3 text-sm sm:text-base font-ui font-bold focus:outline-none focus:border-cyan-400 transition-colors text-white placeholder-cyan-400/50" />
                   </div>
 
                   <div className="space-y-1 md:space-y-2">
@@ -479,10 +604,10 @@ export default function OnboardingView({ onAuthenticated, isAuthenticated, isOnb
 
                   <button
                     type="submit"
-                    disabled={isLoadingOTP || !onboardingData.name.trim() || !onboardingData.email?.trim() || !onboardingData.gender || (onboardingData.gender === 'Non-binary' && !onboardingData.base_body_url)}
+                    disabled={isLoadingOTP || !onboardingData.name.trim() || !onboardingData.gender || (onboardingData.gender === 'Non-binary' && !onboardingData.base_body_url)}
                     className="w-full relative px-4 py-3 md:py-4 font-black uppercase tracking-widest text-white bg-blue-600 border-b-4 border-blue-900 shadow-lg shadow-blue-500/40 transition-all duration-75 hover:brightness-110 active:border-b-0 active:translate-y-[4px] clip-tech-button text-[10px] md:text-xs flex items-center justify-center gap-2 shimmer-effect group disabled:opacity-50"
                   >
-                    {isLoadingOTP ? 'CONNECTING...' : 'ENTER THE GATE'}
+                    {isLoadingOTP ? 'SAVING...' : 'CONTINUE'}
                     <Skull size={14} className="opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity duration-200" />
                   </button>
 
@@ -491,7 +616,7 @@ export default function OnboardingView({ onAuthenticated, isAuthenticated, isOnb
             )}
           </div>
 
-          {step === 'register' && (
+          {(step === 'register' || step === 'guest_gate') && (
             <div className="mt-4 md:mt-6 flex flex-col items-center gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300">
               <div className="flex items-center justify-center gap-2">
                 <span className="text-[10px] text-gray-400 uppercase tracking-widest">Already Awakened?</span>

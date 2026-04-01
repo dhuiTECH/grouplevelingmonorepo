@@ -1,4 +1,5 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useMapStore, NodeType } from '@/lib/store/mapStore';
 import { useCursorStore } from '@/lib/store/cursorStore';
 import { usePaintTool } from './tools/usePaintTool';
@@ -15,13 +16,68 @@ export const useMapInteraction = (
   isSpacePressed: boolean
 ) => {
   const {
-    nodes, tiles, customTiles, selectedTool, selectedTileId, selectedSmartType,
-    setUndoStack, removeNode, updateNode,
-    selectNode, setDraggingNode, setDragGrabOffset, setDraggingTile,
-    rotateTile, removeTileById, setSelection, setCurrentStamp, selectTile,
-    moveTile, setTool, nodeSnapToGrid, activeNodeType, addNode, smartBrushLock,
+    nodes,
+    customTiles,
+    selectedTool,
+    selectedTileId,
+    selectedSmartType,
+    setUndoStack,
+    removeNode,
+    updateNode,
+    selectNode,
+    setDraggingNode,
+    setDragGrabOffset,
+    setDraggingTile,
+    rotateTile,
+    flipTile,
+    removeTileById,
+    setSelection,
+    setCurrentStamp,
+    selectTile,
+    moveTile,
+    setTool,
+    nodeSnapToGrid,
+    activeNodeType,
+    addNode,
+    smartBrushLock,
     layerSettings,
-  } = useMapStore();
+  } = useMapStore(
+    useShallow((s) => ({
+      nodes: s.nodes,
+      customTiles: s.customTiles,
+      selectedTool: s.selectedTool,
+      selectedTileId: s.selectedTileId,
+      selectedSmartType: s.selectedSmartType,
+      setUndoStack: s.setUndoStack,
+      removeNode: s.removeNode,
+      updateNode: s.updateNode,
+      selectNode: s.selectNode,
+      setDraggingNode: s.setDraggingNode,
+      setDragGrabOffset: s.setDragGrabOffset,
+      setDraggingTile: s.setDraggingTile,
+      rotateTile: s.rotateTile,
+      flipTile: s.flipTile,
+      removeTileById: s.removeTileById,
+      setSelection: s.setSelection,
+      setCurrentStamp: s.setCurrentStamp,
+      selectTile: s.selectTile,
+      moveTile: s.moveTile,
+      setTool: s.setTool,
+      nodeSnapToGrid: s.nodeSnapToGrid,
+      activeNodeType: s.activeNodeType,
+      addNode: s.addNode,
+      smartBrushLock: s.smartBrushLock,
+      layerSettings: s.layerSettings,
+    })),
+  );
+
+  const customTileLookup = useMemo(() => {
+    const m = new Map<string, (typeof customTiles)[number]>();
+    for (const ct of customTiles) {
+      m.set(normalizeUrl(ct.url), ct);
+    }
+    return m;
+  }, [customTiles]);
 
   const { setCursorCoords, setSmoothCursorCoords, setIsDrawing } = useCursorStore.getState();
 
@@ -37,13 +93,14 @@ export const useMapInteraction = (
   const [isSelecting, setIsSelecting] = useState(false);
 
   const getTopMostTileId = (gx: number, gy: number, worldX?: number, worldY?: number) => {
+    const tiles = useMapStore.getState().tiles;
     if (worldX !== undefined && worldY !== undefined) {
       const wx = worldX - WORLD_SIZE / 2;
       const wy = worldY - WORLD_SIZE / 2;
 
       const containingTiles = tiles.filter(tile => {
         const normalizedTileUrl = normalizeUrl(tile.imageUrl);
-        const customTile = customTiles.find(ct => normalizeUrl(ct.url) === normalizedTileUrl);
+        const customTile = customTileLookup.get(normalizedTileUrl);
         
         const isFrozenSmart = !tile.isAutoTile && !!tile.smartType && tile.bitmask !== undefined;
         const isSmartSize = (tile.isAutoTile || isFrozenSmart) && (tile.layer || 0) === 0;
@@ -79,27 +136,27 @@ export const useMapInteraction = (
     });
   };
 
-    const brushArea = useRef<{dx: number, dy: number}[]>([{dx: 0, dy: 0}]);
-    
-    // Memoize brush area calculation to avoid re-creation on every mouse move
-    useEffect(() => {
-       const { brushMode, brushSize } = useMapStore.getState();
-       if (brushMode && brushSize > 1) {
-          const half = Math.floor(brushSize / 2);
-          const isEven = brushSize % 2 === 0;
-          const area = [];
-          for (let dy = -half; dy < (isEven ? half : half + 1); dy++) {
-            for (let dx = -half; dx < (isEven ? half : half + 1); dx++) {
-              area.push({dx, dy});
-            }
-          }
-          brushArea.current = area;
-       } else {
-          brushArea.current = [{dx: 0, dy: 0}];
-       }
-    }, [useMapStore.getState().brushSize, useMapStore.getState().brushMode]);
+  const brushArea = useRef<{ dx: number; dy: number }[]>([{ dx: 0, dy: 0 }]);
+  const brushSize = useMapStore((s) => s.brushSize);
+  const brushMode = useMapStore((s) => s.brushMode);
 
-    const handleMapInteraction = async (clientX: number, clientY: number, isMove = false, isShift = false, forceErase = false, isAlt = false, buttons = 0) => {
+  useEffect(() => {
+    if (brushMode && brushSize > 1) {
+      const half = Math.floor(brushSize / 2);
+      const isEven = brushSize % 2 === 0;
+      const area = [];
+      for (let dy = -half; dy < (isEven ? half : half + 1); dy++) {
+        for (let dx = -half; dx < (isEven ? half : half + 1); dx++) {
+          area.push({ dx, dy });
+        }
+      }
+      brushArea.current = area;
+    } else {
+      brushArea.current = [{ dx: 0, dy: 0 }];
+    }
+  }, [brushSize, brushMode]);
+
+  const handleMapInteraction = async (clientX: number, clientY: number, isMove = false, isShift = false, forceErase = false, isAlt = false, buttons = 0) => {
     if (!transformComponentRef.current || !dropTargetRef.current || (isSpacePressed && !isMove)) return;
     const state = useMapStore.getState();
     const { positionX, positionY, scale } = transformComponentRef.current.instance.transformState;
@@ -175,12 +232,15 @@ export const useMapInteraction = (
         }
       }
     } else if (tool === 'eyedropper') {
-      const topTile = tiles.filter(t => t.x === gx && t.y === gy).sort((a, b) => (b.layer || 0) - (a.layer || 0))[0];
+      const topTile = useMapStore
+        .getState()
+        .tiles.filter((t) => t.x === gx && t.y === gy)
+        .sort((a, b) => (b.layer || 0) - (a.layer || 0))[0];
       if (topTile) {
         state.setCurrentStamp([{ ...topTile, id: '', x: 0, y: 0, isAutoTile: false }]);
         setTool('stamp');
         setIsDrawing(false);
-        const foundCustomTile = customTiles.find(ct => normalizeUrl(ct.url) === normalizeUrl(topTile.imageUrl));
+        const foundCustomTile = customTileLookup.get(normalizeUrl(topTile.imageUrl));
         if (foundCustomTile) selectTile(foundCustomTile.id);
       }
     }
@@ -244,7 +304,7 @@ export const useMapInteraction = (
 
     if (e.button === 2) {
       e.stopPropagation();
-      const tile = tiles.find(t => t.id === tileId);
+      const tile = useMapStore.getState().tiles.find((t) => t.id === tileId);
       if (tile) {
         const layerKey = tile.layer ?? 0;
         // If this layer is locked in the sidebar, do not allow right-click erase
@@ -264,7 +324,7 @@ export const useMapInteraction = (
         return;
     } else if (selectedTool === 'select') {
       e.stopPropagation();
-      const tile = tiles.find(t => t.id === tileId);
+      const tile = useMapStore.getState().tiles.find((t) => t.id === tileId);
       if (tile) {
         const { positionX, positionY, scale } = transformComponentRef.current!.instance.transformState;
         const rect = dropTargetRef.current!.getBoundingClientRect();
@@ -351,6 +411,22 @@ export const useMapInteraction = (
       return;
     }
 
+    if (tool === 'flip') {
+      const { positionX, positionY, scale } = transformComponentRef.current!.instance.transformState;
+      const rect = dropTargetRef.current!.getBoundingClientRect();
+      const worldX = (e.clientX - rect.left - positionX) / scale;
+      const worldY = (e.clientY - rect.top - positionY) / scale;
+      const gx = Math.floor((worldX - WORLD_SIZE / 2) / TILE_SIZE);
+      const gy = Math.floor((worldY - WORLD_SIZE / 2) / TILE_SIZE);
+
+      const topTileId = getTopMostTileId(gx, gy);
+      if (topTileId) {
+        e.stopPropagation();
+        void flipTile(topTileId);
+      }
+      return;
+    }
+
     if (tool === 'select' || tool === 'erase') {
       const { positionX, positionY, scale } = transformComponentRef.current!.instance.transformState;
       const rect = dropTargetRef.current!.getBoundingClientRect();
@@ -385,11 +461,11 @@ export const useMapInteraction = (
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isSpacePressed) return;
     
-    const { brushMode: currentBrushMode } = useMapStore.getState();
     const { isDrawing } = useCursorStore.getState();
     const isPaintEraseOrCollision = selectedTool === 'paint' || selectedTool === 'erase' || selectedTool === 'collision';
 
-    if (isDrawing && (e.buttons > 0 || e.button === 2) && (!isPaintEraseOrCollision || currentBrushMode)) {
+    // RAF-coalesce all paint / erase / collision drags (including erase with brush off and right-click erase)
+    if (isDrawing && (e.buttons > 0 || e.button === 2) && isPaintEraseOrCollision) {
       e.stopPropagation();
       pendingBrushRef.current = { 
         clientX: e.clientX, clientY: e.clientY, 

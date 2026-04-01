@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  transpilePackages: ['@repo/avatar-constants', '@repo/map-autotile'],
   images: {
     remotePatterns: [
       {
@@ -27,6 +28,15 @@ const nextConfig = {
     "*.repl.co",
     "*.riker.replit.dev",
   ],
+  async redirects() {
+    return [
+      {
+        source: "/solo-leveling-style-fitness-app",
+        destination: "/",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;

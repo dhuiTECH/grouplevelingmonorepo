@@ -259,9 +259,10 @@ const styles = StyleSheet.create({
     width: 90,
     height: 90,
     borderWidth: 1,
-    borderColor: 'rgba(6, 182, 212, 0.2)',
-    borderRadius: 12,
-    backgroundColor: 'rgba(2, 6, 23, 0.8)',
+    borderColor: 'rgba(6, 182, 212, 0.25)',
+    // Must match LayeredAvatar square mode (borderRadius 16 at size 90)
+    borderRadius: 16,
+    backgroundColor: 'rgba(15, 23, 42, 0.98)',
     shadowColor: '#06b6d4',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.3,

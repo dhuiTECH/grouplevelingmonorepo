@@ -19,13 +19,14 @@ import * as Haptics from 'expo-haptics';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAudio } from '@/contexts/AudioContext';
 import { Settings } from 'lucide-react-native';
-import { playHunterSound } from '@/utils/audio';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useTutorial } from '@/context/TutorialContext';
 import { useDailyStepsProgress } from '@/hooks/useDailyStepsProgress';
 import { useDungeons } from '@/hooks/useDungeons';
+import { useGameData } from '@/hooks/useGameData';
 
 import { HunterHeader } from '@/components/HunterHeader';
+import { ClearedGatesSection } from '@/components/ClearedGatesSection';
 import { StatusWindowModal } from '@/components/modals/StatusWindowModal';
 import VitalitySection from '@/components/VitalitySection';
 import TrainingWidget from '@/components/TrainingWidget';
@@ -36,6 +37,7 @@ import WeeklyFeedbackModal from '@/components/modals/WeeklyFeedbackModal';
 import { api as trainingApi } from '@/api/training';
 import { useWeeklyReset } from '@/hooks/useWeeklyReset';
 import { ChestOpeningModal } from '@/components/modals/ChestOpeningModal';
+import { LevelUpModal } from '@/components/modals/LevelUpModal';
 import { supabase } from '@/lib/supabase';
 
 const HomeScreen: React.FC = () => {
@@ -46,12 +48,15 @@ const HomeScreen: React.FC = () => {
   const { step, targetRef } = useTutorial();
   const { stepsToday } = useDailyStepsProgress();
   const { dungeons, loading: dungeonsLoading } = useDungeons();
+  const { shopItems } = useGameData();
+  const [clearedGatesRefresh, setClearedGatesRefresh] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const isResetDue = useWeeklyReset(user);
   const [showWeeklyResetModal, setShowWeeklyResetModal] = useState(false);
   
   // Test Chest State
   const [showTestChest, setShowTestChest] = useState(false);
+  const [showLevelUpPreview, setShowLevelUpPreview] = useState(false);
 
   useEffect(() => {
     if (isResetDue) {
@@ -154,6 +159,7 @@ const HomeScreen: React.FC = () => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
+    setClearedGatesRefresh((k) => k + 1);
     setTimeout(() => {
       setRefreshing(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -240,35 +246,20 @@ const HomeScreen: React.FC = () => {
             setSelectedDungeon={() => {}}
           />
 
-          {/* Standard Gates / Manual Submission Section */}
+          {/* Cleared Gates — you & friends */}
           <View style={styles.sectionHeader}>
             <Image source={require('../../assets/gates.png')} style={styles.sectionIcon} />
-            <Text style={styles.sectionTitle}>STANDARD GATES</Text>
+            <Text style={styles.sectionTitle}>CLEARED GATES</Text>
           </View>
+          <Text style={styles.subsectionHint}>
+            YOU &amp; FRIENDS · LATEST CLEARS · TIME · PACE · KUDOS
+          </Text>
 
-          <View style={styles.manualCard}>
-             <LinearGradient
-               colors={['rgba(15, 23, 42, 0.8)', 'rgba(30, 41, 59, 0.5)']}
-               style={styles.cardInner}
-             >
-               <View style={styles.manualHeader}>
-                 <View style={styles.manualIconBg}>
-                    <Text style={styles.manualIcon}>🖼️</Text>
-                 </View>
-                 <View>
-                   <Text style={styles.manualTitle}>MANUAL SUBMISSION <Text style={styles.xpText}>2X EXP/GOLD</Text></Text>
-                   <Text style={styles.manualSubtitle}>Upload physical activities/strava screenshot</Text>
-                 </View>
-               </View>
-
-               <TouchableOpacity 
-                 style={styles.uploadBtn}
-                 onPress={() => playHunterSound('click')}
-               >
-                 <Text style={styles.uploadBtnText}>UPLOAD SCREENSHOT</Text>
-               </TouchableOpacity>
-             </LinearGradient>
-          </View>
+          <ClearedGatesSection
+            currentUserId={user.id}
+            shopItems={shopItems}
+            refreshKey={clearedGatesRefresh}
+          />
 
           <View style={{ height: 100 }} />
 
@@ -279,6 +270,13 @@ const HomeScreen: React.FC = () => {
           >
             <Text style={styles.testChestBtnText}>[DEBUG] OPEN TEST CHEST</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.testLevelUpBtn}
+            onPress={() => setShowLevelUpPreview(true)}
+          >
+            <Text style={styles.testLevelUpBtnText}>[DEBUG] LEVEL UP (full flow)</Text>
+          </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
 
@@ -286,6 +284,16 @@ const HomeScreen: React.FC = () => {
         isOpen={showTestChest}
         chestType="medium"
         onAnimationComplete={handleChestComplete}
+      />
+
+      <LevelUpModal
+        visible={showLevelUpPreview}
+        user={user}
+        fromLevel={user?.level ?? 7}
+        toLevel={(user?.level ?? 7) + 1}
+        onClose={() => setShowLevelUpPreview(false)}
+        preview
+        autoPlay
       />
     </View>
   );
@@ -400,58 +408,16 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#3b82f6',
     letterSpacing: 2,
+    fontFamily: 'Exo2-Regular',
   },
-  manualCard: {
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  cardInner: {
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  manualHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
-  },
-  manualIconBg: {
-    width: 32,
-    height: 32,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  manualIcon: {
-    fontSize: 16,
-  },
-  manualTitle: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#3b82f6',
-  },
-  xpText: {
-    color: '#fbbf24',
-    fontWeight: '900',
-  },
-  manualSubtitle: {
-    fontSize: 8,
+  subsectionHint: {
+    fontSize: 7,
+    fontWeight: '700',
     color: '#64748b',
-  },
-  uploadBtn: {
-    backgroundColor: '#2563eb',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  uploadBtnText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '900',
     letterSpacing: 1,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    fontFamily: 'Exo2-Regular',
   },
   testChestBtn: {
     backgroundColor: '#eab308',
@@ -472,6 +438,31 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1,
     fontSize: 12,
+  },
+  testLevelUpBtn: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 255, 255, 0.75)',
+    backgroundColor: 'rgba(2, 12, 32, 0.92)',
+    shadowColor: '#00ffff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  testLevelUpBtnText: {
+    color: '#e6ffff',
+    fontFamily: 'Montserrat-Bold',
+    fontSize: 12,
+    letterSpacing: 3,
+    textTransform: 'uppercase',
+    textShadowColor: 'rgba(0, 210, 255, 0.8)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
   },
 });
 

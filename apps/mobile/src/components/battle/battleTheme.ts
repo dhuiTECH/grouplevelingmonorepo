@@ -12,6 +12,21 @@ export const COLORS = {
   text: '#FFFFFF',
 } as const;
 
+/** Solo Leveling–style “hunter system” HUD (dark glass + neon accents) */
+export const HUD = {
+  panelBg: 'rgba(3, 7, 18, 0.92)',
+  panelBorder: 'rgba(34, 211, 238, 0.4)',
+  systemLabel: '#64748b',
+  hunterCyan: '#22d3ee',
+  hunterCyanDim: 'rgba(34, 211, 238, 0.85)',
+  enemyCrimson: '#f87171',
+  enemyBorder: 'rgba(248, 113, 113, 0.45)',
+  petViolet: '#c4b5fd',
+  petBorder: 'rgba(167, 139, 250, 0.45)',
+  comboInner: '#e0f2fe',
+  comboGlow: '#67e8f9',
+} as const;
+
 /** Slots shown in battle inventory modal: consumables, other/misc, and capture tools (used during battle to catch pets). */
 export const BATTLE_INVENTORY_SLOTS = ['consumable', 'other', 'misc'] as const;
 

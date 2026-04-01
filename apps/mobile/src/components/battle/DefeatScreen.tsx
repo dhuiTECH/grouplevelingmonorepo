@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet, useWindowDimensions, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Rect, Defs, Pattern } from 'react-native-svg';
 import { MotiView } from 'moti';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -58,15 +59,15 @@ export function DefeatScreen({ party, enemy, spriteUrls, onReturnToMap }: Defeat
   const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <BattleAssetWarmer party={party} enemy={enemy} spriteUrls={spriteUrls} />
       <View style={styles.ambientGlow} />
       
       <View style={styles.centeredContent}>
         <MotiView
-          from={{ opacity: 0, scale: 0.85 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ type: 'timing', duration: 450 }}
+          from={{ opacity: 0, scale: 0.9, translateY: 56 }}
+          animate={{ opacity: 1, scale: 1, translateY: 0 }}
+          transition={{ type: 'spring', damping: 18, stiffness: 220 }}
           style={styles.slWindow}
         >
           <Scanlines />
@@ -81,11 +82,23 @@ export function DefeatScreen({ party, enemy, spriteUrls, onReturnToMap }: Defeat
           <View style={styles.contentPadding}>
             {/* Header Block */}
             <View style={styles.headerBlock}>
-              <View style={styles.headerBox}>
-                <View style={styles.exclamationCircle}>
-                  <Text style={styles.exclamationText}>!</Text>
+              <View style={styles.headerRow}>
+                <View style={styles.iconSquareFrame}>
+                  <View style={styles.iconCircle}>
+                    <Text style={styles.exclamationText}>!</Text>
+                  </View>
                 </View>
-                <Text style={styles.defeatTitle}>DEFEAT</Text>
+                <View style={styles.titleTextFrame}>
+                  <Text style={styles.defeatTitle}>DEFEAT</Text>
+                </View>
+              </View>
+              <View style={styles.headerBottomLine}>
+                <LinearGradient
+                  colors={['transparent', '#ff4444', 'transparent']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
               </View>
               
               <View style={styles.credentialsBlock}>
@@ -175,7 +188,7 @@ export function DefeatScreen({ party, enemy, spriteUrls, onReturnToMap }: Defeat
           </View>
         </MotiView>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -244,40 +257,95 @@ const styles = StyleSheet.create({
     zIndex: 70,
   },
   headerBlock: {
+    width: '100%',
     alignItems: 'center',
+    paddingBottom: 15,
+    marginBottom: 25,
+    position: 'relative',
+    paddingHorizontal: 8,
   },
-  headerBox: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 68, 68, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 68, 68, 0.5)',
-    paddingHorizontal: 20,
-    paddingVertical: 6,
+    justifyContent: 'center',
     gap: 12,
+    flexShrink: 1,
+    maxWidth: '100%',
   },
-  exclamationCircle: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ff4444',
+  headerBottomLine: {
+    position: 'absolute',
+    bottom: -1,
+    left: '10%',
+    width: '80%',
+    height: 1,
+    shadowColor: '#ff4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+  },
+  iconSquareFrame: {
+    width: 36,
+    height: 36,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 68, 68, 0.75)',
+    backgroundColor: 'rgba(32, 4, 4, 0.92)',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#ff4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  iconCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    shadowColor: '#ffffff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
   },
   exclamationText: {
-    color: '#ff4444',
-    fontSize: 10,
-    fontWeight: 'bold',
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 14,
+    textShadowColor: '#ffffff',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 5,
+    fontFamily: 'Montserrat-Bold',
+    includeFontPadding: false,
+  },
+  titleTextFrame: {
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 68, 68, 0.75)',
+    backgroundColor: 'rgba(32, 4, 4, 0.92)',
+    shadowColor: '#ff4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    flexShrink: 1,
   },
   defeatTitle: {
     color: '#ffcccc',
     fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 4,
-    textShadowColor: '#ff4444',
+    fontWeight: '600',
+    fontFamily: 'Montserrat-Bold',
+    letterSpacing: 2,
+    textAlign: 'center',
+    textShadowColor: 'rgba(255, 68, 68, 0.8)',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
+    textShadowRadius: 15,
+    textTransform: 'uppercase',
   },
   credentialsBlock: {
     marginTop: 32,

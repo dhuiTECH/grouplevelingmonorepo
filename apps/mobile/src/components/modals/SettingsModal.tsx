@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { SettingsIcon } from '../icons/SettingsIcon';
 import { XIcon } from '../icons/XIcon';
@@ -11,6 +11,7 @@ import BaseModal from './BaseModal';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useAudio } from '@/contexts/AudioContext';
 import { Volume2, VolumeX } from 'lucide-react-native';
+import { SecureAccountCard } from '@/components/SecureAccountCard';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -54,6 +55,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           </TouchableOpacity>
         </View>
 
+        <SecureAccountCard />
+
         {/* Settings Grid */}
         <View style={styles.settingsGrid}>
           {/* Sound Off (replaces Skip Intro) */}
@@ -61,7 +64,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             onPress={() => {
               const nextMuted = !isMuted;
               setMuted(nextMuted);
-              showNotification(nextMuted ? "AUDIO: OFF" : "AUDIO: ON");
+              showNotification(nextMuted ? 'AUDIO: OFF' : 'AUDIO: ON', 'success');
             }}
             style={[
               styles.settingOption,

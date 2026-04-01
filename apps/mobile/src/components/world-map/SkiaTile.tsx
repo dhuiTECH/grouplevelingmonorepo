@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Group, Image, rect, SkImage, Paint, FilterMode } from '@shopify/react-native-skia';
-import { SharedValue } from 'react-native-reanimated';
+import { SharedValue, useDerivedValue } from 'react-native-reanimated';
 import { SkiaSpritesheet } from './SkiaSpritesheet';
 import { CustomTileMetadata } from '../../contexts/TileContext';
 import { getPixiTextureCoords, getLiquidTextureCoords } from './mapUtils';
@@ -16,6 +16,14 @@ interface SkiaTileProps {
   foamOpacity: SharedValue<number>;
   isProp?: boolean;
   dictionaryData?: CustomTileMetadata;
+}
+
+/** Matches Pixi editor: scaleX then rotate around tile center. */
+function staticOrientTransform(rotation?: number, flipX?: boolean) {
+  const out: Array<{ scaleX: number } | { rotate: number }> = [];
+  if (flipX) out.push({ scaleX: -1 });
+  if (rotation) out.push({ rotate: (rotation * Math.PI) / 180 });
+  return out;
 }
 
 const SkiaTileInternal: React.FC<SkiaTileProps> = ({
@@ -34,6 +42,10 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
   const offsetY = tile.offsetY || 0;
 
   // No Math.round here — the camera transform rounds the whole scene atomically
+  const staticTransform = useMemo(
+    () => staticOrientTransform(tile.rotation, tile.flipX),
+    [tile.rotation, tile.flipX],
+  );
   const destRect = useMemo(() => rect(
     absPx - (displayWidth - tileSize) / 2 + offsetX,
     absPy - (displayHeight - tileSize) + offsetY,
@@ -89,13 +101,21 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
       activeUrl = mapSettings.dirt_sheet_url;
     } else if (smartType === 'water' && mapSettings?.water_sheet_url) {
       activeUrl = mapSettings.water_sheet_url;
+    } else if (smartType === 'dirtv2' && mapSettings?.dirtv2_sheet_url) {
+      activeUrl = mapSettings.dirtv2_sheet_url;
+    } else if (smartType === 'waterv2' && mapSettings?.waterv2_sheet_url) {
+      activeUrl = mapSettings.waterv2_sheet_url;
     }
 
     // DEBUG LOG TO SEE WHAT URL IS BEING USED
     // console.log(`Tile ${tile.x},${tile.y} [${smartType}] activeUrl:`, activeUrl, 'isProp:', isProp, 'isAutoTile:', tile.isAutoTile);
 
     const cleanSheetUrl = activeUrl && mapSettings
-      ? (smartType === 'dirt' ? mapSettings.cleanDirtSheetUrl : smartType === 'water' ? mapSettings.cleanWaterSheetUrl : mapSettings.cleanAutotileSheetUrl)
+      ? (smartType === 'dirt' ? mapSettings.cleanDirtSheetUrl : 
+         smartType === 'water' ? mapSettings.cleanWaterSheetUrl : 
+         smartType === 'dirtv2' ? mapSettings.cleanDirtv2SheetUrl : 
+         smartType === 'waterv2' ? mapSettings.cleanWaterv2SheetUrl : 
+         mapSettings.cleanAutotileSheetUrl)
       : undefined;
     const img = cleanSheetUrl ? images.get(cleanSheetUrl) : null;
     
@@ -109,27 +129,40 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
       const blockCol = tile.blockCol !== undefined ? tile.blockCol : (smartType === 'grass' ? 1 : 0);
       const blockRow = tile.blockRow || 0;
       
-      const coordsList = smartType === 'water'
+      const coordsList = (smartType === 'water' || smartType === 'waterv2')
         ? getLiquidTextureCoords(mask, blockCol, blockRow)
         : getPixiTextureCoords(mask, blockCol, blockRow);
 
       const coords = coordsList[0];
       
+      const autoTileTransform = useDerivedValue(() => {
+        if (smartType === 'waterv2') {
+           const NUM_FRAMES = 3;
+           const durationSecs = 1.0; // 1 second loop
+           const progress = (animationFrame.value % durationSecs) / durationSecs;
+           const frameIndex = Math.floor(progress * NUM_FRAMES) % NUM_FRAMES;
+           return [{ translateX: -frameIndex * 576 }];
+        }
+        return [];
+      });
+
       // Use clipping instead of src prop to ensure correct cropping of large sheets
       baseLayer = (
         <Group clip={baseDestRect}>
           <Paint antiAlias={false} />
-          <Image 
-            image={img} 
-            sampling={{ filter: FilterMode.Nearest }}
-            antiAlias={false}
-            rect={{
-              x: absPx - coords.sourceX,
-              y: absPy - coords.sourceY,
-              width: img.width(),
-              height: img.height()
-            }}
-          />
+          <Group transform={autoTileTransform}>
+            <Image 
+              image={img} 
+              sampling={{ filter: FilterMode.Nearest }}
+              antiAlias={false}
+              rect={{
+                x: absPx - coords.sourceX,
+                y: absPy - coords.sourceY,
+                width: img.width(),
+                height: img.height()
+              }}
+            />
+          </Group>
         </Group>
       );
     }
@@ -162,7 +195,7 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
       // If it's a spritesheet, ALWAYS use the spritesheet logic to ensure clipping, 
       // even if it only has 1 frame (prevents showing full ass horizontal strips).
       return (
-        <Group origin={{ x: destRect.x + destRect.width / 2, y: destRect.y + destRect.height / 2 }} transform={tile.rotation ? [{ rotate: (tile.rotation * Math.PI) / 180 }] : []}>
+        <Group origin={{ x: destRect.x + destRect.width / 2, y: destRect.y + destRect.height / 2 }} transform={staticTransform}>
           {foamLayer}
           <SkiaSpritesheet
             image={img}
@@ -175,7 +208,7 @@ const SkiaTileInternal: React.FC<SkiaTileProps> = ({
       );
     } else {
       return (
-        <Group origin={{ x: destRect.x + destRect.width / 2, y: destRect.y + destRect.height / 2 }} transform={tile.rotation ? [{ rotate: (tile.rotation * Math.PI) / 180 }] : []}>
+        <Group origin={{ x: destRect.x + destRect.width / 2, y: destRect.y + destRect.height / 2 }} transform={staticTransform}>
           {foamLayer}
           <Paint antiAlias={false} />
           <Image image={img} rect={destRect} fit="fill" sampling={{ filter: FilterMode.Nearest }} antiAlias={false} />
@@ -198,10 +231,18 @@ export const SkiaTile = React.memo(SkiaTileInternal, (prev, next) => {
   const prevIsSmart = prev.tile.isAutoTile || (!prev.tile.isAutoTile && !!prev.tile.smartType);
   const nextIsSmart = next.tile.isAutoTile || (!next.tile.isAutoTile && !!next.tile.smartType);
   const prevCleanUrl = prevIsSmart
-    ? (prev.tile.smartType === 'dirt' ? prev.mapSettings?.cleanDirtSheetUrl : prev.tile.smartType === 'water' ? prev.mapSettings?.cleanWaterSheetUrl : prev.mapSettings?.cleanAutotileSheetUrl)
+    ? (prev.tile.smartType === 'dirt' ? prev.mapSettings?.cleanDirtSheetUrl : 
+       prev.tile.smartType === 'water' ? prev.mapSettings?.cleanWaterSheetUrl : 
+       prev.tile.smartType === 'dirtv2' ? prev.mapSettings?.cleanDirtv2SheetUrl : 
+       prev.tile.smartType === 'waterv2' ? prev.mapSettings?.cleanWaterv2SheetUrl : 
+       prev.mapSettings?.cleanAutotileSheetUrl)
     : prev.tile.cleanUrl;
   const nextCleanUrl = nextIsSmart
-    ? (next.tile.smartType === 'dirt' ? next.mapSettings?.cleanDirtSheetUrl : next.tile.smartType === 'water' ? next.mapSettings?.cleanWaterSheetUrl : next.mapSettings?.cleanAutotileSheetUrl)
+    ? (next.tile.smartType === 'dirt' ? next.mapSettings?.cleanDirtSheetUrl : 
+       next.tile.smartType === 'water' ? next.mapSettings?.cleanWaterSheetUrl : 
+       next.tile.smartType === 'dirtv2' ? next.mapSettings?.cleanDirtv2SheetUrl : 
+       next.tile.smartType === 'waterv2' ? next.mapSettings?.cleanWaterv2SheetUrl : 
+       next.mapSettings?.cleanAutotileSheetUrl)
     : next.tile.cleanUrl;
 
   if (prevCleanUrl !== nextCleanUrl) return false;
@@ -212,6 +253,7 @@ export const SkiaTile = React.memo(SkiaTileInternal, (prev, next) => {
   const t2 = next.tile;
   if (t1.layer !== t2.layer) return false;
   if (t1.rotation !== t2.rotation) return false;
+  if (!!t1.flipX !== !!t2.flipX) return false;
   if (t1.offsetX !== t2.offsetX) return false;
   if (t1.offsetY !== t2.offsetY) return false;
   if (t1.isAutoTile !== t2.isAutoTile) return false;

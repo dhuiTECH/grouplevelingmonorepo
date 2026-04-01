@@ -4,3 +4,4 @@ Kill Stuck Servers	taskkill /F /IM node.exe
 Fresh Install	pnpm install
 Reset Everything	taskkill /F /IM node.exe; rm -r apps/web/.next; pnpm install
 Wipe map - TRUNCATE TABLE public.map_chunks
+pnpm --filter web run generate:godot-terrain

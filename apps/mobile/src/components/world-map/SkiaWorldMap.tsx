@@ -158,6 +158,10 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     if (mapSettings?.cleanDirtSheetUrl) urls.add(mapSettings.cleanDirtSheetUrl);
     if (mapSettings?.cleanWaterSheetUrl)
       urls.add(mapSettings.cleanWaterSheetUrl);
+    if (mapSettings?.cleanDirtv2SheetUrl)
+      urls.add(mapSettings.cleanDirtv2SheetUrl);
+    if (mapSettings?.cleanWaterv2SheetUrl)
+      urls.add(mapSettings.cleanWaterv2SheetUrl);
     if (mapSettings?.cleanFoamSheetUrl) urls.add(mapSettings.cleanFoamSheetUrl);
 
     const walkSheet =

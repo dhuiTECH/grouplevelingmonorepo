@@ -7,13 +7,16 @@
     "dev": "next dev -p 3005",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "generate:godot-terrain": "node scripts/generate-godot-terrain-map.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.42.0",
     "@google/generative-ai": "^0.24.1",
     "@lottiefiles/dotlottie-react": "^0.17.12",
     "@pixi/react": "^8.0.5",
+    "@repo/avatar-constants": "workspace:*",
+    "@repo/map-autotile": "workspace:*",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.93.2",
     "@tailwindcss/oxide": "^4.2.1",
@@ -30,7 +33,10 @@
     "pixi.js": "^8.7.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
     "react-zoom-pan-pinch": "^3.7.0",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1",
     "sharp": "^0.34.5",
     "simplex-noise": "^4.0.3",
     "strava-v3": "^3.1.0",

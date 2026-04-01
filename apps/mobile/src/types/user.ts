@@ -27,6 +27,8 @@ export interface ShopItem {
   rotation?: number;
   rotation_female?: number;
   grip_type?: string;
+  /** Sword | Spear | Bow — battle attack motion; omit/null = grip_type only */
+  weapon_type?: string | null;
   hand_grip_type?: string;
   bonuses?: { type: string; value: number }[];
   bonus_type?: string;
@@ -86,12 +88,15 @@ export interface User {
   base_body_url?: string;
   base_body_silhouette_url?: string;
   base_body_tint_hex?: string;
+  hair_tint_hex?: string;
   avatar_url?: string;
   coins?: number;
   gems?: number;
   is_private?: boolean; 
   current_class?: string;
   onboarding_completed?: boolean;
+  /** basics | avatar | class | done — only while onboarding; use DB as source of truth */
+  onboarding_step?: 'basics' | 'avatar' | 'class' | 'done';
   tutorial_completed?: boolean;
   gender?: string;
   hunter_rank?: string;

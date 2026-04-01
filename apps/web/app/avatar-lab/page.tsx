@@ -21,6 +21,7 @@ export default function AvatarLabPage() {
             baseId: config.baseId,
             partIds: config.selectedParts?.map((p) => p.shop_item_id) ?? [],
             base_body_tint_hex: config.baseBodyTintHex,
+            hair_tint_hex: config.hairTintHex,
           }),
         });
         if (!res.ok) {

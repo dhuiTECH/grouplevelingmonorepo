@@ -461,9 +461,8 @@ export const WorldMapScreen = () => {
   useEffect(() => {
     if (user && user.level > previousLevel) {
       setLevelUpVisible(true);
-      setPreviousLevel(user.level);
     }
-  }, [user?.level]);
+  }, [user?.level, previousLevel]);
 
   const partyMembers = user?.current_party_id
     ? Array.from(partyMembersOnline.values())
@@ -568,8 +567,12 @@ export const WorldMapScreen = () => {
         <LevelUpModal
           visible={levelUpVisible}
           user={user}
-          previousLevel={previousLevel}
-          onClose={() => setLevelUpVisible(false)}
+          fromLevel={previousLevel}
+          toLevel={user?.level ?? previousLevel}
+          onClose={() => {
+            setLevelUpVisible(false);
+            if (user) setPreviousLevel(user.level);
+          }}
         />
 
         {activeRaid && user && (

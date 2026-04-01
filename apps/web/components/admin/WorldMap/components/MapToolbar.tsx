@@ -1,7 +1,5 @@
 import React from 'react';
 import { useMapStore } from '@/lib/store/mapStore';
-import { useMapGeneration } from '../hooks/useMapGeneration';
-import { useMapClipboard } from '../hooks/useMapClipboard';
 import { WinluPalette } from '../WinluPalette';
 import { CoordinateDisplay } from './CoordinateDisplay';
 import {
@@ -10,8 +8,6 @@ import {
   Maximize,
   Grid,
   Zap,
-  Loader2,
-  Globe,
   MousePointer2,
   Eraser,
   Wand2,
@@ -22,6 +18,7 @@ import {
   Paintbrush,
   Bug,
   RotateCw,
+  FlipHorizontal,
   Lock,
   Unlock,
   Box,
@@ -70,13 +67,6 @@ export const MapToolbar = React.memo(
     const setCollisionMode = useMapStore(state => state.setCollisionMode);
     const edgeDirection = useMapStore(state => state.edgeDirection);
     const setEdgeDirection = useMapStore(state => state.setEdgeDirection);
-    const undoStack = useMapStore(state => state.undoStack);
-
-    const { handleAutoFill, isGenerating, seed, setSeed } = useMapGeneration();
-    const { handleUndo } = useMapClipboard();
-
-    const lastAction = undoStack[undoStack.length - 1];
-
     return (
       <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
         <div className="flex gap-1.5 items-center pointer-events-auto max-w-[calc(100%-40px)] flex-wrap">
@@ -97,40 +87,10 @@ export const MapToolbar = React.memo(
             <button
               onClick={onZoomFit}
               className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-cyan-400 transition-all"
-              title="Zoom to Fit (F)"
+              title="Fit entire map in view (F or 0)"
             >
               <Maximize size={16} />
             </button>
-          </div>
-
-          {/* Generation & Undo */}
-          <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-1 shadow-2xl">
-            <input
-              type="text"
-              value={seed}
-              onChange={e => setSeed(e.target.value)}
-              className="w-16 bg-black/50 border border-slate-700 rounded px-1.5 py-1 text-[9px] text-cyan-400 outline-none font-bold text-center"
-            />
-            <button
-              onClick={handleAutoFill}
-              disabled={isGenerating}
-              className="bg-cyan-600 hover:bg-cyan-500 text-white px-2.5 py-1.5 rounded-lg text-[10px] font-black flex items-center gap-1.5 uppercase tracking-tighter shadow-lg shadow-cyan-900/20"
-            >
-              {isGenerating ? (
-                <Loader2 className="animate-spin" size={12} />
-              ) : (
-                <Globe size={12} />
-              )}{' '}
-              Fill
-            </button>
-            {lastAction && lastAction.action === 'autofill' && (
-              <button
-                onClick={handleUndo}
-                className="bg-red-600 hover:bg-red-500 text-white px-2 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter shadow-lg"
-              >
-                Undo
-              </button>
-            )}
           </div>
 
           {/* Primary Tools + Brush + Snap + Palette + Smart Brush + Overlays + Secondary Tools */}
@@ -395,6 +355,17 @@ export const MapToolbar = React.memo(
                 title="Rotate Tool (R)"
               >
                 <RotateCw size={18} />
+              </button>
+              <button
+                onClick={() => setTool('flip')}
+                className={`p-1.5 rounded-lg transition-all ${
+                  selectedTool === 'flip'
+                    ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/40'
+                    : 'text-slate-400 hover:bg-slate-800'
+                }`}
+                title="Flip horizontal — click a tile (H)"
+              >
+                <FlipHorizontal size={18} />
               </button>
               <button
                 onClick={() => {

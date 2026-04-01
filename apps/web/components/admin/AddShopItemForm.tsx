@@ -44,6 +44,7 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
     class_req: 'All',
     no_restrictions: false,
     grip_type: null as string | null,
+    weapon_type: null as string | null,
     hand_grip_z_index_override: null as number | null,
     eraser_mask_targets: [] as string[],
     eraser_mask_url: null as string | null,
@@ -72,7 +73,8 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
     min_level: formData.min_level ?? '1',
     class_req: formData.class_req ?? 'All',
     no_restrictions: formData.no_restrictions ?? false,
-    grip_type: formData.grip_type ?? null
+    grip_type: formData.grip_type ?? null,
+    weapon_type: formData.weapon_type ?? null
   };
 
   const CREATOR_SLOTS = ['avatar', 'base_body', 'face_eyes', 'face_mouth', 'hair', 'face', 'body'];
@@ -91,6 +93,7 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
         class_req: editingItem.class_req || 'All',
         no_restrictions: Boolean(editingItem.no_restrictions ?? false),
         grip_type: editingItem.grip_type ?? null,
+        weapon_type: editingItem.weapon_type ?? null,
         hand_grip_z_index_override: editingItem.hand_grip_z_index_override ?? null,
         eraser_mask_targets: Array.isArray(editingItem.eraser_mask_targets) ? editingItem.eraser_mask_targets : 
                              (typeof editingItem.eraser_mask_targets === 'string' && editingItem.eraser_mask_targets !== 'none' ? [editingItem.eraser_mask_targets] : []),
@@ -111,6 +114,7 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
         class_req: 'All',
         no_restrictions: false,
         grip_type: null,
+        weapon_type: null,
         hand_grip_z_index_override: null,
         eraser_mask_targets: [],
         eraser_mask_url: null,
@@ -184,6 +188,7 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
   const [effectBuffStatOpen, setEffectBuffStatOpen] = useState(false);
   const [collectionOpen, setCollectionOpen] = useState(false);
   const [gripTypeOpen, setGripTypeOpen] = useState(false);
+  const [weaponTypeOpen, setWeaponTypeOpen] = useState(false);
   const [showMaskPainter, setShowMaskPainter] = useState(false);
   const [showMaskPainterForFemale, setShowMaskPainterForFemale] = useState(false);
   const [eraserMaskTargetOpen, setEraserMaskTargetOpen] = useState(false);
@@ -390,7 +395,7 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Element;
-      if (slotOpen || rarityOpen || classReqOpen || bonusTypeOpenIndex !== null || effectTypeOpen || effectBuffStatOpen || collectionOpen || gripTypeOpen || eraserMaskTargetOpen) {
+      if (slotOpen || rarityOpen || classReqOpen || bonusTypeOpenIndex !== null || effectTypeOpen || effectBuffStatOpen || collectionOpen || gripTypeOpen || weaponTypeOpen || eraserMaskTargetOpen) {
         if (!target.closest('[data-dropdown]')) {
           setSlotOpen(false);
           setBonusTypeOpenIndex(null);
@@ -406,7 +411,7 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [slotOpen, rarityOpen, classReqOpen, bonusTypeOpenIndex, effectTypeOpen, effectBuffStatOpen, collectionOpen, gripTypeOpen, eraserMaskTargetOpen]);
+  }, [slotOpen, rarityOpen, classReqOpen, bonusTypeOpenIndex, effectTypeOpen, effectBuffStatOpen, collectionOpen, gripTypeOpen, weaponTypeOpen, eraserMaskTargetOpen]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -561,6 +566,11 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
       is_sellable: ['base_body', 'face_eyes', 'face_mouth', 'hair', 'hand_grip'].includes(formData.slot) ? false : isSellable,
       onboarding_available: CREATOR_SLOTS.includes(formData.slot) ? onboardingAvailable : false,
       grip_type: formData.grip_type,
+      weapon_type:
+        formData.slot === 'weapon' &&
+        (formData.grip_type === 'All Around' || formData.grip_type === '' || formData.grip_type == null)
+          ? formData.weapon_type || null
+          : null,
       hand_grip_z_index_override: formData.hand_grip_z_index_override,
       eraser_mask_targets: formData.eraser_mask_targets,
       eraser_mask_url: formData.eraser_mask_url,
@@ -922,7 +932,11 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
                 { value: 'hand_grip', label: 'Hand Grip (System – hidden)' }
               ]}
               onChange={(value) => {
-                setFormData({ ...formData, slot: value });
+                setFormData({
+                  ...formData,
+                  slot: value,
+                  ...(value !== 'weapon' ? { weapon_type: null } : {})
+                });
                 if (['base_body', 'face_eyes', 'face_mouth', 'hair', 'hand_grip'].includes(value)) setIsSellable(false);
               }}
               isOpen={slotOpen}
@@ -941,11 +955,37 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
                   { value: 'Wand', label: 'Wand' }
                 ]}
                 onChange={(value) => {
-                  setFormData({ ...formData, grip_type: value || null });
+                  const nextGrip = value || null;
+                  const isAllAroundOrUnset = !nextGrip || nextGrip === 'All Around';
+                  setFormData({
+                    ...formData,
+                    grip_type: nextGrip,
+                    ...(!isAllAroundOrUnset ? { weapon_type: null } : {}),
+                  });
                   setGripTypeOpen(false);
                 }}
                 isOpen={gripTypeOpen}
                 onToggle={() => setGripTypeOpen(!gripTypeOpen)}
+              />
+            )}
+
+            {formData.slot === 'weapon' &&
+              (formData.grip_type === 'All Around' || formData.grip_type === '' || formData.grip_type == null) && (
+              <CustomDropdown
+                label="Weapon type (All Around only — sword / spear / bow motion)"
+                value={formData.weapon_type || ''}
+                options={[
+                  { value: '', label: 'None' },
+                  { value: 'Sword', label: 'Sword' },
+                  { value: 'Spear', label: 'Spear' },
+                  { value: 'Bow', label: 'Bow' }
+                ]}
+                onChange={(value) => {
+                  setFormData({ ...formData, weapon_type: value || null });
+                  setWeaponTypeOpen(false);
+                }}
+                isOpen={weaponTypeOpen}
+                onToggle={() => setWeaponTypeOpen(!weaponTypeOpen)}
               />
             )}
 

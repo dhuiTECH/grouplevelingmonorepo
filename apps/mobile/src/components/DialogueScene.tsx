@@ -14,12 +14,14 @@ import Animated, {
   withTiming,
   withRepeat,
   withSequence,
+  withDelay,
   FadeIn,
   FadeOut,
   ZoomIn,
   SlideInDown,
   FadeInUp,
   FadeInRight,
+  FadeInLeft,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
   import { ChevronRight, FastForward } from 'lucide-react-native';
@@ -283,13 +285,16 @@ export function DialogueScene({
     return {
       transform: [
         {
-          scaleY: withRepeat(
-            withSequence(
-              withTiming(1.015, { duration: 3000 }),
-              withTiming(1, { duration: 3000 })
-            ),
-            -1,
-            true
+          scaleY: withDelay(
+            1200, // Wait for fade in / slide in to finish
+            withRepeat(
+              withSequence(
+                withTiming(1.015, { duration: 3000 }),
+                withTiming(1, { duration: 3000 })
+              ),
+              -1,
+              true
+            )
           ),
         },
       ],
@@ -323,29 +328,31 @@ export function DialogueScene({
         {/* NPC Sprite (Large Background) */}
         {!!npcSpriteUrl && (
           <Animated.View
-            entering={FadeInRight.delay(150).duration(600).springify().damping(18)}
-            style={[styles.spriteContainer, breathingStyle]}
+            entering={FadeInLeft.duration(1000).delay(150)}
+            style={styles.spriteContainer}
             pointerEvents="none"
           >
-            {isSpritesheet ? (
-              <View style={[styles.spriteFrame, { width: frameSize, height: frameSize, overflow: 'hidden' }]}>
+            <Animated.View style={[{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'flex-end' }, breathingStyle]}>
+              {isSpritesheet ? (
+                <View style={[styles.spriteFrame, { width: frameSize, height: frameSize, overflow: 'hidden' }]}>
+                  <Image
+                    source={npcSpriteUrl}
+                    style={{
+                      width: frameSize * frameCount,
+                      height: frameSize,
+                      transform: [{ translateX: -currentFrame * frameSize }]
+                    }}
+                    contentFit="cover"
+                  />
+                </View>
+              ) : (
                 <Image
                   source={npcSpriteUrl}
-                  style={{
-                    width: frameSize * frameCount,
-                    height: frameSize,
-                    transform: [{ translateX: -currentFrame * frameSize }]
-                  }}
-                  contentFit="cover"
+                  style={styles.sprite}
+                  contentFit="contain"
                 />
-              </View>
-            ) : (
-              <Image
-                source={npcSpriteUrl}
-                style={styles.sprite}
-                contentFit="contain"
-              />
-            )}
+              )}
+            </Animated.View>
           </Animated.View>
         )}
 
