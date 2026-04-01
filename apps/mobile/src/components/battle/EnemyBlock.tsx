@@ -11,8 +11,13 @@ import { PHASE } from '@/store/useBattleStore';
 /** Layout reference; icon + spritesheet enemies share the same rendered sprite size. */
 const ENEMY_REFERENCE = 260;
 const ENEMY_ICON_SIZE = Math.round(ENEMY_REFERENCE * 0.82);
-/** Spritesheet mobs (e.g. Shiba) match `icon_url` mobs — same `size` as `enemyImage`. */
+/**
+ * OptimizedPetAvatar applies a 0.8 internal scale to its sprites, so the
+ * effective rendered size is ENEMY_SPRITE_SIZE * 0.8. ENEMY_IMAGE_SIZE matches
+ * that effective size so icon_url and metadata enemies appear the same height.
+ */
 const ENEMY_SPRITE_SIZE = ENEMY_ICON_SIZE;
+const ENEMY_IMAGE_SIZE = Math.round(ENEMY_ICON_SIZE * 0.8);
 const ENEMY_FIGURE_BOX = Math.round(ENEMY_ICON_SIZE * 1.05);
 
 interface EnemyBlockProps {
@@ -175,7 +180,7 @@ const styles = StyleSheet.create({
     /** Pull sprite closer to HP bar after larger avatar size */
     marginTop: -28,
   },
-  enemyImage: { width: ENEMY_ICON_SIZE, height: ENEMY_ICON_SIZE },
+  enemyImage: { width: ENEMY_IMAGE_SIZE, height: ENEMY_IMAGE_SIZE },
   enemyEmoji: { fontSize: 88 },
   enemyAttacking: { borderColor: '#ef4444', transform: [{ scale: 1.1 }] },
 });
