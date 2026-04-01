@@ -755,6 +755,6 @@ export const useExploration = (
     checkpointAlert,
     setCheckpointAlert,
     latestPos,
-    resetBattleInFlight: () => { battleInFlightRef.current = false; },
+    battleInFlightRef,
   };
 };

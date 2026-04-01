@@ -254,7 +254,7 @@ export const WorldMapScreen = () => {
     loading: movingOnMap,
     setAutoTravelReport,
     latestPos,
-    resetBattleInFlight,
+    battleInFlightRef,
   } = useExploration(
     setEncounter,
     setInteractionVisible,
@@ -433,7 +433,7 @@ export const WorldMapScreen = () => {
     useCallback(() => {
       logWorldMapScreenSync("focus:enter");
       resetJeffreyDemo();
-      resetBattleInFlight();
+      battleInFlightRef.current = false;
       void (async () => {
         await playTrack("Beginning Map");
         await startBackgroundMusic();
@@ -443,7 +443,7 @@ export const WorldMapScreen = () => {
         logWorldMapScreenSync("focus:blur:saveSessionPosition");
         saveSessionPosition();
       };
-    }, [playTrack, startBackgroundMusic, refreshProfile, saveSessionPosition, resetJeffreyDemo, resetBattleInFlight]),
+    }, [playTrack, startBackgroundMusic, refreshProfile, saveSessionPosition, resetJeffreyDemo]),
   );
 
   const handleUnstuck = useCallback(async () => {
