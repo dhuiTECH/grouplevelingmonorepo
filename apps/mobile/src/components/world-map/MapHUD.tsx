@@ -128,7 +128,7 @@ const GlowingStepCounter = ({ steps }: { steps: number }) => {
   );
 };
 
-export const MapHUD: React.FC<MapHUDProps> = ({
+const MapHUDInner: React.FC<MapHUDProps> = ({
   onPressTemple,
   onPressWorld,
   onPressBattle,
@@ -203,6 +203,9 @@ export const MapHUD: React.FC<MapHUDProps> = ({
     </>
   );
 };
+
+/** Memoized so parent vision/map updates don’t redraw heavy SVG chrome on every frame. */
+export const MapHUD = React.memo(MapHUDInner);
 
 const styles = StyleSheet.create({
   hudTop: {

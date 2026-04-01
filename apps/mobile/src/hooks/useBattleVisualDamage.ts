@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Animated } from 'react-native';
 import { Audio } from 'expo-av';
+import { MELEE_IMPACT_ENTRY_DELAY_MS } from '@/components/battle/battleTheme';
+
+function meleeEntryDelayForTarget(targetId: string | undefined, vfxType: string): number {
+  if (targetId !== 'ENEMY') return 0;
+  if (vfxType === 'melee' || vfxType === 'impact') return MELEE_IMPACT_ENTRY_DELAY_MS;
+  return 0;
+}
 
 export interface ImpactEffectInstance {
   id: string;
@@ -159,6 +166,8 @@ export function useBattleVisualDamage({
     const vfxType = lastSkillAnimationConfig?.vfx_type ?? 'impact';
     const totalDuration = durationMs * playCount;
 
+    const entryForEnemy = meleeEntryDelayForTarget('ENEMY', vfxType);
+
     if (multiResults && multiResults.length > 0) {
       multiResults.forEach((result: any, i: number) => {
         const syntheticEvent = {
@@ -168,12 +177,13 @@ export function useBattleVisualDamage({
           type: result.type,
           timestamp: lastDamageEvent.timestamp + i * 50,
         };
-        let delay = 100;
+        const entry = meleeEntryDelayForTarget(result.targetId, vfxType);
+        let delay = 100 + entry;
 
         if (vfxType === 'projectile') {
           delay = totalDuration;
         } else if (vfxType === 'beam' || vfxType === 'aoe') {
-          delay = 100;
+          delay = 100 + entry;
         }
 
         scheduleDamageNumber(syntheticEvent, delay + i * 50);
@@ -186,17 +196,17 @@ export function useBattleVisualDamage({
         if (vfxType === 'projectile') {
           delay = totalDuration + i * 100;
         } else {
-          delay = i * durationMs + 100;
+          delay = i * durationMs + 100 + entryForEnemy;
         }
 
         scheduleDamageNumber(syntheticEvent, delay);
       });
     } else {
-      let delay = durationMs;
+      let delay = durationMs + entryForEnemy;
       if (vfxType === 'projectile') {
         delay = totalDuration;
       } else if (vfxType === 'beam' || vfxType === 'aoe') {
-        delay = 100;
+        delay = 100 + entryForEnemy;
       }
       scheduleDamageNumber(lastDamageEvent, delay);
     }

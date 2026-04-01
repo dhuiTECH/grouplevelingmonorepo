@@ -263,11 +263,12 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     [key: string]: { isWalkable: boolean; edgeBlocks: number };
   }>({});
 
+  /** Ref keeps latest callback without churning `handleTileEnter`; parent may use React.memo that ignores this prop. */
+  const onTileEnterRef = useRef(onTileEnter);
+  onTileEnterRef.current = onTileEnter;
   const handleTileEnter = React.useCallback((tx: number, ty: number) => {
-    if (onTileEnter) {
-      onTileEnter(tx, ty);
-    }
-  }, [onTileEnter]);
+    onTileEnterRef.current?.(tx, ty);
+  }, []);
 
   /** Ref + stable JS fn so the moveNext worklet never captures a stale optional prop (Reanimated). */
   const onTileMoveStartRef = useRef(onTileMoveStart);
@@ -777,5 +778,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
 export const SkiaWorldMap = React.memo(SkiaWorldMapInternal, (prev, next) => {
   if (prev.visionGrid !== next.visionGrid) return false;
+  // NPCs / overlays must update when node data arrives without a visionGrid ref change.
+  if (prev.nodesInVision !== next.nodesInVision) return false;
   return true; // ignore other props (e.g. spawnX/Y) so React state cannot re-skin mid-movement
 });

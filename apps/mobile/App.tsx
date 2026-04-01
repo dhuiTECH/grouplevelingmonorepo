@@ -28,6 +28,7 @@ import { ChestOpeningModal } from '@/components/modals/ChestOpeningModal';
 import { RewardModal } from '@/components/modals/RewardModal';
 import { supabase } from '@/lib/supabase';
 import { EncounterTransition } from '@/components/EncounterTransition';
+import { initializeGlobalAudioMode } from '@/utils/audio';
 
 import Toast from 'react-native-toast-message';
 
@@ -122,6 +123,10 @@ function NotificationWrapper() {
 
 export default function App(): React.ReactElement {
   const [isRewardModalVisible, setIsRewardModalVisible] = useState(false);
+
+  useEffect(() => {
+    void initializeGlobalAudioMode();
+  }, []);
 
   const [fontsLoaded] = useFonts({
     'Exo2-Regular': Exo2_400Regular,

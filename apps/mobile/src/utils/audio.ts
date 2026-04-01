@@ -1,5 +1,25 @@
 import { Audio } from 'expo-av';
 
+/**
+ * Call `initializeGlobalAudioMode()` once at the app root (e.g. `App.tsx` or `_layout.tsx`)
+ * so SFX never pay the cost of `setAudioModeAsync` on every play.
+ */
+let hasInitializedAudioMode = false;
+
+export async function initializeGlobalAudioMode(): Promise<void> {
+  if (hasInitializedAudioMode) return;
+  await Audio.setAudioModeAsync({
+    playsInSilentModeIOS: true,
+    allowsRecordingIOS: false,
+    staysActiveInBackground: false,
+    interruptionModeIOS: 1,
+    shouldDuckAndroid: true,
+    interruptionModeAndroid: 2,
+    playThroughEarpieceAndroid: false,
+  });
+  hasInitializedAudioMode = true;
+}
+
 let getMuted = (): boolean => false;
 
 export function setAudioMuteGetter(fn: () => boolean): void {
@@ -23,7 +43,7 @@ const SOUND_FILES: Record<string, any> = {
   swipe: require('../../assets/sounds/swipe.mp3'),
   nyxGreeting: require('../../assets/shop/nyx1.mp3'),
   nyxPurchase: require('../../assets/shop/nyx2.mp3'),
-  worldMapFootstep: require('../../assets/sounds/walkingsound.mp3'),
+  worldMapFootstep: require('../../assets/sounds/walkingsound.wav'),
 };
 
 let activeVoiceSound: Audio.Sound | null = null;
@@ -52,16 +72,6 @@ export const playHunterSound = async (soundKey: SoundKey, force: boolean = false
   }
 
   try {
-    await Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      allowsRecordingIOS: false,
-      staysActiveInBackground: false,
-      interruptionModeIOS: 1,
-      shouldDuckAndroid: true,
-      interruptionModeAndroid: 2,
-      playThroughEarpieceAndroid: false,
-    });
-
     const { sound } = await Audio.Sound.createAsync(
       SOUND_FILES[soundKey],
       { shouldPlay: true }
@@ -87,53 +97,70 @@ export const playHunterSound = async (soundKey: SoundKey, force: boolean = false
 
 const WALK_FOOTSTEP_VOL = 0.28;
 const RUN_FOOTSTEP_VOL = 0.36;
+const FOOTSTEP_POOL_SIZE = 3;
 
-let worldMapFootstepSound: Audio.Sound | null = null;
-let worldMapFootstepLoad: Promise<Audio.Sound> | null = null;
+let footstepPool: Audio.Sound[] = [];
+let footstepIndex = 0;
+let isLoadingPool = false;
+let footstepPoolReady: Promise<void> | null = null;
 
-async function ensureWorldMapFootstepSound(): Promise<Audio.Sound> {
-  if (worldMapFootstepSound) return worldMapFootstepSound;
-  if (worldMapFootstepLoad) return worldMapFootstepLoad;
-  worldMapFootstepLoad = (async () => {
-    const { sound } = await Audio.Sound.createAsync(SOUND_FILES.worldMapFootstep, {
-      shouldPlay: false,
-      isLooping: false,
-      volume: WALK_FOOTSTEP_VOL,
+async function ensureWorldMapFootstepPool(): Promise<void> {
+  if (footstepPool.length === FOOTSTEP_POOL_SIZE) return;
+  if (!footstepPoolReady) {
+    isLoadingPool = true;
+    footstepPoolReady = (async () => {
+      const loaded = await Promise.all(
+        Array.from({ length: FOOTSTEP_POOL_SIZE }, () =>
+          Audio.Sound.createAsync(SOUND_FILES.worldMapFootstep, {
+            shouldPlay: false,
+            isLooping: false,
+            volume: WALK_FOOTSTEP_VOL,
+          }),
+        ),
+      );
+      footstepPool = loaded.map((r) => r.sound);
+    })().finally(() => {
+      isLoadingPool = false;
+      footstepPoolReady = null;
     });
-    worldMapFootstepSound = sound;
-    return sound;
-  })();
+  }
   try {
-    return await worldMapFootstepLoad;
-  } finally {
-    worldMapFootstepLoad = null;
+    await footstepPoolReady;
+  } catch (e) {
+    console.warn('[WorldMap] Footstep pool load failed:', e);
+    throw e;
   }
 }
 
 /**
- * World-map tile step: **one** shared `Audio.Sound`, `replayAsync` per step.
- * Per-tile `createAsync` queued many decoders and could all finish together at the end.
+ * World-map tile step: round-robin pool of 3 `Audio.Sound` instances (overlap without stacking one decoder).
  */
 export async function playWorldMapFootstep(running: boolean): Promise<void> {
   if (getMuted()) return;
 
   try {
-    await Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      allowsRecordingIOS: false,
-      staysActiveInBackground: false,
-      interruptionModeIOS: 1,
-      shouldDuckAndroid: true,
-      interruptionModeAndroid: 2,
-      playThroughEarpieceAndroid: false,
-    });
+    await initializeGlobalAudioMode();
+  } catch (e) {
+    console.warn('[WorldMap] Footstep: audio mode not ready', e);
+    return;
+  }
 
-    const sound = await ensureWorldMapFootstepSound();
+  try {
+    await ensureWorldMapFootstepPool();
+    const sound = footstepPool[footstepIndex];
+    footstepIndex = (footstepIndex + 1) % FOOTSTEP_POOL_SIZE;
+    if (!sound) {
+      console.warn('[WorldMap] Footstep play skipped: empty pool slot');
+      return;
+    }
     const vol = running ? RUN_FOOTSTEP_VOL : WALK_FOOTSTEP_VOL;
-    await sound.setStatusAsync({ volume: vol });
-    await sound.replayAsync();
+    // `replayAsync` uses the native replay path; combined `setStatusAsync({ positionMillis, shouldPlay, volume })`
+    // can reject on some Android/iOS builds while the asset is otherwise valid.
+    await sound.replayAsync({ volume: vol });
   } catch (error) {
-    console.warn('[WorldMap] Footstep play failed:', error);
-    worldMapFootstepSound = null;
+    const msg = error instanceof Error ? error.message : String(error);
+    console.warn('[WorldMap] Footstep play failed:', msg, error);
+    footstepPool = [];
+    footstepIndex = 0;
   }
 }

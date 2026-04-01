@@ -17,16 +17,18 @@ interface WorldNodesLayerProps {
   onSelectNode: (node: MapNode) => void;
 }
 
+const DBL_TAP_THRESHOLD_MS = 450;
+
 function WorldNodesLayerInner({ nodes, tileSize, onSelectNode }: WorldNodesLayerProps) {
-  const lastTapTimeRef = useRef(0);
-  
+  const lastTapByNodeIdRef = useRef<Record<string, number>>({});
+
   return (
     // pointerEvents="box-none" ensures the wrapper doesn't block touches to the map
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {(nodes || []).map((node) => {
         const nodeLeft = node.x * tileSize;
         const nodeTop = node.y * tileSize;
-        
+
         return (
           <View
             key={`node-wrapper-${node.id}`}
@@ -44,13 +46,14 @@ function WorldNodesLayerInner({ nodes, tileSize, onSelectNode }: WorldNodesLayer
             <TouchableOpacity
               onPress={() => {
                 const now = Date.now();
-                const DBL_TAP_THRESHOLD = 300; // ms
+                const id = String(node.id);
+                const prev = lastTapByNodeIdRef.current[id] ?? 0;
 
-                if (lastTapTimeRef.current && (now - lastTapTimeRef.current < DBL_TAP_THRESHOLD)) {
+                if (prev > 0 && now - prev < DBL_TAP_THRESHOLD_MS) {
                   onSelectNode(node);
-                  lastTapTimeRef.current = 0; // Reset after double tap
+                  lastTapByNodeIdRef.current[id] = 0;
                 } else {
-                  lastTapTimeRef.current = now;
+                  lastTapByNodeIdRef.current[id] = now;
                 }
               }}
               activeOpacity={1}

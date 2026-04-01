@@ -18,7 +18,17 @@ import { playHunterSound } from '@/utils/audio';
 
 const { width, height } = Dimensions.get('window');
 
-export const InteractionModal = ({ visible, onClose, activeInteraction }) => {
+export const InteractionModal = ({
+  visible,
+  onClose,
+  activeInteraction,
+  mapId,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  activeInteraction: any;
+  mapId?: string | null;
+}) => {
   const { user, setUser } = useAuth();
   const navigation = useNavigation<any>();
   const [showVictory, setShowVictory] = useState(false);
@@ -137,13 +147,20 @@ export const InteractionModal = ({ visible, onClose, activeInteraction }) => {
       case 'START_BATTLE':
       case 'MONSTER':
         onClose();
-        navigation.navigate('Battle', { encounterId: activeInteraction?.encounter_id || activeInteraction?.id, isBoss: activeInteraction?.interaction_type === 'BOSS_RAID' || activeInteraction?.event_type === 'BOSS', partySize: partySize });
+        navigation.navigate('Battle', {
+          encounterId: activeInteraction?.encounter_id || activeInteraction?.id,
+          isBoss:
+            activeInteraction?.interaction_type === 'BOSS_RAID' ||
+            activeInteraction?.event_type === 'BOSS',
+          partySize: partySize,
+          mapId: mapId ?? undefined,
+        });
         break;
       default:
         onClose();
         break;
     }
-  }, [user, onClose, navigation, activeInteraction, partySize, fetchShopItems]);
+  }, [user, onClose, navigation, activeInteraction, partySize, fetchShopItems, mapId]);
 
   const shopItemRenderer = useCallback((item: ShopItem) => (
     <View key={item.id} style={styles.shopItemCard}>
@@ -216,7 +233,15 @@ export const InteractionModal = ({ visible, onClose, activeInteraction }) => {
             onAction={handleAction}
             interactionType={activeInteraction.interaction_type || activeInteraction.event_type || 'DIALOGUE'}
             onClose={onClose}
-            onBattleStart={() => { onClose(); navigation.navigate('Battle', { encounterId: activeInteraction.encounter_id || activeInteraction.id, isBoss: activeInteraction.interaction_type === 'BOSS_RAID', partySize: partySize }); }}
+            onBattleStart={() => {
+              onClose();
+              navigation.navigate('Battle', {
+                encounterId: activeInteraction.encounter_id || activeInteraction.id,
+                isBoss: activeInteraction.interaction_type === 'BOSS_RAID',
+                partySize: partySize,
+                mapId: mapId ?? undefined,
+              });
+            }}
           />
         )}
       </View>

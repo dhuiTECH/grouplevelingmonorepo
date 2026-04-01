@@ -1,7 +1,15 @@
- import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useMemo,
+  type MutableRefObject,
+} from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
+import { useEncounterPoolStore } from "@/store/useEncounterPoolStore";
 import * as Haptics from "expo-haptics";
 // Keep chunk size the same
 const CHUNK_SIZE = 16;
@@ -55,6 +63,16 @@ function objectToMap(value: Record<string, any> | undefined) {
   return map;
 }
 
+/** Stable fallback so Zustand selectors never return a fresh `[]` each run (infinite re-renders). */
+const EMPTY_ENCOUNTER_POOL: any[] = [];
+
+export interface UseExplorationOptions {
+  /** When true during `onTileEnter`, skip random field encounter roll (video demo / scripted battle). */
+  suppressEncounterRollRef?: MutableRefObject<boolean>;
+  /** Fires once per **processed** tile (after duplicate / busy guards) — use for scripted steps vs Skia spam. */
+  onProcessedTileEnter?: (nx: number, ny: number) => void;
+}
+
 export const useExploration = (
   setEncounter: (encounter: any | null) => void,
   setInteractionVisible: (visible: boolean) => void,
@@ -62,6 +80,7 @@ export const useExploration = (
   setRaidModalVisible: (visible: boolean) => void,
   currentMapId?: string | null,
   tileLibrary?: Map<string, any>,
+  explorationOptions?: UseExplorationOptions,
 ) => {
   const { user } = useAuth();
   const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
@@ -92,10 +111,16 @@ export const useExploration = (
     x: user?.world_x || 0,
     y: user?.world_y || 0,
   });
+  const explorationOptionsRef = useRef(explorationOptions);
+  explorationOptionsRef.current = explorationOptions;
   const nodeLookupRef = useRef<Map<string, any>>(new Map());
 
-  // Pre-cached encounter pool — populated once on map load, never read mid-movement via DB
+  // Pre-cached encounter pool — filled by useMapData → Zustand; no DB read on tile enter
   const encounterPoolRef = useRef<any[]>([]);
+  const encounterPoolForMap = useEncounterPoolStore((s) => {
+    if (!currentMapId || currentMapId === "undefined") return EMPTY_ENCOUNTER_POOL;
+    return s.encountersByMap[currentMapId] ?? EMPTY_ENCOUNTER_POOL;
+  });
 
   // Pending vision refresh — set during movement when drifted 5+ tiles.
   // Only flushed when player stops; no server calls during movement.
@@ -196,17 +221,9 @@ export const useExploration = (
     return () => clearTimeout(id);
   }, [user?.id, currentMapId, nodes, unlocked, chunksVersion]);
 
-  // Pre-cache encounter pool on map load so onTileEnter never does a DB read during movement
   useEffect(() => {
-    if (!currentMapId || currentMapId === "undefined") return;
-    supabase
-      .from("encounter_pool")
-      .select("*")
-      .eq("map_id", currentMapId)
-      .then(({ data }) => {
-        encounterPoolRef.current = data || [];
-      });
-  }, [currentMapId]);
+    encounterPoolRef.current = encounterPoolForMap;
+  }, [encounterPoolForMap]);
 
   // Separate camera position for visionGrid that only updates when we actually
   // want the grid to recalculate (initial load, chunk fetch, teleport).
@@ -609,6 +626,8 @@ export const useExploration = (
         latestPos.current = { x: nx, y: ny };
         lastProcessedTile.current = { x: nx, y: ny };
 
+        explorationOptionsRef.current?.onProcessedTileEnter?.(nx, ny);
+
         const u = userRef.current;
         const node = nodeLookupRef.current.get(`${nx},${ny}`) ?? null;
 
@@ -651,6 +670,9 @@ export const useExploration = (
           }
         } else {
           // Encounter roll — against pre-cached pool, zero DB reads
+          if (explorationOptionsRef.current?.suppressEncounterRollRef?.current) {
+            // skip roll (e.g. scripted Jeffrey demo when step threshold fires)
+          } else {
           const roll = Math.random();
           if (roll < 0.05 && encounterPoolRef.current.length > 0) {
             const eligible = encounterPoolRef.current.filter(
@@ -671,6 +693,7 @@ export const useExploration = (
                 setInteractionVisible(true);
               }
             }
+          }
           }
         }
 
@@ -693,6 +716,9 @@ export const useExploration = (
 
       } finally {
         tileEnterBusy.current = false;
+        if (explorationOptionsRef.current?.suppressEncounterRollRef?.current) {
+          explorationOptionsRef.current.suppressEncounterRollRef.current = false;
+        }
       }
     },
     [currentMapId, refreshVision],

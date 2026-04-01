@@ -4,6 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { Animated, Vibration, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { supabase } from '@/lib/supabase';
+import { useEncounterPoolStore } from '@/store/useEncounterPoolStore';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActivePet } from '@/contexts/ActivePetContext';
 import { useSkills } from '@/hooks/useSkills';
@@ -112,7 +113,19 @@ const generateTurns = (count = 50, partyMembers: any[] = [], seed?: string) => {
     return turns;
 };
 
-export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = true }: { encounterId?: string, raidId?: string, isBoss?: boolean, tapToConfirm?: boolean }) => {
+export const useBattleLogic = ({
+  encounterId,
+  raidId,
+  isBoss,
+  tapToConfirm = true,
+  currentMapId,
+}: {
+  encounterId?: string;
+  raidId?: string;
+  isBoss?: boolean;
+  tapToConfirm?: boolean;
+  currentMapId?: string | null;
+}) => {
   const { user } = useAuth();
   const { activePetId } = useActivePet();
   const { pets } = usePets();
@@ -351,6 +364,17 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
       setSelectedAbilityId(null);
       
       try {
+        const cachedEncounter =
+          !isBoss && encounterId && currentMapId
+            ? useEncounterPoolStore.getState().getEncounterById(currentMapId, encounterId)
+            : undefined;
+
+        /** Runs in parallel with party setup when cache miss (party_members + cosmetics). */
+        const encounterPoolPromise =
+          !isBoss && encounterId && !cachedEncounter
+            ? supabase.from('encounter_pool').select('*').eq('id', encounterId).single()
+            : Promise.resolve({ data: null as any, error: null });
+
         // 1. Fetch Player Data & Skills (always includes Basic Attack from useSkills)
         let playerAbilities = getBattleSkills();
         if (playerAbilities.length === 0) {
@@ -511,8 +535,8 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
                 return () => supabase.removeChannel(channel);
             }
         } else if (encounterId) {
-            // Fetch Random Encounter
-            const { data: encounterData } = await supabase.from('encounter_pool').select('*').eq('id', encounterId).single();
+            const encounterData =
+              cachedEncounter ?? (await encounterPoolPromise).data;
             if (encounterData) {
                  setEnemy({
                     id: encounterData.id,
@@ -534,7 +558,7 @@ export const useBattleLogic = ({ encounterId, raidId, isBoss, tapToConfirm = tru
     };
 
     initBattle();
-  }, [encounterId, raidId, isBoss, user?.id, loadingSkills, activePet?.id]); // Use user?.id to avoid re-init on user object reference changes
+  }, [encounterId, raidId, isBoss, currentMapId, user?.id, loadingSkills, activePet?.id]); // Use user?.id to avoid re-init on user object reference changes
 
   const handleRemoteAction = (payload: any) => {
     const { casterId, totalDmg, multiResults, abilityName, skillId } = payload;

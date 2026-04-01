@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { View, Animated, SafeAreaView, StatusBar, StyleSheet } from 'react-native';
+import { View, Animated, SafeAreaView, StatusBar, StyleSheet, InteractionManager } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,7 +17,7 @@ import { useTransition } from '@/context/TransitionContext';
 import { supabase } from '@/lib/supabase';
 import { getCaptureItemCount, findOneCaptureCosmetic, isCaptureItem } from '@/utils/captureItem';
 import type { UserCosmetic } from '@/types/user';
-import { COLORS, BATTLE_INVENTORY_SLOTS, BATTLE_TAP_TO_CONFIRM_KEY } from '@/components/battle/battleTheme';
+import { COLORS, BATTLE_INVENTORY_SLOTS, BATTLE_TAP_TO_CONFIRM_KEY, MELEE_IMPACT_ENTRY_DELAY_MS } from '@/components/battle/battleTheme';
 import { battleScreenStyles as styles } from '@/components/battle/battleScreenStyles';
 import { BattleFieldHud } from '@/components/battle/BattleFieldHud';
 import { BattleSkillSpriteVfxHost } from '@/components/battle/BattleSkillSpriteVfxHost';
@@ -40,7 +40,7 @@ import { resolvePartyMemberAvatarUri } from '@/utils/partyMemberAvatarUri';
 export default function BattleScreen() {
   const navigation = useNavigation();
   const route = useRoute<any>();
-  const { encounterId, raidId, isBoss } = route.params || {};
+  const { encounterId, raidId, isBoss, mapId } = route.params || {};
   const { user, setUser } = useAuth();
   const { isTransitioning } = useTransition();
   const { isMuted, setMuted, stopBackgroundMusic, playTrack } = useAudio();
@@ -111,7 +111,7 @@ export default function BattleScreen() {
     preloadedSpriteUrls,
     clearLastSkillAnimation,
     setCurrentPhase,
-  } = useBattleLogic({ encounterId, raidId, isBoss, tapToConfirm });
+  } = useBattleLogic({ encounterId, raidId, isBoss, tapToConfirm, currentMapId: mapId });
 
   const { addPet } = usePets();
 
@@ -120,12 +120,23 @@ export default function BattleScreen() {
     const caster = party.find((p: any) => p.id === lastDamageEvent.casterCharId);
     if (!caster || caster.type === 'pet') return null;
     if (!caster.avatar) return null;
+    const vfx = lastSkillAnimationConfig?.vfx_type ?? 'impact';
+    const toEnemy = lastDamageEvent.targetId === 'ENEMY';
+    const isCloseRange = vfx === 'melee' || vfx === 'impact';
     return {
       key: lastDamageEvent.timestamp as number,
       durationMs: lastSkillAnimationConfig?.duration_ms ?? 500,
       casterCharId: lastDamageEvent.casterCharId as string,
+      delayMs: toEnemy && isCloseRange ? MELEE_IMPACT_ENTRY_DELAY_MS : 0,
     };
-  }, [lastDamageEvent?.timestamp, lastDamageEvent?.casterCharId, lastSkillAnimationConfig?.duration_ms, party]);
+  }, [
+    lastDamageEvent?.timestamp,
+    lastDamageEvent?.casterCharId,
+    lastDamageEvent?.targetId,
+    lastSkillAnimationConfig?.duration_ms,
+    lastSkillAnimationConfig?.vfx_type,
+    party,
+  ]);
 
   const [showWarning, setShowWarning] = useState(isBoss);
   const [petCaptureState, setPetCaptureState] = useState<'idle' | 'prompt' | 'saving' | 'done' | 'skipped'>('idle');
@@ -134,18 +145,26 @@ export default function BattleScreen() {
   const [petCaptureError, setPetCaptureError] = useState<string | null>(null);
   /** True when the player used a capture item during battle (item already consumed; victory screen is for naming only). */
   const [capturedDuringBattle, setCapturedDuringBattle] = useState(false);
+  /** Stable id for one victory reward apply (Strict Mode / remount safe). */
+  const [victoryRewardApplyKey, setVictoryRewardApplyKey] = useState<string | null>(null);
 
-  // Fetch all shop items for hand grip rendering
   useEffect(() => {
-    const fetchShopItems = async () => {
-      const { data, error } = await supabase
-        .from('shop_items')
-        .select('*');
-      if (!error && data) {
-        setAllShopItems(data);
-      }
-    };
-    fetchShopItems();
+    if (currentPhase === PHASE.VICTORY) {
+      setVictoryRewardApplyKey((k) => k ?? `vr-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    } else {
+      setVictoryRewardApplyKey(null);
+    }
+  }, [currentPhase]);
+
+  // Hand-grip cosmetics: load after first paint so battle init isn’t competing with a full-table fetch
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      void (async () => {
+        const { data, error } = await supabase.from('shop_items').select('*');
+        if (!error && data) setAllShopItems(data);
+      })();
+    });
+    return () => task.cancel?.();
   }, []);
 
   const partyOpacity = useRef(new Animated.Value(0)).current;
@@ -459,6 +478,7 @@ export default function BattleScreen() {
         player={playerStats}
         victoryParty={victoryParty}
         rewards={rewards}
+        rewardApplyKey={victoryRewardApplyKey ?? undefined}
       />
     );
   }
@@ -582,13 +602,6 @@ export default function BattleScreen() {
                 onEnterComplete={() => setEnemyAction('idle')}
               />
 
-              <BattleFieldHud
-                chainCount={chainCount}
-                isPlayerTurnPhase={isPlayerTurnPhase}
-                activeActorType={activeActorType}
-                turnActorDisplayName={turnActorDisplayName}
-              />
-
               {/* Player Figures — fade in after transition so they don’t appear before walk-in is done */}
               <PartyRow
                 party={party}
@@ -603,7 +616,16 @@ export default function BattleScreen() {
                 petAction={petAction}
                 onPetEnterComplete={() => setPetAction('idle')}
                 lastDamageEvent={lastDamageEvent}
+                lastSkillAnimationConfig={lastSkillAnimationConfig}
                 weaponGripCast={weaponGripCast}
+              />
+
+              {/* Chain / turn labels: absolute overlay so they never push party row down */}
+              <BattleFieldHud
+                chainCount={chainCount}
+                isPlayerTurnPhase={isPlayerTurnPhase}
+                activeActorType={activeActorType}
+                turnActorDisplayName={turnActorDisplayName}
               />
           </View>
 

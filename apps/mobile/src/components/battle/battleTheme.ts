@@ -31,3 +31,6 @@ export const HUD = {
 export const BATTLE_INVENTORY_SLOTS = ['consumable', 'other', 'misc'] as const;
 
 export const BATTLE_TAP_TO_CONFIRM_KEY = 'battle_tap_to_confirm';
+
+/** Party avatar rushes toward enemy; skill VFX / weapon swing start after this (melee + impact only). */
+export const MELEE_IMPACT_ENTRY_DELAY_MS = 240;

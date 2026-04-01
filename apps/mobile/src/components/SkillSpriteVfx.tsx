@@ -27,7 +27,16 @@ export interface SkillAnimationConfig {
 // Create the Animated version of Expo Image
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 
-export default function SkillSpriteVfx({ config, targetX, targetY, startX, startY, playCount = 1, onEnd }: any) {
+export default function SkillSpriteVfx({
+  config,
+  targetX,
+  targetY,
+  startX,
+  startY,
+  playCount = 1,
+  playDelayMs = 0,
+  onEnd,
+}: any) {
   // Fallback animation for when no sprite is available
   const fallbackScale = useSharedValue(0.5);
   // --- 1. SANITIZE INPUTS (The Anti-Crash Layer) ---
@@ -84,8 +93,9 @@ export default function SkillSpriteVfx({ config, targetX, targetY, startX, start
 
     const totalDuration = duration * loops;
 
+    const baseDelay = Number(playDelayMs) || 0;
     for (let i = 0; i < loops; i++) {
-      let sfxDelay = i * duration;
+      let sfxDelay = baseDelay + i * duration;
       // Reverted the sfxDelay override for projectiles to ensure sounds play before unmount.
       // The damage number delay in BattleScreen already handles the visual sync.
       timeouts.push(setTimeout(playOne, sfxDelay));
@@ -95,21 +105,30 @@ export default function SkillSpriteVfx({ config, targetX, targetY, startX, start
       soundsRef.current.forEach((s) => s.unloadAsync().catch(() => {}));
       soundsRef.current = [];
     };
-  }, [config.sfx_url, duration, loops]);
+  }, [config.sfx_url, duration, loops, playDelayMs]);
 
   // --- 3. ANIMATION DRIVER ---
   // Play sprite sheet (0 -> count) repeated `loops` times (skill use count)
   const totalFrames = count * loops;
   const totalDuration = duration * loops;
   useEffect(() => {
-    progress.value = 0;
-    progress.value = withTiming(totalFrames, {
-      duration: totalDuration,
-      easing: Easing.linear
-    }, (finished) => {
-      if (finished) runOnJS(onEnd)();
-    });
-  }, [config.sprite_url, count, duration, loops]); 
+    const delay = Number(playDelayMs) || 0;
+    const run = () => {
+      progress.value = 0;
+      progress.value = withTiming(totalFrames, {
+        duration: totalDuration,
+        easing: Easing.linear
+      }, (finished) => {
+        if (finished) runOnJS(onEnd)();
+      });
+    };
+    if (delay > 0) {
+      const t = setTimeout(run, delay);
+      return () => clearTimeout(t);
+    }
+    run();
+    return undefined;
+  }, [config.sprite_url, count, duration, loops, playDelayMs, totalFrames, totalDuration]);
 
   // --- 4. FALLBACK ANIMATION ---
   const fallbackGlowStyle = useAnimatedStyle(() => ({
@@ -117,7 +136,9 @@ export default function SkillSpriteVfx({ config, targetX, targetY, startX, start
   }));
 
   useEffect(() => {
-    if (!config.sprite_url) {
+    if (config.sprite_url) return;
+    const delay = Number(playDelayMs) || 0;
+    const run = () => {
       fallbackScale.value = 0.5;
       fallbackScale.value = withTiming(1.5, {
         duration: duration,
@@ -125,8 +146,14 @@ export default function SkillSpriteVfx({ config, targetX, targetY, startX, start
       }, (finished) => {
         if (finished) runOnJS(onEnd)();
       });
+    };
+    if (delay > 0) {
+      const t = setTimeout(run, delay);
+      return () => clearTimeout(t);
     }
-  }, [config.sprite_url, duration, onEnd]);
+    run();
+    return undefined;
+  }, [config.sprite_url, duration, onEnd, playDelayMs]);
 
   // Calculate effective window dimensions for beams
   let effectiveWindowWidth = baseWindowWidth;

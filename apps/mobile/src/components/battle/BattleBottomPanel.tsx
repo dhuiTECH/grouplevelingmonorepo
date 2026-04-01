@@ -9,6 +9,8 @@ import { COLORS, HUD } from './battleTheme';
 import { ACTOR_TYPE } from '@/hooks/useBattleLogic';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+/** Skill cards: basic + up to 4 loadout slots */
+const MAX_BATTLE_ABILITIES = 5;
 
 interface BattleBottomPanelProps {
   partyOpacity: Animated.Value;
@@ -102,13 +104,14 @@ export function BattleBottomPanel({
       <View style={styles.cardsRow}>
         {isPlayerTurnPhase && activeChar ? (
           <View style={styles.cardsContainer}>
-            {activeChar.abilities.slice(0, 4).map((ability: any, index: number) => {
+            {activeChar.abilities.slice(0, MAX_BATTLE_ABILITIES).map((ability: any, index: number) => {
               const canAfford = activeChar.ap >= ability.cost && activeChar.hp > 0;
               const isSelected = selectedAbilityId === ability.id;
+              const shown = activeChar.abilities.slice(0, MAX_BATTLE_ABILITIES);
               return (
                 <View
                   key={ability.id}
-                  style={[styles.cardWrapper, index < activeChar.abilities.length - 1 && { marginRight: 8 }]}
+                  style={[styles.cardWrapper, index < shown.length - 1 && { marginRight: 6 }]}
                 >
                   <BattleCard
                     title={ability.name}
@@ -280,7 +283,8 @@ const styles = StyleSheet.create({
   },
   cardWrapper: {
     flex: 1,
-    maxWidth: (SCREEN_WIDTH - 32 - 24) / 4,
+    maxWidth: (SCREEN_WIDTH - 32 - 24) / MAX_BATTLE_ABILITIES,
+    minWidth: 0,
     height: '100%',
   },
   waitingContainer: {

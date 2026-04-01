@@ -90,42 +90,33 @@ export function DialogueScene({
 
   const [currentFrame, setCurrentFrame] = useState(0);
 
-  // Warm voice clips as soon as the scene opens (first line was waiting on network decode before)
+  /** Preload only the *next* line’s voice while the player reads the current line (avoids hammering the network with every line at open). */
   useEffect(() => {
     if (!visible || !dialogueScript?.length) return;
+    const next = dialogueScript[currentIndex + 1];
+    const url = next?.voice_line_url;
+    if (!url || voiceCacheRef.current[url] !== undefined) return;
     let cancelled = false;
-    const urls = [
-      ...new Set(
-        dialogueScript
-          .map((l) => l?.voice_line_url)
-          .filter((u): u is string => Boolean(u)),
-      ),
-    ];
-    (async () => {
-      await Promise.all(
-        urls.map(async (url) => {
-          if (voiceCacheRef.current[url] !== undefined) return;
-          try {
-            const { sound } = await Audio.Sound.createAsync(
-              { uri: url },
-              { shouldPlay: false },
-            );
-            if (cancelled) {
-              await sound.unloadAsync();
-              return;
-            }
-            voiceCacheRef.current[url] = sound;
-          } catch {
-            voiceCacheRef.current[url] = null;
-          }
-        }),
-      );
+    void (async () => {
+      try {
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: url },
+          { shouldPlay: false },
+        );
+        if (cancelled) {
+          await sound.unloadAsync().catch(() => {});
+          return;
+        }
+        voiceCacheRef.current[url] = sound;
+      } catch {
+        voiceCacheRef.current[url] = null;
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [visible, dialogueScript]);
-  
+  }, [visible, currentIndex, dialogueScript]);
+
   // Use ref to track typing index to avoid closure staleness
   const typingIndexRef = useRef(0);
   const fullTextRef = useRef('');

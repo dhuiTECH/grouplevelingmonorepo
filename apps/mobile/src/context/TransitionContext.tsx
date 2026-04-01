@@ -16,9 +16,12 @@ export interface TransitionContextType {
   snapshotImage: SkImage | null;
   isTransitioning: boolean;
   partyPreview: PartyPreviewItem[] | null;
-  startTransition: (image: SkImage, onHalfway: () => void, partyPreview?: PartyPreviewItem[]) => void;
+  /** Pass `null` to skip pixelation + makeImageFromView (faster battle entry). */
+  startTransition: (image: SkImage | null, onHalfway: () => void, partyPreview?: PartyPreviewItem[]) => void;
   setTransitioning: (value: boolean) => void;
   setSnapshot: (image: SkImage | null) => void;
+  /** Internal: halfway callback for EncounterTransition (pixelation or fast path). */
+  _onHalfway?: (() => void) | null;
 }
 
 const TransitionContext = createContext<TransitionContextType | undefined>(undefined);
@@ -29,7 +32,7 @@ export const TransitionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [partyPreview, setPartyPreview] = useState<PartyPreviewItem[] | null>(null);
   const [halfwayCallback, setHalfwayCallback] = useState<(() => void) | null>(null);
 
-  const startTransition = useCallback((image: SkImage, onHalfway: () => void, preview?: PartyPreviewItem[]) => {
+  const startTransition = useCallback((image: SkImage | null, onHalfway: () => void, preview?: PartyPreviewItem[]) => {
     setSnapshotImage(image);
     setPartyPreview(preview ?? null);
     setIsTransitioning(true);
@@ -44,7 +47,7 @@ export const TransitionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setTransitioning: setIsTransitioning,
     setSnapshot: setSnapshotImage,
     _onHalfway: halfwayCallback,
-  } as TransitionContextType;
+  };
 
   return (
     <TransitionContext.Provider value={value}>

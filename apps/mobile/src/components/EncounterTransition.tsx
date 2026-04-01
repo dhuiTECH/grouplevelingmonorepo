@@ -24,9 +24,10 @@ import type { PartyPreviewItem } from '@/context/TransitionContext';
 
 const { width, height } = Dimensions.get('window');
 
-const PIXELATION_DURATION = 800;
-const WALK_DURATION = 2800;   // slower walk-in
-const STAGGER_DELAY = 280;   // more spacing between each character
+/** Mosaic “dissolve” over the map snapshot before navigation (Pokémon-style). */
+const PIXELATION_DURATION = 780;
+const WALK_DURATION = 1750;
+const STAGGER_DELAY = 220;
 const STEP_FREQUENCY = 10;   // fewer steps = slower hop cycle
 const BOUNCE_HEIGHT = 22;
 
@@ -145,19 +146,35 @@ export const EncounterTransition = () => {
     setSnapshot,
     partyPreview,
     _onHalfway,
-  } = useTransition() as any;
+  } = useTransition();
 
   const [walkPhaseStarted, setWalkPhaseStarted] = useState(false);
 
-  const party = partyPreview && partyPreview.length > 0
-    ? partyPreview
-    : [{ type: 'player' as const, user: null }];
+  /** Never use a fake `user: null` preview — that renders a naked LayeredAvatar. */
+  const party = partyPreview && partyPreview.length > 0 ? partyPreview : [];
 
   const progress = useSharedValue(0);
   const walkProgress = useSharedValue(0);
   const overlayOpacity = useSharedValue(0);
 
-  // Phase 1: Pixelation
+  /** No snapshot: navigate immediately, then walk-in only when we have a real party preview. */
+  useEffect(() => {
+    if (!isTransitioning || snapshotImage) return;
+    setWalkPhaseStarted(false);
+    progress.value = 0;
+    walkProgress.value = 0;
+    overlayOpacity.value = 0;
+    if (!partyPreview?.length) {
+      if (_onHalfway) _onHalfway();
+      setTransitioning(false);
+      return;
+    }
+    if (_onHalfway) _onHalfway();
+    setWalkPhaseStarted(true);
+    // _onHalfway updates when a new transition starts; including it can re-fire navigation.
+  }, [isTransitioning, snapshotImage, partyPreview, setTransitioning]);
+
+  // Phase 1: Pixelation (only when a map snapshot exists)
   useEffect(() => {
     if (!isTransitioning || !snapshotImage) return;
     setWalkPhaseStarted(false);
@@ -172,15 +189,21 @@ export const EncounterTransition = () => {
         if (finished) {
           runOnJS(setSnapshot)(null);
           if (_onHalfway) runOnJS(_onHalfway)();
-          runOnJS(setWalkPhaseStarted)(true);
+          if (partyPreview?.length) runOnJS(setWalkPhaseStarted)(true);
+          else runOnJS(setTransitioning)(false);
         }
       }
     );
-  }, [isTransitioning, snapshotImage]);
+  }, [isTransitioning, snapshotImage, partyPreview, setTransitioning]);
 
   // Phase 2: Party walk-in over real battle background (navigate already happened)
   useEffect(() => {
     if (!walkPhaseStarted) return;
+    if (!partyPreview?.length) {
+      setTransitioning(false);
+      setWalkPhaseStarted(false);
+      return;
+    }
 
     overlayOpacity.value = 1;
     walkProgress.value = 0;
@@ -205,7 +228,7 @@ export const EncounterTransition = () => {
         }
       }
     );
-  }, [walkPhaseStarted]);
+  }, [walkPhaseStarted, partyPreview, setTransitioning]);
 
   const uniforms = useDerivedValue(() => ({
     progress: progress.value,
@@ -236,7 +259,7 @@ export const EncounterTransition = () => {
       )}
 
       {/* Walk-in: only party avatars over transparent overlay (Battle screen visible behind) */}
-      {walkPhaseStarted && (
+      {walkPhaseStarted && party.length > 0 && (
         <Animated.View style={[styles.walkOverlay, overlayStyle]} pointerEvents="none">
           <View style={styles.partyRow}>
             {party.slice(0, 3).map((item, index) => (

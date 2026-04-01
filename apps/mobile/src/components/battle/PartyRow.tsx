@@ -1,11 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, Easing } from 'react-native-reanimated';
 import { ArrowUp } from 'lucide-react-native';
 import LayeredAvatar from '@/components/LayeredAvatar';
 import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
 import { StatusBarMetric } from './StatusBarMetric';
-import { COLORS } from './battleTheme';
+import { COLORS, MELEE_IMPACT_ENTRY_DELAY_MS } from './battleTheme';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+
+function isCloseRangeSkillVfx(vfx: string | undefined): boolean {
+  return vfx === 'melee' || vfx === 'impact';
+}
 
 interface PartyRowProps {
   party: any[];
@@ -20,7 +26,8 @@ interface PartyRowProps {
   petAction?: 'idle' | 'walk' | 'enter';
   onPetEnterComplete?: () => void;
   lastDamageEvent?: any;
-  weaponGripCast?: { key: number; durationMs: number; casterCharId: string } | null;
+  lastSkillAnimationConfig?: { vfx_type?: string; duration_ms?: number } | null;
+  weaponGripCast?: { key: number; durationMs: number; casterCharId: string; delayMs?: number } | null;
 }
 
 function PartyMemberNode({
@@ -35,12 +42,19 @@ function PartyMemberNode({
   petSpriteActive,
   onPetEnterComplete,
   lastDamageEvent,
+  lastSkillAnimationConfig,
   weaponGripCast,
+  partySlotIndex = 0,
+  partySize = 1,
 }: any) {
   const isPet = char.type === 'pet';
   const lungeY = useSharedValue(0);
+  const lungeX = useSharedValue(0);
   const exitY = useSharedValue(0);
   const exitOpacity = useSharedValue(1);
+  const [weaponGripKey, setWeaponGripKey] = useState<number | undefined>(undefined);
+  const [petStrikePlayKey, setPetStrikePlayKey] = useState<string | undefined>(undefined);
+  const lungePlayedForTsRef = useRef<number | null>(null);
 
   const hp = visualHp ?? char.hp ?? 0;
   const [leftBattle, setLeftBattle] = useState(() => hp <= 0);
@@ -64,27 +78,119 @@ function PartyMemberNode({
   }, [hp, leftBattle]);
 
   useEffect(() => {
+    if (!weaponGripCast || weaponGripCast.casterCharId !== char.id) {
+      setWeaponGripKey(undefined);
+      return;
+    }
+    const delay = weaponGripCast.delayMs ?? 0;
+    const k = weaponGripCast.key;
+    if (delay <= 0) {
+      setWeaponGripKey(k);
+      return;
+    }
+    const t = setTimeout(() => setWeaponGripKey(k), delay);
+    return () => clearTimeout(t);
+  }, [weaponGripCast?.key, weaponGripCast?.casterCharId, weaponGripCast?.delayMs, char.id]);
+
+  useEffect(() => {
     if (!lastDamageEvent || hp <= 0) return;
 
-    // Character attacks (lunge up)
-    if (lastDamageEvent.casterCharId === char.id) {
-      lungeY.value = withSequence(
-        withTiming(-50, { duration: 150, easing: Easing.out(Easing.cubic) }),
-        withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) })
-      );
-    }
     // Character takes damage (flinch down)
-    else if (lastDamageEvent.targetId === char.id || lastDamageEvent.targetId === 'ALL_FRIENDS') {
+    if (lastDamageEvent.targetId === char.id || lastDamageEvent.targetId === 'ALL_FRIENDS') {
+      if (lastDamageEvent.casterCharId === char.id) return;
+      lungeX.value = 0;
       lungeY.value = withSequence(
         withTiming(15, { duration: 100 }),
         withTiming(0, { duration: 150 })
       );
+      return;
     }
-  }, [lastDamageEvent?.timestamp, hp]);
+
+    // Attacker motion
+    if (lastDamageEvent.casterCharId !== char.id) return;
+
+    const targetEnemy = lastDamageEvent.targetId === 'ENEMY';
+    const hasSkillMeta = lastDamageEvent.skillId != null || lastDamageEvent.abilityName != null;
+    const vfx = lastSkillAnimationConfig?.vfx_type;
+
+    if (hasSkillMeta && targetEnemy && vfx === undefined) {
+      return;
+    }
+
+    if (lungePlayedForTsRef.current === lastDamageEvent.timestamp) return;
+    lungePlayedForTsRef.current = lastDamageEvent.timestamp;
+
+    const skillDur = lastSkillAnimationConfig?.duration_ms ?? 500;
+    const totalW = partySize * 100 + Math.max(0, partySize - 1) * 20;
+    const layoutStartX = (SCREEN_WIDTH - totalW) / 2;
+    const myCenterX = layoutStartX + partySlotIndex * 120 + 50;
+    const nudgeX = (SCREEN_WIDTH / 2 - myCenterX) * 0.18;
+
+    if (targetEnemy && isCloseRangeSkillVfx(vfx ?? 'impact')) {
+      const forwardY = -112;
+      lungeY.value = withSequence(
+        withTiming(forwardY, {
+          duration: MELEE_IMPACT_ENTRY_DELAY_MS * 0.9,
+          easing: Easing.out(Easing.cubic),
+        }),
+        withTiming(forwardY * 0.38, { duration: skillDur * 0.32, easing: Easing.linear }),
+        withTiming(0, { duration: 320, easing: Easing.out(Easing.cubic) })
+      );
+      lungeX.value = withSequence(
+        withTiming(nudgeX, {
+          duration: MELEE_IMPACT_ENTRY_DELAY_MS * 0.9,
+          easing: Easing.out(Easing.cubic),
+        }),
+        withTiming(nudgeX * 0.4, { duration: skillDur * 0.32, easing: Easing.linear }),
+        withTiming(0, { duration: 320, easing: Easing.out(Easing.cubic) })
+      );
+    } else {
+      lungeX.value = withTiming(0, { duration: 200 });
+      lungeY.value = withSequence(
+        withTiming(-48, { duration: 150, easing: Easing.out(Easing.cubic) }),
+        withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) })
+      );
+    }
+  }, [lastDamageEvent, lastSkillAnimationConfig?.vfx_type, lastSkillAnimationConfig?.duration_ms, hp, char.id, partySlotIndex, partySize]);
+
+  useEffect(() => {
+    if (!isPet || !lastDamageEvent || lastDamageEvent.casterCharId !== char.id) {
+      setPetStrikePlayKey(undefined);
+      return;
+    }
+    const hasSkillMeta = lastDamageEvent.skillId != null || lastDamageEvent.abilityName != null;
+    const vfx = lastSkillAnimationConfig?.vfx_type;
+    if (hasSkillMeta && lastDamageEvent.targetId === 'ENEMY' && vfx === undefined) return;
+
+    const key = `${char.id}-${petAction}-${lastDamageEvent.timestamp}`;
+    const delay =
+      lastDamageEvent.targetId === 'ENEMY' && isCloseRangeSkillVfx(vfx ?? 'impact')
+        ? MELEE_IMPACT_ENTRY_DELAY_MS
+        : 0;
+    if (delay <= 0) {
+      setPetStrikePlayKey(key);
+      return;
+    }
+    const t = setTimeout(() => setPetStrikePlayKey(key), delay);
+    return () => clearTimeout(t);
+  }, [
+    isPet,
+    lastDamageEvent?.timestamp,
+    lastDamageEvent?.casterCharId,
+    lastDamageEvent?.targetId,
+    lastDamageEvent?.skillId,
+    lastDamageEvent?.abilityName,
+    lastSkillAnimationConfig?.vfx_type,
+    petAction,
+    char.id,
+  ]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: exitOpacity.value,
-    transform: [{ translateY: lungeY.value + exitY.value }],
+    transform: [
+      { translateX: lungeX.value },
+      { translateY: lungeY.value + exitY.value },
+    ],
   }));
 
   if (leftBattle) {
@@ -110,7 +216,9 @@ function PartyMemberNode({
             square
             hideBackground
             animate={false}
-            playOnceKey={(petAction === 'enter' || (lastDamageEvent?.casterCharId === char.id)) ? `${char.id}-${petAction}-${lastDamageEvent?.timestamp || 0}` : undefined}
+            playOnceKey={
+              petAction === 'enter' ? `${char.id}-pet-enter` : petStrikePlayKey
+            }
             breathe={!petSpriteActive && petAction !== 'enter'}
             onPlayOnceComplete={onPetEnterComplete}
           />
@@ -124,9 +232,7 @@ function PartyMemberNode({
               allowOverflow
               allShopItems={allShopItems}
               style={{ backgroundColor: 'transparent' }}
-              weaponGripAttackKey={
-                weaponGripCast?.casterCharId === char.id ? weaponGripCast.key : undefined
-              }
+              weaponGripAttackKey={weaponGripCast?.casterCharId === char.id ? weaponGripKey : undefined}
               weaponGripAttackDurationMs={
                 weaponGripCast?.casterCharId === char.id ? weaponGripCast.durationMs : undefined
               }
@@ -166,6 +272,7 @@ export function PartyRow({
   petAction = 'idle',
   onPetEnterComplete,
   lastDamageEvent,
+  lastSkillAnimationConfig,
   weaponGripCast,
 }: PartyRowProps) {
   // Use Animated.View for backward compatibility with the parent's partyOpacity Animated.Value
@@ -190,7 +297,10 @@ export function PartyRow({
             petSpriteActive={petSpriteActive}
             onPetEnterComplete={onPetEnterComplete}
             lastDamageEvent={lastDamageEvent}
+            lastSkillAnimationConfig={lastSkillAnimationConfig}
             weaponGripCast={weaponGripCast}
+            partySlotIndex={index}
+            partySize={party.length}
           />
         );
       })}

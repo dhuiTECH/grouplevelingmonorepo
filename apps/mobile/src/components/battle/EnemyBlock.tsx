@@ -8,6 +8,13 @@ import { COLORS } from './battleTheme';
 import { useBattleStore } from '@/store/useBattleStore';
 import { PHASE } from '@/store/useBattleStore';
 
+/** Layout reference; icon + spritesheet enemies share the same rendered sprite size. */
+const ENEMY_REFERENCE = 260;
+const ENEMY_ICON_SIZE = Math.round(ENEMY_REFERENCE * 0.82);
+/** Spritesheet mobs (e.g. Shiba) match `icon_url` mobs — same `size` as `enemyImage`. */
+const ENEMY_SPRITE_SIZE = ENEMY_ICON_SIZE;
+const ENEMY_FIGURE_BOX = Math.round(ENEMY_ICON_SIZE * 1.05);
+
 interface EnemyBlockProps {
   enemyFigureRef: RefObject<View | null>;
   setEnemyFigureCenter: (center: { x: number; y: number }) => void;
@@ -107,7 +114,7 @@ export function EnemyBlock({
         {enemy?.metadata ? (
           <OptimizedPetAvatar
             petDetails={enemy}
-            size={172}
+            size={ENEMY_SPRITE_SIZE}
             hideBackground
             borderRadius={0}
             action={action}
@@ -160,14 +167,15 @@ const styles = StyleSheet.create({
     fontSize: 9,
   },
   enemyFigure: {
-    width: 176,
-    height: 176,
+    width: ENEMY_FIGURE_BOX,
+    height: ENEMY_FIGURE_BOX,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
-    marginTop: 4,
+    /** Pull sprite closer to HP bar after larger avatar size */
+    marginTop: -28,
   },
-  enemyImage: { width: 142, height: 142 },
-  enemyEmoji: { fontSize: 58 },
+  enemyImage: { width: ENEMY_ICON_SIZE, height: ENEMY_ICON_SIZE },
+  enemyEmoji: { fontSize: 88 },
   enemyAttacking: { borderColor: '#ef4444', transform: [{ scale: 1.1 }] },
 });

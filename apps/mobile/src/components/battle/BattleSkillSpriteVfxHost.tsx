@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Dimensions } from 'react-native';
 import SkillSpriteVfx from '@/components/SkillSpriteVfx';
+import { MELEE_IMPACT_ENTRY_DELAY_MS } from '@/components/battle/battleTheme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -68,6 +69,13 @@ export function BattleSkillSpriteVfxHost({
 
   const needsStartCoords = isProjectile || isBeam;
 
+  const playDelayMs = useMemo(() => {
+    const vfx = lastSkillAnimationConfig.vfx_type ?? 'impact';
+    if (lastDamageEvent.targetId !== 'ENEMY') return 0;
+    if (vfx !== 'melee' && vfx !== 'impact') return 0;
+    return MELEE_IMPACT_ENTRY_DELAY_MS;
+  }, [lastDamageEvent.targetId, lastSkillAnimationConfig.vfx_type, lastDamageEvent.timestamp]);
+
   return (
     <SkillSpriteVfx
       key={lastDamageEvent.timestamp}
@@ -77,6 +85,7 @@ export function BattleSkillSpriteVfxHost({
       startX={needsStartCoords ? startX : undefined}
       startY={needsStartCoords ? startY : undefined}
       playCount={lastDamageEvent.skillUseCount ?? 1}
+      playDelayMs={playDelayMs}
       onEnd={() => {
         clearLastSkillAnimation();
       }}

@@ -7,7 +7,12 @@ import React, {
   type SetStateAction,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { View, StyleSheet, AppState, AppStateStatus } from "react-native";
+import {
+  View,
+  StyleSheet,
+  AppState,
+  AppStateStatus,
+} from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import { Alert } from "react-native";
@@ -19,8 +24,6 @@ import Reanimated, {
   useAnimatedReaction,
   runOnJS,
 } from "react-native-reanimated";
-import { makeImageFromView } from "@shopify/react-native-skia";
-
 import { useAuth } from "@/contexts/AuthContext";
 import { useAudio } from "@/contexts/AudioContext";
 import { useExploration } from "@/hooks/useExploration";
@@ -44,6 +47,7 @@ import { MapLoadingOverlay } from "@/components/world-map/MapLoadingOverlay";
 import { NavigationTargetArrow } from "@/components/world-map/NavigationTargetArrow";
 import { WorldNodesLayer } from "@/components/world-map/WorldNodesLayer";
 import { PartyMembersLayer } from "@/components/world-map/PartyMembersLayer";
+import { prefetchDialogueNodeAssets } from "@/utils/prefetchDialogueNodeAssets";
 
 import { usePartyPresence } from "@/hooks/usePartyPresence";
 import { useMapUIAnimations } from "@/hooks/useMapUIAnimations";
@@ -52,8 +56,10 @@ import { playWorldMapFootstep } from "@/utils/audio";
 import { useSystemNews } from "@/hooks/useSystemNews";
 import { useMapCharacter } from "@/hooks/useMapCharacter";
 import { STEPS_PER_TILE } from "@/hooks/useLocalMovementBudget";
+import { useJeffreyMapDemo, JEFFREY_MAP_DEMO_ENCOUNTER_ID } from "@/hooks/useJeffreyMapDemo";
 
 import type { User } from "@/types/user";
+import type { PartyPreviewItem } from "@/context/TransitionContext";
 import { worldMapStyles } from "./WorldMapScreen.styles";
 
 const TILE_SIZE = 48;
@@ -84,6 +90,9 @@ export const WorldMapScreen = () => {
   const activePet =
     pets.find((p) => p.id === activePetId) ??
     (pets.length > 0 ? pets[0] : null);
+
+  const activePetRef = useRef(activePet);
+  activePetRef.current = activePet;
 
   // Source of truth: which direction is currently being held
   const activeDirection = useSharedValue<
@@ -168,6 +177,29 @@ export const WorldMapScreen = () => {
     loadData,
   } = useMapData(user?.id);
 
+  const allShopItemsRef = useRef(allShopItems);
+  allShopItemsRef.current = allShopItems;
+
+  const viewRef = useAnimatedRef<View>();
+  const { startTransition } = useTransition();
+
+  const {
+    explorationOptions: jeffreyExplorationOptions,
+    ensureShopItemsForPreview,
+    captureMapSnapshotForBattle,
+  } = useJeffreyMapDemo({
+    encounterId: JEFFREY_MAP_DEMO_ENCOUNTER_ID,
+    mapId: activeMapId,
+    userRef,
+    activePetRef,
+    allShopItemsRef,
+    viewRef,
+    navigation,
+    startTransition,
+  });
+
+  const flushPendingVisionRef = useRef<() => void>(() => {});
+
   const {
     onTileEnter,
     refreshVision,
@@ -184,7 +216,19 @@ export const WorldMapScreen = () => {
     setActiveRaid,
     setRaidModalVisible,
     activeMapId,
+    undefined,
+    jeffreyExplorationOptions,
   );
+
+  flushPendingVisionRef.current = flushPendingVision;
+
+  /** After the player pauses or the visible node set changes, warm dialogue backgrounds / portraits (not voice — see DialogueScene). */
+  useEffect(() => {
+    const t = setTimeout(() => {
+      prefetchDialogueNodeAssets(nodesInVision ?? []);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [nodesInVision]);
 
   const stableVisionGridPrevRef = useRef<any[]>([]);
   const stableVisionGridRef = useRef<any[]>([]);
@@ -197,7 +241,9 @@ export const WorldMapScreen = () => {
         !prev ||
         prev.x !== cell.x ||
         prev.y !== cell.y ||
-        (prev.tiles?.length ?? 0) !== (cell.tiles?.length ?? 0)
+        (prev.tiles?.length ?? 0) !== (cell.tiles?.length ?? 0) ||
+        (prev.node?.id ?? null) !== (cell.node?.id ?? null) ||
+        prev.isVisible !== cell.isVisible
       );
     });
   if (visionGridHasChanged) {
@@ -223,14 +269,14 @@ export const WorldMapScreen = () => {
       const next = { ...prev, steps_banked: nextBank };
       setUser(next);
       userRef.current = next;
+
       return true;
     },
     [movementBudget, setUser],
   );
 
   // Ref keeps saveSessionPosition stable; do not call setUser inside it (avoids focus blur/enter loops).
-  const flushPendingVisionRef = useRef(flushPendingVision);
-  flushPendingVisionRef.current = flushPendingVision;
+  // flushPendingVisionRef is set after useExploration (same flush as Jeffrey defer).
   const userIdRef = useRef(user?.id);
   userIdRef.current = user?.id;
 
@@ -282,8 +328,6 @@ export const WorldMapScreen = () => {
   }, [activeMapId, user?.id, refreshVision, flushPendingVision]);
 
   const { partyMembersOnline } = usePartyPresence();
-  const viewRef = useAnimatedRef<View>();
-  const { startTransition } = useTransition();
   const { floatAnim, pulseAnim, spin } = useMapUIAnimations();
   const {
     playerBaseX,
@@ -496,7 +540,7 @@ export const WorldMapScreen = () => {
 
   const startTestBattle = useCallback(async () => {
     try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const { data, error } = await supabase
         .from("encounter_pool")
         .select("id")
@@ -504,24 +548,29 @@ export const WorldMapScreen = () => {
       if (error) throw error;
       if (data?.length) {
         const randomId = data[Math.floor(Math.random() * data.length)].id;
-        const snapshot = await makeImageFromView(viewRef);
-        const partyPreview = [];
-        if (user)
-          partyPreview.push({ type: "player" as const, user, allShopItems });
-        if (activePet?.pet_details)
+        const u = userRef.current;
+        if (!u) return;
+        const shop = await ensureShopItemsForPreview();
+        const ap = activePetRef.current;
+        const partyPreview: PartyPreviewItem[] = [
+          { type: "player" as const, user: u, allShopItems: shop },
+        ];
+        if (ap?.pet_details) {
           partyPreview.push({
             type: "pet" as const,
-            petDetails: activePet.pet_details,
+            petDetails: ap.pet_details,
           });
-        if (snapshot) {
-          startTransition(
-            snapshot,
-            () => navigation.navigate("Battle", { encounterId: randomId }),
-            partyPreview.length > 0 ? partyPreview : undefined,
-          );
-        } else {
-          navigation.navigate("Battle", { encounterId: randomId });
         }
+        const snapshot = await captureMapSnapshotForBattle();
+        startTransition(
+          snapshot,
+          () =>
+            navigation.navigate("Battle", {
+              encounterId: randomId,
+              mapId: activeMapId,
+            }),
+          partyPreview,
+        );
       } else {
         Alert.alert("System Error", "No encounters found in pool.");
       }
@@ -529,7 +578,19 @@ export const WorldMapScreen = () => {
       console.error("Error starting test battle:", err);
       Alert.alert("System Error", "Failed to initialize test combat.");
     }
-  }, [user, activePet, allShopItems, startTransition, navigation]);
+  }, [
+    startTransition,
+    navigation,
+    ensureShopItemsForPreview,
+    captureMapSnapshotForBattle,
+    activeMapId,
+  ]);
+
+  const handlePressWorld = useCallback(() => setTravelMenuVisible(true), []);
+  const handlePressTemple = useCallback(
+    () => navigation.navigate("Temple"),
+    [navigation],
+  );
 
   useEffect(() => {
     if (user && user.level > previousLevel) {
@@ -601,8 +662,8 @@ export const WorldMapScreen = () => {
         </SkiaWorldMap>
 
         <MapHUD
-          onPressTemple={() => navigation.navigate("Temple")}
-          onPressWorld={() => setTravelMenuVisible(true)}
+          onPressTemple={handlePressTemple}
+          onPressWorld={handlePressWorld}
           onPressBattle={startTestBattle}
           floatAnim={floatAnim}
         />
@@ -636,6 +697,7 @@ export const WorldMapScreen = () => {
             setSelectedNode(null);
           }}
           activeInteraction={activeInteraction || selectedNode}
+          mapId={activeMapId}
         />
 
         <LevelUpModal

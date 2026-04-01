@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
+import { useEncounterPoolStore } from "@/store/useEncounterPoolStore";
 
 const MAP_DATA_CACHE_KEY = "world_map_bootstrap_v1";
+const MAP_LOAD_MIN_MS = 2000;
 
 function normalizeMapSettings(settings: any) {
   if (!settings) return null;
@@ -61,39 +63,70 @@ export function useMapData(userId: string | undefined) {
     setLoadingMap(true);
 
     const hydrated = await hydrateFromCache();
-    if (hydrated) {
-      // Local-first render path: keep map responsive, refresh in background.
-      setLoadingMap(false);
-    }
 
-    try {
-      const [mapRes, settingsRes, shopRes] = await Promise.all([
-        supabase.from("maps").select("id").eq("is_active", true).single(),
-        supabase.from("world_map_settings").select("*").eq("id", 1).single(),
-        supabase.from("shop_items").select("*"),
-      ]);
+    const minDisplay = new Promise<void>((resolve) =>
+      setTimeout(resolve, MAP_LOAD_MIN_MS),
+    );
 
-      const nextActiveMapId = mapRes.data?.id ?? null;
-      const nextMapSettings = normalizeMapSettings(settingsRes.data);
-      const nextShopItems = shopRes.data ?? [];
+    const fetchWork = async () => {
+      try {
+        const mapPromise = supabase
+          .from("maps")
+          .select("id")
+          .eq("is_active", true)
+          .single();
+        const settingsPromise = supabase
+          .from("world_map_settings")
+          .select("*")
+          .eq("id", 1)
+          .single();
+        const shopPromise = supabase.from("shop_items").select("*");
+        const encounterPromise = mapPromise.then(async (mapRes) => {
+          const id = mapRes.data?.id;
+          if (!id) return [] as any[];
+          const { data } = await supabase
+            .from("encounter_pool")
+            .select("*")
+            .eq("map_id", id);
+          return data ?? [];
+        });
 
-      if (nextActiveMapId) setActiveMapId(nextActiveMapId);
-      if (nextMapSettings) setMapSettings(nextMapSettings);
-      setAllShopItems(nextShopItems);
+        const [mapRes, settingsRes, shopRes, encounterRows] = await Promise.all([
+          mapPromise,
+          settingsPromise,
+          shopPromise,
+          encounterPromise,
+        ]);
 
-      await persistCache({
-        activeMapId: nextActiveMapId,
-        mapSettings: nextMapSettings,
-        allShopItems: nextShopItems,
-      });
-    } catch (err) {
-      console.error("Error loading world data:", err);
-      if (!hydrated) {
-        setMapError("Failed to load world data. Check connection.");
+        const nextActiveMapId = mapRes.data?.id ?? null;
+        const nextMapSettings = normalizeMapSettings(settingsRes.data);
+        const nextShopItems = shopRes.data ?? [];
+
+        if (nextActiveMapId) {
+          useEncounterPoolStore
+            .getState()
+            .setPoolForMap(nextActiveMapId, encounterRows);
+        }
+
+        if (nextActiveMapId) setActiveMapId(nextActiveMapId);
+        if (nextMapSettings) setMapSettings(nextMapSettings);
+        setAllShopItems(nextShopItems);
+
+        await persistCache({
+          activeMapId: nextActiveMapId,
+          mapSettings: nextMapSettings,
+          allShopItems: nextShopItems,
+        });
+      } catch (err) {
+        console.error("Error loading world data:", err);
+        if (!hydrated) {
+          setMapError("Failed to load world data. Check connection.");
+        }
       }
-    } finally {
-      setLoadingMap(false);
-    }
+    };
+
+    await Promise.all([fetchWork(), minDisplay]);
+    setLoadingMap(false);
   }, [hydrateFromCache, persistCache]);
 
   useEffect(() => {

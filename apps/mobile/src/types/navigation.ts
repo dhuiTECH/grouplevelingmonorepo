@@ -17,7 +17,13 @@ export type RootStackParamList = {
   Training: undefined;
   WorldMap: undefined;
   PetDetail: { pet: any };
-  Battle: { encounterId?: string; raidId?: string; isBoss?: boolean };
+  Battle: {
+    encounterId?: string;
+    raidId?: string;
+    isBoss?: boolean;
+    mapId?: string;
+    partySize?: number;
+  };
   DungeonTracker: { dungeon: any };
   RunComplete: { runData: any; dungeon: any };
   DungeonLeaderboard: { dungeon: any };

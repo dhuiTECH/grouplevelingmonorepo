@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect } from 'react';
 import { View, TouchableOpacity, TextInput, StyleSheet, Platform, useWindowDimensions, Text, Image, Pressable } from 'react-native';
 import Svg, {
   Path,
@@ -19,6 +19,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BattleAssetWarmer } from '@/components/BattleAssetWarmer';
 import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import LayeredAvatar from '@/components/LayeredAvatar';
+import { useAuth } from '@/contexts/AuthContext';
+import { persistBattleRewards } from '@/utils/persistBattleRewards';
 
 // --- Types ---
 interface VictoryPlayerStats {
@@ -50,7 +52,7 @@ interface VictoryReward {
   rarityColor: string;
 }
 
-interface VictoryScreenProps {
+export interface VictoryScreenProps {
   enemy: any;
   party: any[];
   spriteUrls: string[];
@@ -65,7 +67,11 @@ interface VictoryScreenProps {
   player?: VictoryPlayerStats;
   victoryParty?: VictoryPartyMember[];
   rewards?: VictoryReward[];
+  /** Dedupes optimistic reward apply across React Strict Mode remounts. */
+  rewardApplyKey?: string;
 }
+
+const appliedVictoryRewardKeys = new Set<string>();
 
 // --- Components ---
 
@@ -124,12 +130,34 @@ export function VictoryScreen({
   player,
   victoryParty,
   rewards,
+  rewardApplyKey,
 }: VictoryScreenProps) {
   const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+  const { user, setUser } = useAuth();
 
   const isCatchable = !!enemy?.metadata?.catchable;
   const shouldShowCapture =
     isCatchable && petCaptureState !== 'done' && petCaptureState !== 'skipped';
+
+  useEffect(() => {
+    if (shouldShowCapture || !rewardApplyKey || !user?.id) return;
+    if (appliedVictoryRewardKeys.has(rewardApplyKey)) return;
+    const expGained = player?.expGained ?? 0;
+    const coinsGained = rewards?.find((r) => r.id === 'gold')?.quantity ?? 0;
+    if (expGained === 0 && coinsGained === 0) return;
+    appliedVictoryRewardKeys.add(rewardApplyKey);
+    setUser((prev) =>
+      prev?.id
+        ? {
+            ...prev,
+            exp: (prev.exp ?? 0) + expGained,
+            coins: (prev.coins ?? 0) + coinsGained,
+          }
+        : prev,
+    );
+    void persistBattleRewards(user.id, expGained, coinsGained);
+    // Intentionally omit `rewards` / full `user` from deps: parent recreates `rewards` every render and would retrigger this effect.
+  }, [shouldShowCapture, rewardApplyKey, user?.id, setUser]);
 
   // --- Pet Capture View ---
   if (shouldShowCapture) {

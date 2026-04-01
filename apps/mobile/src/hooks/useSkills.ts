@@ -312,10 +312,8 @@ export const useSkills = (userId?: string) => {
       };
     }).filter(Boolean) as any[];
 
-    const hasBasic = fromLoadout.some((a: any) => a.id === basicAttackId);
-    if (hasBasic) {
-      return dedupeAbilitiesByName(dedupeAbilitiesById(fromLoadout));
-    }
+    /** Loadout skills only (basic removed) so we can always prepend basic once → up to 5 abilities in battle. */
+    const loadoutSansBasic = fromLoadout.filter((a: any) => a.id !== basicAttackId);
 
     const def = (skillDefinitions as Record<string, unknown>[]).find((s) => String(s?.id ?? '') === basicAttackId);
     const node = getSkillNode(basicAttackId);
@@ -342,7 +340,7 @@ export const useSkills = (userId?: string) => {
         })()
       : { ...GENERIC_ATTACK_FALLBACK, target: 'enemy', target_type: 'enemy' };
 
-    return dedupeAbilitiesByName(dedupeAbilitiesById([basicAbility, ...fromLoadout]));
+    return dedupeAbilitiesByName(dedupeAbilitiesById([basicAbility, ...loadoutSansBasic]));
   };
 
   const updateLoadout = async (newLoadout: string[]) => {
