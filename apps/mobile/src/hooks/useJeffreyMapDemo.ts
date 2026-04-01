@@ -1,4 +1,4 @@
-import { useRef, useMemo, useCallback, useEffect } from "react";
+import { useRef, useMemo, useCallback } from "react";
 import { Alert } from "react-native";
 import * as Haptics from "expo-haptics";
 import { makeImageFromView } from "@shopify/react-native-skia";
@@ -6,7 +6,6 @@ import type { SkImage } from "@shopify/react-native-skia";
 import type { AnimatedRef } from "react-native-reanimated";
 import type { SharedValue } from "react-native-reanimated";
 import type { View } from "react-native";
-import { Pedometer } from "expo-sensors";
 import { supabase } from "@/lib/supabase";
 import type { PartyPreviewItem } from "@/context/TransitionContext";
 import type { UseExplorationOptions } from "@/hooks/useExploration";
@@ -16,7 +15,7 @@ import type { User } from "@/types/user";
 export const JEFFREY_MAP_DEMO_ENCOUNTER_ID =
   "48a4be65-2fd1-42de-a5fe-2ef71c6b6f8e";
 
-/** Real pedometer steps required to trigger the Jeffrey battle. */
+/** Banked steps spent on the world map before Jeffrey fires. */
 export const JEFFREY_MAP_DEMO_TRIGGER_STEPS = 300;
 
 const LOG_PREFIX = "[JeffreyMapDemo]";
@@ -68,6 +67,7 @@ export function useJeffreyMapDemo({
 }: UseJeffreyMapDemoParams) {
   const suppressEncounterRollRef = useRef(false);
   const demoDoneRef = useRef(false);
+  const bankedStepsSpentRef = useRef(0);
   const triggerBattleRef = useRef<() => void | Promise<void>>(() => {});
 
   const ensureShopItemsForPreview = useCallback(async () => {
@@ -146,53 +146,26 @@ export function useJeffreyMapDemo({
   triggerBattleRef.current = startJeffreyBattleTransition;
 
   /**
-   * Live pedometer subscription — triggers Jeffrey after JEFFREY_MAP_DEMO_TRIGGER_STEPS
-   * real steps taken on the world map.  Unsubscribes automatically after firing or on unmount.
+   * Called by WorldMapScreen's spendStepsBank every time banked steps are
+   * successfully spent. Accumulates the total and fires Jeffrey once the
+   * threshold is reached.
    */
-  useEffect(() => {
-    if (!encounterId) return;
-
-    let cancelled = false;
-    let subscription: { remove: () => void } | null = null;
-    let stepBaseline: number | null = null;
-
-    (async () => {
-      const available = await Pedometer.isAvailableAsync();
-      if (!available || cancelled) {
-        logDev("pedometer unavailable or cancelled before start");
-        return;
-      }
-
-      logDev("pedometer subscription started", { need: JEFFREY_MAP_DEMO_TRIGGER_STEPS });
-
-      subscription = Pedometer.watchStepCount((result) => {
-        if (cancelled || demoDoneRef.current) return;
-
-        if (stepBaseline === null) {
-          stepBaseline = result.steps;
-          logDev("step baseline set", { baseline: stepBaseline });
-          return;
-        }
-
-        const delta = result.steps - stepBaseline;
-        logDev("step update", { delta, need: JEFFREY_MAP_DEMO_TRIGGER_STEPS });
-
-        if (delta >= JEFFREY_MAP_DEMO_TRIGGER_STEPS) {
-          demoDoneRef.current = true;
-          suppressEncounterRollRef.current = true;
-          subscription?.remove();
-          subscription = null;
-          logDev("step threshold reached — triggering battle");
-          void triggerBattleRef.current();
-        }
+  const onBankedStepsSpent = useCallback(
+    (cost: number) => {
+      if (!encounterId || demoDoneRef.current) return;
+      bankedStepsSpentRef.current += cost;
+      logDev("banked steps spent", {
+        total: bankedStepsSpentRef.current,
+        need: JEFFREY_MAP_DEMO_TRIGGER_STEPS,
       });
-    })();
-
-    return () => {
-      cancelled = true;
-      subscription?.remove();
-    };
-  }, [encounterId]);
+      if (bankedStepsSpentRef.current < JEFFREY_MAP_DEMO_TRIGGER_STEPS) return;
+      demoDoneRef.current = true;
+      suppressEncounterRollRef.current = true;
+      logDev("threshold reached — triggering battle");
+      void triggerBattleRef.current();
+    },
+    [encounterId],
+  );
 
   const explorationOptions: UseExplorationOptions = useMemo(
     () => ({
@@ -203,6 +176,7 @@ export function useJeffreyMapDemo({
 
   return {
     explorationOptions,
+    onBankedStepsSpent,
     ensureShopItemsForPreview,
     captureMapSnapshotForBattle,
     startJeffreyBattleTransition,

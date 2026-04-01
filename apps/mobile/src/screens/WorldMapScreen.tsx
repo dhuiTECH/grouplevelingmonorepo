@@ -187,6 +187,7 @@ export const WorldMapScreen = () => {
 
   const {
     explorationOptions: jeffreyExplorationOptions,
+    onBankedStepsSpent,
     ensureShopItemsForPreview,
     captureMapSnapshotForBattle,
   } = useJeffreyMapDemo({
@@ -272,10 +273,10 @@ export const WorldMapScreen = () => {
       const next = { ...prev, steps_banked: nextBank };
       setUser(next);
       userRef.current = next;
-
+      onBankedStepsSpent(cost);
       return true;
     },
-    [movementBudget, setUser],
+    [movementBudget, setUser, onBankedStepsSpent],
   );
 
   // Ref keeps saveSessionPosition stable; do not call setUser inside it (avoids focus blur/enter loops).
