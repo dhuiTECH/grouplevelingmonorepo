@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useActivePet } from '@/contexts/ActivePetContext';
 import { useSkills } from '@/hooks/useSkills';
 import { useBattleStore } from '@/store/useBattleStore';
+import { useShallow } from 'zustand/react/shallow';
 import { usePets } from '@/hooks/usePets';
 import { fetchSkillAnimation, fetchSkillAnimationsBatch, resolveSkillKeys } from '@/api/skillAnimations';
 import type { SkillAnimationConfig } from '@/components/SkillSpriteVfx';
@@ -133,15 +134,44 @@ export const useBattleLogic = ({
   const { getBattleSkills, loadout, loading: loadingSkills } = useSkills(user?.id); // Use the skills hook
   const [loading, setLoading] = useState(true);
   
-  // Store Entities & State
   const {
     party, enemy, currentPhase, stance, stanceLevel, activeIndex, logs, chainCount,
     turnQueue, queueIndex, plannedAbilities, selectedAbilityId, enemyTargetId,
     parryPreDelay, parryWindowActive, qteTargets, qteStats, focusMode, burstCharged,
     comboMultiplier, currentPattern, successFlash, failFlash, sequenceFeedback,
     lastDamageEvent, lastSkillAnimationConfig, assetsLoaded, preloadedSpriteUrls,
-    setBattleState
-  } = useBattleStore();
+  } = useBattleStore(useShallow((s) => ({
+    party: s.party,
+    enemy: s.enemy,
+    currentPhase: s.currentPhase,
+    stance: s.stance,
+    stanceLevel: s.stanceLevel,
+    activeIndex: s.activeIndex,
+    logs: s.logs,
+    chainCount: s.chainCount,
+    turnQueue: s.turnQueue,
+    queueIndex: s.queueIndex,
+    plannedAbilities: s.plannedAbilities,
+    selectedAbilityId: s.selectedAbilityId,
+    enemyTargetId: s.enemyTargetId,
+    parryPreDelay: s.parryPreDelay,
+    parryWindowActive: s.parryWindowActive,
+    qteTargets: s.qteTargets,
+    qteStats: s.qteStats,
+    focusMode: s.focusMode,
+    burstCharged: s.burstCharged,
+    comboMultiplier: s.comboMultiplier,
+    currentPattern: s.currentPattern,
+    successFlash: s.successFlash,
+    failFlash: s.failFlash,
+    sequenceFeedback: s.sequenceFeedback,
+    lastDamageEvent: s.lastDamageEvent,
+    lastSkillAnimationConfig: s.lastSkillAnimationConfig,
+    assetsLoaded: s.assetsLoaded,
+    preloadedSpriteUrls: s.preloadedSpriteUrls,
+  })));
+
+  const setBattleState = useBattleStore((s) => s.setBattleState);
 
   const setParty = (valOrUpdater: any) => setBattleState(state => ({ party: typeof valOrUpdater === 'function' ? valOrUpdater(state.party) : valOrUpdater }));
   const setEnemy = (valOrUpdater: any) => setBattleState(state => ({ enemy: typeof valOrUpdater === 'function' ? valOrUpdater(state.enemy) : valOrUpdater }));
