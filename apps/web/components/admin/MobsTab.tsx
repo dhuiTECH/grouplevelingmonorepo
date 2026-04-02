@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Pencil, Plus, Trash2, Upload, Music2, Image as ImageIcon } from 'lucide-react';
+import { Loader2, Pencil, Plus, Trash2, Upload, Music2, Image as ImageIcon, ImageOff, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { motion } from 'framer-motion';
 import MiniBattleSimulator from './MiniBattleSimulator';
 import { SkillSearchSelect } from './SkillSearchSelect';
 import { BattleBackgroundPicker } from './BattleBackgroundPicker';
+import DropZone from './DropZone';
 
 interface Skill {
   id: string;
@@ -26,6 +27,10 @@ export default function MobsTab() {
   const encounterSoundInputRef = useRef<HTMLInputElement>(null);
   const deathSoundInputRef = useRef<HTMLInputElement>(null);
   const battleMusicInputRef = useRef<HTMLInputElement>(null);
+  const dialogueBgInputRef = useRef<HTMLInputElement>(null);
+  const dialogueSpriteInputRef = useRef<HTMLInputElement>(null);
+  const dialogueLineImageInputRef = useRef<HTMLInputElement>(null);
+  const dialogueLineUploadTargetRef = useRef<number | null>(null);
 
   const [encounters, setEncounters] = useState<any[]>([]);
   const [maps, setMaps] = useState<{ id: string; name: string; global_x: number; global_y: number }[]>([]);
@@ -38,6 +43,11 @@ export default function MobsTab() {
   const [uploadingEncounterSound, setUploadingEncounterSound] = useState(false);
   const [uploadingDeathSound, setUploadingDeathSound] = useState(false);
   const [uploadingBattleMusic, setUploadingBattleMusic] = useState(false);
+  const [uploadingDialogueBg, setUploadingDialogueBg] = useState(false);
+  const [uploadingDialogueSprite, setUploadingDialogueSprite] = useState(false);
+  const [uploadingDialogueLineImage, setUploadingDialogueLineImage] = useState<number | null>(null);
+  const [dialoguePreviewIndex, setDialoguePreviewIndex] = useState(0);
+  const [showDialoguePreview, setShowDialoguePreview] = useState(false);
   const [scalingStats, setScalingStats] = useState(false);
   const [scaleResult, setScaleResult] = useState<string | null>(null);
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -352,6 +362,63 @@ export default function MobsTab() {
       );
     } catch (e: any) {
       alert('Failed to upload preset music: ' + (e?.message || e));
+    }
+  };
+
+  const handleUploadDialogueBg = async (file: File) => {
+    if (!file) return;
+    setUploadingDialogueBg(true);
+    try {
+      const filePath = `encounters/dialogue/bg/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true, cacheControl: '31536000' });
+      if (error) throw error;
+      const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
+      setEncounterForm((prev) => ({ ...prev, dialogue_background_url: `${data.publicUrl}?t=${Date.now()}` }));
+      if (dialogueBgInputRef.current) dialogueBgInputRef.current.value = '';
+    } catch (e: any) {
+      alert('Upload failed: ' + (e?.message || e));
+    } finally {
+      setUploadingDialogueBg(false);
+    }
+  };
+
+  const handleUploadDialogueSprite = async (file: File) => {
+    if (!file) return;
+    setUploadingDialogueSprite(true);
+    try {
+      const filePath = `encounters/dialogue/sprites/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true, cacheControl: '31536000' });
+      if (error) throw error;
+      const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
+      setEncounterForm((prev) => ({ ...prev, dialogue_npc_sprite_url: `${data.publicUrl}?t=${Date.now()}` }));
+      if (dialogueSpriteInputRef.current) dialogueSpriteInputRef.current.value = '';
+    } catch (e: any) {
+      alert('Upload failed: ' + (e?.message || e));
+    } finally {
+      setUploadingDialogueSprite(false);
+    }
+  };
+
+  const handleUploadDialogueLineImage = async (file: File) => {
+    const lineIdx = dialogueLineUploadTargetRef.current;
+    if (!file || lineIdx === null) return;
+    setUploadingDialogueLineImage(lineIdx);
+    try {
+      const filePath = `encounters/dialogue/portraits/${Date.now()}_line${lineIdx}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const { error } = await supabase.storage.from('game-assets').upload(filePath, file, { upsert: true, cacheControl: '31536000' });
+      if (error) throw error;
+      const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
+      setEncounterForm((prev) => {
+        const next = [...prev.dialogue_script];
+        next[lineIdx] = { ...next[lineIdx], image_url: `${data.publicUrl}?t=${Date.now()}` };
+        return { ...prev, dialogue_script: next };
+      });
+      if (dialogueLineImageInputRef.current) dialogueLineImageInputRef.current.value = '';
+    } catch (e: any) {
+      alert('Upload failed: ' + (e?.message || e));
+    } finally {
+      setUploadingDialogueLineImage(null);
+      dialogueLineUploadTargetRef.current = null;
     }
   };
 
@@ -1391,102 +1458,363 @@ export default function MobsTab() {
               </div>
             )}
 
-            <div className="mt-4 p-3 rounded-lg border border-gray-800 bg-black/40 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] font-black uppercase text-amber-400">
-                  Pre-Battle Dialogue
-                </span>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <span className="text-[9px] text-gray-500">{encounterForm.dialogue_enabled ? 'ON' : 'OFF'}</span>
-                  <input
-                    type="checkbox"
-                    checked={encounterForm.dialogue_enabled}
-                    onChange={(e) => setEncounterForm((prev) => ({ ...prev, dialogue_enabled: e.target.checked }))}
-                    className="w-4 h-4 accent-amber-500"
-                  />
+            {/* Hidden file inputs for dialogue asset uploads */}
+            <input ref={dialogueBgInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadDialogueBg(f); }} />
+            <input ref={dialogueSpriteInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadDialogueSprite(f); }} />
+            <input ref={dialogueLineImageInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadDialogueLineImage(f); }} />
+
+            <div className="mt-4 rounded-xl border border-amber-500/20 bg-gradient-to-b from-amber-950/10 to-black/40 overflow-hidden">
+              {/* Section Header */}
+              <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-amber-500/10">
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-4 bg-amber-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
+                  <span className="text-xs font-black uppercase tracking-wider text-amber-400">Pre-Battle Dialogue</span>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <span className="text-[10px] font-bold uppercase text-gray-500 group-hover:text-gray-400 transition-colors">
+                    {encounterForm.dialogue_enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                  <div className={`relative w-10 h-5 rounded-full transition-colors ${encounterForm.dialogue_enabled ? 'bg-amber-500' : 'bg-gray-700'}`}>
+                    <input
+                      type="checkbox"
+                      checked={encounterForm.dialogue_enabled}
+                      onChange={(e) => setEncounterForm((prev) => ({ ...prev, dialogue_enabled: e.target.checked }))}
+                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                    />
+                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${encounterForm.dialogue_enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </div>
                 </label>
               </div>
+
               {encounterForm.dialogue_enabled && (
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    placeholder="NPC Name (defaults to encounter name)"
-                    value={encounterForm.dialogue_npc_name}
-                    onChange={(e) => setEncounterForm((prev) => ({ ...prev, dialogue_npc_name: e.target.value }))}
-                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
-                  />
-                  <input
-                    type="text"
-                    placeholder="NPC Sprite URL (defaults to encounter icon)"
-                    value={encounterForm.dialogue_npc_sprite_url}
-                    onChange={(e) => setEncounterForm((prev) => ({ ...prev, dialogue_npc_sprite_url: e.target.value }))}
-                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Dialogue Background URL"
-                    value={encounterForm.dialogue_background_url}
-                    onChange={(e) => setEncounterForm((prev) => ({ ...prev, dialogue_background_url: e.target.value }))}
-                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
-                  />
-                  <div className="space-y-1">
-                    <span className="text-[9px] font-bold uppercase text-gray-500">Script Lines</span>
-                    {encounterForm.dialogue_script.map((line, idx) => (
-                      <div key={idx} className="flex gap-1 items-start">
-                        <span className="text-[9px] text-gray-600 mt-2.5 w-4 shrink-0">{idx + 1}.</span>
+                <div className="p-4 space-y-4">
+                  {/* NPC Name */}
+                  <div>
+                    <label className="text-[9px] font-bold uppercase text-gray-500 tracking-wider block mb-1">Speaker Name</label>
+                    <input
+                      type="text"
+                      placeholder="NPC Name (defaults to encounter name)"
+                      value={encounterForm.dialogue_npc_name}
+                      onChange={(e) => setEncounterForm((prev) => ({ ...prev, dialogue_npc_name: e.target.value }))}
+                      className="w-full bg-black/60 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-amber-500/60 outline-none transition-colors"
+                    />
+                  </div>
+
+                  {/* Asset Pickers: Background + Sprite */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Background */}
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-bold uppercase text-gray-500 tracking-wider block">Scene Background</label>
+                      <DropZone
+                        accept="image/*"
+                        disabled={uploadingDialogueBg}
+                        onFiles={(files) => handleUploadDialogueBg(files[0])}
+                        className="p-0"
+                      >
+                        <div className="relative w-full h-24 rounded-lg bg-black overflow-hidden border border-gray-800">
+                          {encounterForm.dialogue_background_url ? (
+                            <img src={encounterForm.dialogue_background_url} className="w-full h-full object-cover opacity-80" />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center text-gray-600">
+                              <ImageOff size={20} className="mb-1 opacity-50" />
+                              <span className="text-[8px] uppercase font-bold">No BG</span>
+                            </div>
+                          )}
+                          {uploadingDialogueBg && (
+                            <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                              <Loader2 size={20} className="animate-spin text-amber-400" />
+                            </div>
+                          )}
+                        </div>
+                      </DropZone>
+                      <div className="flex gap-1">
                         <input
                           type="text"
-                          placeholder="Dialogue text..."
-                          value={line.text}
-                          onChange={(e) => {
-                            setEncounterForm((prev) => {
-                              const next = [...prev.dialogue_script];
-                              next[idx] = { ...next[idx], text: e.target.value };
-                              return { ...prev, dialogue_script: next };
-                            });
-                          }}
-                          className="flex-1 bg-black border border-gray-700 rounded px-2 py-1.5 text-xs text-white"
+                          placeholder="URL or upload →"
+                          value={encounterForm.dialogue_background_url}
+                          onChange={(e) => setEncounterForm((prev) => ({ ...prev, dialogue_background_url: e.target.value }))}
+                          className="flex-1 min-w-0 bg-black/60 border border-gray-800 rounded px-2 py-1 text-[10px] text-gray-300 focus:border-amber-500/60 outline-none"
                         />
+                        <button
+                          type="button"
+                          disabled={uploadingDialogueBg}
+                          onClick={() => dialogueBgInputRef.current?.click()}
+                          className="px-2 py-1 bg-amber-900/40 hover:bg-amber-800/50 disabled:opacity-50 border border-amber-700/40 rounded text-amber-400 text-[9px] font-bold uppercase flex items-center gap-1 shrink-0 transition-colors"
+                        >
+                          {uploadingDialogueBg ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* NPC Sprite */}
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-bold uppercase text-gray-500 tracking-wider block">NPC Sprite</label>
+                      <DropZone
+                        accept="image/*"
+                        disabled={uploadingDialogueSprite}
+                        onFiles={(files) => handleUploadDialogueSprite(files[0])}
+                        className="p-0"
+                      >
+                        <div className="relative w-full h-24 rounded-lg bg-black overflow-hidden border border-gray-800 flex items-center justify-center">
+                          {encounterForm.dialogue_npc_sprite_url ? (
+                            <img src={encounterForm.dialogue_npc_sprite_url} className="h-full w-auto object-contain py-1" />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center text-gray-600">
+                              <ImageOff size={20} className="mb-1 opacity-50" />
+                              <span className="text-[8px] uppercase font-bold">No Sprite</span>
+                            </div>
+                          )}
+                          {uploadingDialogueSprite && (
+                            <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                              <Loader2 size={20} className="animate-spin text-amber-400" />
+                            </div>
+                          )}
+                        </div>
+                      </DropZone>
+                      <div className="flex gap-1">
                         <input
                           type="text"
-                          placeholder="Image URL (opt)"
-                          value={line.image_url || ''}
-                          onChange={(e) => {
-                            setEncounterForm((prev) => {
-                              const next = [...prev.dialogue_script];
-                              next[idx] = { ...next[idx], image_url: e.target.value || undefined };
-                              return { ...prev, dialogue_script: next };
-                            });
-                          }}
-                          className="w-32 bg-black border border-gray-700 rounded px-2 py-1.5 text-xs text-white"
+                          placeholder="URL or upload →"
+                          value={encounterForm.dialogue_npc_sprite_url}
+                          onChange={(e) => setEncounterForm((prev) => ({ ...prev, dialogue_npc_sprite_url: e.target.value }))}
+                          className="flex-1 min-w-0 bg-black/60 border border-gray-800 rounded px-2 py-1 text-[10px] text-gray-300 focus:border-amber-500/60 outline-none"
                         />
+                        <button
+                          type="button"
+                          disabled={uploadingDialogueSprite}
+                          onClick={() => dialogueSpriteInputRef.current?.click()}
+                          className="px-2 py-1 bg-amber-900/40 hover:bg-amber-800/50 disabled:opacity-50 border border-amber-700/40 rounded text-amber-400 text-[9px] font-bold uppercase flex items-center gap-1 shrink-0 transition-colors"
+                        >
+                          {uploadingDialogueSprite ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Script Lines */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase tracking-wider text-gray-400">Script Lines</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowDialoguePreview((v) => !v)}
+                          className="flex items-center gap-1 px-2 py-1 rounded border border-cyan-800/50 bg-cyan-950/30 text-cyan-400 text-[9px] font-bold uppercase hover:bg-cyan-900/40 transition-colors"
+                        >
+                          {showDialoguePreview ? <EyeOff size={10} /> : <Eye size={10} />}
+                          {showDialoguePreview ? 'Hide Preview' : 'Preview'}
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
                             setEncounterForm((prev) => ({
                               ...prev,
-                              dialogue_script: prev.dialogue_script.filter((_, i) => i !== idx),
+                              dialogue_script: [...prev.dialogue_script, { text: '' }],
                             }));
+                            setDialoguePreviewIndex(encounterForm.dialogue_script.length);
                           }}
-                          className="text-red-500 hover:text-red-400 text-xs px-1 mt-1"
+                          className="flex items-center gap-1 px-2 py-1 rounded border border-amber-700/50 bg-amber-950/30 text-amber-400 text-[9px] font-black uppercase hover:bg-amber-900/40 transition-colors"
                         >
-                          x
+                          <Plus size={10} /> Add Line
                         </button>
                       </div>
+                    </div>
+
+                    {encounterForm.dialogue_script.length === 0 && (
+                      <div className="text-center py-6 border border-dashed border-gray-800 rounded-xl text-gray-600 text-[10px] uppercase tracking-wider">
+                        No dialogue lines — click "Add Line" to start
+                      </div>
+                    )}
+
+                    {encounterForm.dialogue_script.map((line, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                          idx === dialoguePreviewIndex
+                            ? 'border-amber-500/50 bg-amber-950/20 shadow-[0_0_15px_rgba(245,158,11,0.07)]'
+                            : 'border-gray-800 bg-black/30 hover:border-gray-700'
+                        }`}
+                        onClick={() => setDialoguePreviewIndex(idx)}
+                      >
+                        {/* Portrait column */}
+                        <div className="shrink-0 flex flex-col items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-gray-800 border border-gray-700 text-gray-400 flex items-center justify-center text-[10px] font-bold font-mono">
+                            {idx + 1}
+                          </div>
+                          <div
+                            title="Click to upload expression portrait"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              dialogueLineUploadTargetRef.current = idx;
+                              dialogueLineImageInputRef.current?.click();
+                            }}
+                            className="w-14 h-14 rounded-lg bg-black border border-gray-700 overflow-hidden hover:border-amber-500/60 transition-colors relative group cursor-pointer"
+                          >
+                            {line.image_url ? (
+                              <img src={line.image_url} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center text-gray-600 group-hover:text-gray-400 transition-colors">
+                                <ImageOff size={14} className="mb-0.5 opacity-50" />
+                                <span className="text-[7px] uppercase">portrait</span>
+                              </div>
+                            )}
+                            {uploadingDialogueLineImage === idx && (
+                              <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                                <Loader2 size={16} className="animate-spin text-amber-400" />
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <Upload size={12} className="text-white" />
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEncounterForm((prev) => ({
+                                ...prev,
+                                dialogue_script: prev.dialogue_script.filter((_, i) => i !== idx),
+                              }));
+                              if (dialoguePreviewIndex >= encounterForm.dialogue_script.length - 1) {
+                                setDialoguePreviewIndex(Math.max(0, encounterForm.dialogue_script.length - 2));
+                              }
+                            }}
+                            className="p-1 text-red-500/40 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                            title="Remove line"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+
+                        {/* Content column */}
+                        <div className="flex-1 min-w-0 space-y-2">
+                          <textarea
+                            value={line.text}
+                            placeholder="What they say..."
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              setEncounterForm((prev) => {
+                                const next = [...prev.dialogue_script];
+                                next[idx] = { ...next[idx], text: e.target.value };
+                                return { ...prev, dialogue_script: next };
+                              });
+                            }}
+                            className="w-full bg-black/60 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white min-h-[60px] resize-y focus:border-amber-500/60 outline-none transition-colors"
+                          />
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              placeholder="Portrait URL (or click thumbnail to upload)"
+                              value={line.image_url || ''}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                setEncounterForm((prev) => {
+                                  const next = [...prev.dialogue_script];
+                                  next[idx] = { ...next[idx], image_url: e.target.value || undefined };
+                                  return { ...prev, dialogue_script: next };
+                                });
+                              }}
+                              className="flex-1 min-w-0 bg-black/40 border border-gray-800 rounded px-2 py-1 text-[10px] text-gray-400 focus:border-amber-500/60 outline-none"
+                            />
+                            <button
+                              type="button"
+                              disabled={uploadingDialogueLineImage !== null}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                dialogueLineUploadTargetRef.current = idx;
+                                dialogueLineImageInputRef.current?.click();
+                              }}
+                              className="px-2 py-1 rounded border border-gray-700 bg-gray-800/40 text-gray-400 text-[9px] font-bold uppercase flex items-center gap-1 hover:border-amber-700/50 hover:text-amber-400 transition-colors shrink-0 disabled:opacity-40"
+                            >
+                              {uploadingDialogueLineImage === idx ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />}
+                              Upload
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     ))}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEncounterForm((prev) => ({
-                          ...prev,
-                          dialogue_script: [...prev.dialogue_script, { text: '' }],
-                        }));
-                      }}
-                      className="text-[10px] text-amber-400 hover:text-amber-300 font-bold uppercase"
-                    >
-                      + Add Line
-                    </button>
                   </div>
+
+                  {/* Mini Live Preview */}
+                  {showDialoguePreview && (
+                    <div className="space-y-1.5">
+                      <span className="text-[9px] font-bold uppercase text-cyan-500/70 tracking-wider block">Scene Preview</span>
+                      <div className="relative w-full rounded-xl overflow-hidden bg-black" style={{ aspectRatio: '16/9' }}>
+                        {/* Background */}
+                        <div className="absolute inset-0">
+                          {encounterForm.dialogue_background_url ? (
+                            <img src={encounterForm.dialogue_background_url} className="w-full h-full object-cover opacity-70 contrast-110" />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-b from-gray-900 to-black flex items-center justify-center">
+                              <span className="text-gray-700 text-[10px] font-bold uppercase">No Background</span>
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-transparent" />
+                        </div>
+
+                        {/* NPC Sprite */}
+                        {(encounterForm.dialogue_npc_sprite_url || encounterForm.dialogue_script[dialoguePreviewIndex]?.image_url) && (
+                          <div className="absolute inset-0 flex items-center justify-center pb-[28%] pointer-events-none">
+                            <img
+                              src={encounterForm.dialogue_script[dialoguePreviewIndex]?.image_url || encounterForm.dialogue_npc_sprite_url}
+                              className="max-h-[65%] w-auto object-contain drop-shadow-[0_0_20px_rgba(6,182,212,0.35)]"
+                            />
+                          </div>
+                        )}
+
+                        {/* Dialogue Box */}
+                        <div className="absolute bottom-0 left-0 right-0 p-2">
+                          <div className="bg-slate-950/90 border-t-2 border-x-2 border-cyan-500/40 rounded-t-xl p-3 shadow-[0_-8px_24px_rgba(0,0,0,0.8)]">
+                            {/* Name tag */}
+                            <div className="mb-1.5">
+                              <span className="text-[8px] font-black uppercase tracking-widest text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded-sm border border-cyan-500/30 inline-block">
+                                {encounterForm.dialogue_npc_name || encounterForm.name || 'UNKNOWN'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] font-bold text-gray-200 leading-relaxed line-clamp-2">
+                              {encounterForm.dialogue_script[dialoguePreviewIndex]?.text || '...'}
+                            </p>
+                            {/* Progress bar */}
+                            <div className="mt-2 h-0.5 bg-cyan-500/15 w-full rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-cyan-400 shadow-[0_0_4px_#22d3ee]"
+                                style={{
+                                  width: encounterForm.dialogue_script.length > 0
+                                    ? `${((dialoguePreviewIndex + 1) / encounterForm.dialogue_script.length) * 100}%`
+                                    : '0%'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Line navigation */}
+                        {encounterForm.dialogue_script.length > 1 && (
+                          <div className="absolute top-2 right-2 flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setDialoguePreviewIndex((i) => Math.max(0, i - 1))}
+                              disabled={dialoguePreviewIndex === 0}
+                              className="w-5 h-5 rounded bg-black/60 border border-gray-700 text-gray-400 text-[9px] flex items-center justify-center hover:border-gray-500 disabled:opacity-30 transition-colors"
+                            >
+                              ‹
+                            </button>
+                            <span className="text-[8px] text-gray-500 flex items-center px-1 font-mono">
+                              {dialoguePreviewIndex + 1}/{encounterForm.dialogue_script.length}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setDialoguePreviewIndex((i) => Math.min(encounterForm.dialogue_script.length - 1, i + 1))}
+                              disabled={dialoguePreviewIndex === encounterForm.dialogue_script.length - 1}
+                              className="w-5 h-5 rounded bg-black/60 border border-gray-700 text-gray-400 text-[9px] flex items-center justify-center hover:border-gray-500 disabled:opacity-30 transition-colors"
+                            >
+                              ›
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
