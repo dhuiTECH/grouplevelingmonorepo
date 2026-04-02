@@ -67,14 +67,10 @@ function objectToMap(value: Record<string, any> | undefined) {
 const EMPTY_ENCOUNTER_POOL: any[] = [];
 
 export interface UseExplorationOptions {
-  /** When true during `onTileEnter`, skip random field encounter roll (video demo / scripted battle). */
-  suppressEncounterRollRef?: MutableRefObject<boolean>;
   /** Fires once per **processed** tile (after duplicate / busy guards) — use for scripted steps vs Skia spam. */
   onProcessedTileEnter?: (nx: number, ny: number) => void;
   /** Called when a random SIDE_VIEW encounter should start a battle (navigate to Battle screen). */
   onBattleEncounter?: (encounter: any) => void;
-  /** Encounter IDs to exclude from the random roll (e.g. scripted demo encounters). */
-  excludeEncounterIds?: string[];
 }
 
 export const useExploration = (
@@ -226,15 +222,7 @@ export const useExploration = (
   }, [user?.id, currentMapId, nodes, unlocked, chunksVersion]);
 
   useEffect(() => {
-    const excluded = explorationOptionsRef.current?.excludeEncounterIds;
-    if (excluded?.length) {
-      const set = new Set(excluded);
-      encounterPoolRef.current = encounterPoolForMap.filter(
-        (e) => !set.has(String(e?.id)),
-      );
-    } else {
-      encounterPoolRef.current = encounterPoolForMap;
-    }
+    encounterPoolRef.current = encounterPoolForMap;
   }, [encounterPoolForMap]);
 
   // Separate camera position for visionGrid that only updates when we actually
@@ -681,31 +669,41 @@ export const useExploration = (
             setRaidModalVisible(true);
           }
         } else {
-          if (explorationOptionsRef.current?.suppressEncounterRollRef?.current) {
-          } else if (encounterPoolRef.current.length > 0) {
-            const roll = Math.random();
-            if (roll < 0.05) {
-              const eligible = encounterPoolRef.current.filter(
-                (e) => e.spawn_chance >= roll,
-              );
-              if (eligible.length > 0) {
-                const randomEncounter =
-                  eligible[Math.floor(Math.random() * eligible.length)];
+          if (encounterPoolRef.current.length > 0) {
+            const pool = encounterPoolRef.current.filter(
+              (e) => (e.spawn_weight ?? 0) > 0,
+            );
+            const totalWeight = pool.reduce(
+              (sum, e) => sum + (e.spawn_weight ?? 0),
+              0,
+            );
+            if (totalWeight > 0) {
+              const rand = Math.random() * totalWeight;
+              let cumulative = 0;
+              let selectedEncounter: any = null;
+              for (const enc of pool) {
+                cumulative += enc.spawn_weight ?? 0;
+                if (rand < cumulative) {
+                  selectedEncounter = enc;
+                  break;
+                }
+              }
+              if (selectedEncounter) {
                 if (
-                  randomEncounter.event_type === "LOOT" &&
-                  randomEncounter.metadata?.display_mode === "TEXT"
+                  selectedEncounter.event_type === "LOOT" &&
+                  selectedEncounter.metadata?.display_mode === "TEXT"
                 ) {
                   // Toast logic (no-op for now)
                 } else if (
-                  randomEncounter.metadata?.visuals?.layout === "SIDE_VIEW"
+                  selectedEncounter.metadata?.visuals?.layout === "SIDE_VIEW"
                 ) {
                   if (!battleInFlightRef.current) {
                     const handler = explorationOptionsRef.current?.onBattleEncounter;
                     if (handler) {
                       battleInFlightRef.current = true;
-                      handler(randomEncounter);
+                      handler(selectedEncounter);
                     } else {
-                      setEncounter(randomEncounter);
+                      setEncounter(selectedEncounter);
                       setInteractionVisible(true);
                     }
                   }
@@ -734,9 +732,6 @@ export const useExploration = (
 
       } finally {
         tileEnterBusy.current = false;
-        if (explorationOptionsRef.current?.suppressEncounterRollRef?.current) {
-          explorationOptionsRef.current.suppressEncounterRollRef.current = false;
-        }
       }
     },
     [currentMapId, refreshVision],

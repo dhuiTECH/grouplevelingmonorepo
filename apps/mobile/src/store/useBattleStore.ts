@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 
 export const PHASE = {
   ACTIVE: 'ACTIVE_PHASE',
@@ -137,6 +138,56 @@ export interface BattleActions {
   removeDamageNumber: (id: string) => void;
   setSequenceFeedback: (feedback: 'PERFECT' | 'COMPLETE' | 'FAILED' | null) => void;
 }
+
+export const useBattlePhase = () => useBattleStore((s) => s.currentPhase);
+export const useBattleParty = () => useBattleStore((s) => s.party);
+export const useBattleEnemy = () => useBattleStore((s) => s.enemy);
+export const useBattleTurnQueue = () => useBattleStore(useShallow((s) => ({ turnQueue: s.turnQueue, queueIndex: s.queueIndex })));
+export const useBattleStance = () => useBattleStore(useShallow((s) => ({ stance: s.stance, stanceLevel: s.stanceLevel })));
+export const useBattlePlanning = () => useBattleStore(useShallow((s) => ({ plannedAbilities: s.plannedAbilities, selectedAbilityId: s.selectedAbilityId })));
+export const useBattleQte = () => useBattleStore(useShallow((s) => ({
+  qteTargets: s.qteTargets,
+  qteStats: s.qteStats,
+  focusMode: s.focusMode,
+  burstCharged: s.burstCharged,
+  comboMultiplier: s.comboMultiplier,
+  parryWindowActive: s.parryWindowActive,
+  parryPreDelay: s.parryPreDelay,
+  currentPattern: s.currentPattern,
+})));
+export const useBattleLogs = () => useBattleStore(useShallow((s) => ({ logs: s.logs, chainCount: s.chainCount })));
+export const useBattleFx = () => useBattleStore(useShallow((s) => ({
+  lastDamageEvent: s.lastDamageEvent,
+  sequenceFeedback: s.sequenceFeedback,
+  successFlash: s.successFlash,
+  failFlash: s.failFlash,
+  lastSkillAnimationConfig: s.lastSkillAnimationConfig,
+})));
+export const useBattleAssets = () => useBattleStore(useShallow((s) => ({ assetsLoaded: s.assetsLoaded, preloadedSpriteUrls: s.preloadedSpriteUrls })));
+export const useBattleDamageNumbers = () => useBattleStore((s) => s.activeDamageNumbers);
+export const useBattleActions = () => useBattleStore(useShallow((s) => ({
+  setBattleState: s.setBattleState,
+  initBattle: s.initBattle,
+  setPhase: s.setPhase,
+  setStance: s.setStance,
+  advanceQueue: s.advanceQueue,
+  setActiveIndex: s.setActiveIndex,
+  setSelectedAbilityId: s.setSelectedAbilityId,
+  addPlannedAbility: s.addPlannedAbility,
+  removeLastPlannedAbility: s.removeLastPlannedAbility,
+  clearPlannedAbilities: s.clearPlannedAbilities,
+  updateEntityHp: s.updateEntityHp,
+  addLog: s.addLog,
+  setChainCount: s.setChainCount,
+  setQteTargets: s.setQteTargets,
+  updateQteTarget: s.updateQteTarget,
+  incrementQteStat: s.incrementQteStat,
+  setComboMultiplier: s.setComboMultiplier,
+  applyDamageEvent: s.applyDamageEvent,
+  addDamageNumber: s.addDamageNumber,
+  removeDamageNumber: s.removeDamageNumber,
+  setSequenceFeedback: s.setSequenceFeedback,
+})));
 
 export const useBattleStore = create<BattleState & BattleActions>((set, get) => ({
   party: [],

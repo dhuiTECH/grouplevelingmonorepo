@@ -275,14 +275,14 @@ export default function BattleScreen() {
     }
   }, [sequenceFeedback]);
 
-  const handleLeaveBattle = () => {
+  const handleLeaveBattle = useCallback(() => {
       navigation.goBack();
-  };
+  }, [navigation]);
 
-  const handleSettingsPress = () => setSettingsVisible(true);
-  const handleInventoryPress = () => {
+  const handleSettingsPress = useCallback(() => setSettingsVisible(true), []);
+  const handleInventoryPress = useCallback(() => {
     setInventoryModalVisible(true);
-  };
+  }, []);
 
   const battleInventoryItems = useMemo(() => {
     if (!user?.cosmetics?.length) return [];
@@ -366,9 +366,15 @@ export default function BattleScreen() {
     }
   };
 
-  const handleSkipPetCapture = () => {
+  const handleSkipPetCapture = useCallback(() => {
     setPetCaptureState('skipped');
-  };
+  }, []);
+
+  const handleCloseSettings = useCallback(() => setSettingsVisible(false), []);
+  const handleCloseInventory = useCallback(() => setInventoryModalVisible(false), []);
+  const handleEnemyEnterComplete = useCallback(() => setEnemyAction('idle'), []);
+  const handlePetEnterComplete = useCallback(() => setPetAction('idle'), []);
+  const handleBossWarningComplete = useCallback(() => setShowWarning(false), []);
 
   /** Use an item from battle inventory. Capture items: consume one and end battle with victory (then show naming screen). */
   const handleUseBattleItem = useCallback(
@@ -416,11 +422,21 @@ export default function BattleScreen() {
   );
 
   if (loading) {
+    // While the walk-in transition overlay is playing, show a fully transparent
+    // backing so the overlay is the only thing visible. BattleAssetWarmer still
+    // pre-warms sprites in the background.
+    if (isTransitioning) {
       return (
-          <View style={[styles.container, { backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center' }]}>
-              <BattleAssetWarmer party={party} enemy={enemy} spriteUrls={preloadedSpriteUrls} />
-          </View>
+        <View style={[styles.container, { backgroundColor: 'transparent' }]}>
+          <BattleAssetWarmer party={party} enemy={enemy} spriteUrls={preloadedSpriteUrls} />
+        </View>
       );
+    }
+    return (
+      <View style={[styles.container, { backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <BattleAssetWarmer party={party} enemy={enemy} spriteUrls={preloadedSpriteUrls} />
+      </View>
+    );
   }
 
   if (currentPhase === PHASE.VICTORY) {
@@ -599,7 +615,7 @@ export default function BattleScreen() {
                 enemyFigureRef={enemyFigureRef}
                 setEnemyFigureCenter={setEnemyFigureCenter}
                 action={enemyAction}
-                onEnterComplete={() => setEnemyAction('idle')}
+                onEnterComplete={handleEnemyEnterComplete}
               />
 
               {/* Player Figures — fade in after transition so they don’t appear before walk-in is done */}
@@ -614,7 +630,7 @@ export default function BattleScreen() {
                 user={user}
                 allShopItems={allShopItems}
                 petAction={petAction}
-                onPetEnterComplete={() => setPetAction('idle')}
+                onPetEnterComplete={handlePetEnterComplete}
                 lastDamageEvent={lastDamageEvent}
                 lastSkillAnimationConfig={lastSkillAnimationConfig}
                 weaponGripCast={weaponGripCast}
@@ -687,7 +703,7 @@ export default function BattleScreen() {
 
 <BattleSettingsModal
         visible={settingsVisible}
-        onClose={() => setSettingsVisible(false)}
+        onClose={handleCloseSettings}
         isMuted={isMuted}
         setMuted={setMuted}
         tapToConfirm={tapToConfirm}
@@ -696,7 +712,7 @@ export default function BattleScreen() {
 
       <BattleInventoryModal
         visible={inventoryModalVisible}
-        onClose={() => setInventoryModalVisible(false)}
+        onClose={handleCloseInventory}
         items={battleInventoryItems}
         onUseItem={handleUseBattleItem}
         enemyCatchable={!!enemy?.metadata?.catchable}
@@ -706,9 +722,7 @@ export default function BattleScreen() {
       {showWarning && (
         <BossWarningOverlay 
           bossName={enemy?.name || "BOSS"}
-          onComplete={() => {
-            setShowWarning(false);
-          }} 
+          onComplete={handleBossWarningComplete} 
         />
       )}
     </View>

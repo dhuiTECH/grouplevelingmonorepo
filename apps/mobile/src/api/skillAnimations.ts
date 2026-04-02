@@ -90,3 +90,48 @@ export async function fetchSkillAnimation(
   }
   return null;
 }
+
+export function resolveSkillKeys(
+  abilities: Array<{ id?: string; name?: string }>
+): string[] {
+  const keys = new Set<string>();
+  for (const ability of abilities) {
+    if (ability.id && String(ability.id).trim()) keys.add(String(ability.id).trim());
+    if (ability.name) {
+      const mapped = ABILITY_NAME_TO_SKILL_ID[ability.name];
+      if (mapped) keys.add(mapped);
+      const slug = slugify(ability.name);
+      if (slug) keys.add(slug);
+      const heuristic = heuristicSkillId(ability.name);
+      if (heuristic) keys.add(heuristic);
+    }
+  }
+  return Array.from(keys);
+}
+
+export async function fetchSkillAnimationsBatch(
+  abilities: Array<{ id?: string; name?: string }>
+): Promise<Map<string, SkillAnimationRow>> {
+  const allKeys = resolveSkillKeys(abilities);
+  if (allKeys.length === 0) return new Map();
+
+  const result = new Map<string, SkillAnimationRow>();
+  try {
+    const { data, error } = await supabase
+      .from('skill_animations')
+      .select('*')
+      .in('skill_id', allKeys);
+    if (error) {
+      console.warn('[skill_animations] batch fetch error:', error.message);
+      return result;
+    }
+    if (data) {
+      for (const row of data) {
+        result.set(row.skill_id, row as SkillAnimationRow);
+      }
+    }
+  } catch (e) {
+    console.warn('[skill_animations] batch fetch exception:', e);
+  }
+  return result;
+}

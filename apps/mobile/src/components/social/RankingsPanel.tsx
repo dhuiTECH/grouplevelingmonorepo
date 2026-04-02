@@ -106,6 +106,7 @@ const RankingsPanel: React.FC<RankingsPanelProps> = ({
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          getItemLayout={(_data, index) => ({ length: 88, offset: 88 * index, index })}
           refreshControl={
             <RefreshControl 
               refreshing={isSocialLoading} 

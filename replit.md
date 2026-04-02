@@ -47,6 +47,8 @@ The workflow runs: `cd apps/web && node_modules/.bin/next dev -p 5000 -H 0.0.0.0
 - **Virtual joystick**: `VirtualJoystick.tsx` — 220px centered ring, PanResponder-driven, 8-direction angle snap (45° slices), inner walk zone (380ms/tile), outer sprint zone >65% magnitude (200ms/tile), knob snaps back on release, cyan→orange color transition at sprint threshold
 - **Directional edge collision**: `EDGE_BLOCK_LAYER=-3`, `edgeBlocks` bitmask (N=1,E=2,S=4,W=8), two-sided check in `useExploration.ts`
 - **Movement**: `useExploration.ts` → `move(dir)` — handles walkability, edge collision, Supabase sync
+- **Encounter system**: Weight-based random encounters via `spawn_weight` on each tile enter (no probability gate — every tile step picks a weighted-random encounter from the pool). Selection algorithm: sum weights → random in [0,total) → cumulative walk. Jeffrey is now a normal pool entry.
+- **Pre-battle dialogue**: `encounter_pool.pre_battle_dialogue` JSONB column (enabled, scene.npc_name/sprite/bg, script[]) — when enabled, `DialogueScene` overlay plays before battle transition. Admin toggle + script editor in MobsTab.
 
 ## Deployment
 Configured for autoscale deployment. Build: `cd apps/web && npm run build`. Run: `node_modules/.bin/next start -p 5000 -H 0.0.0.0`

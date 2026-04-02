@@ -90,6 +90,11 @@ export default function MobsTab() {
       flee_rate: 0.1,
     },
     map_id: '' as string,
+    dialogue_enabled: false,
+    dialogue_npc_name: '',
+    dialogue_npc_sprite_url: '',
+    dialogue_background_url: '',
+    dialogue_script: [] as { text: string; image_url?: string }[],
   });
 
   useEffect(() => {
@@ -182,6 +187,11 @@ export default function MobsTab() {
       },
       map_id: enc.map_id || '',
       attack_slots: normalizedSlots,
+      dialogue_enabled: !!enc.pre_battle_dialogue?.enabled,
+      dialogue_npc_name: enc.pre_battle_dialogue?.scene?.npc_name || '',
+      dialogue_npc_sprite_url: enc.pre_battle_dialogue?.scene?.npc_sprite_url || '',
+      dialogue_background_url: enc.pre_battle_dialogue?.scene?.background_url || '',
+      dialogue_script: Array.isArray(enc.pre_battle_dialogue?.script) ? enc.pre_battle_dialogue.script : [],
     });
   };
 
@@ -362,6 +372,17 @@ export default function MobsTab() {
     if (!encounterForm.name.trim()) return alert('Please enter an encounter name.');
     setSavingEncounter(true);
     const petMeta = encounterForm.metadata || {};
+    const dialoguePayload = encounterForm.dialogue_enabled
+      ? {
+          enabled: true,
+          scene: {
+            npc_name: encounterForm.dialogue_npc_name || encounterForm.name,
+            npc_sprite_url: encounterForm.dialogue_npc_sprite_url || '',
+            background_url: encounterForm.dialogue_background_url || '',
+          },
+          script: encounterForm.dialogue_script.filter((l) => l.text.trim()),
+        }
+      : null;
     const { error } = await supabase.from('encounter_pool').insert({
       event_type: encounterForm.event_type,
       name: encounterForm.name,
@@ -378,6 +399,7 @@ export default function MobsTab() {
       base_dmg: encounterForm.damage,
       dmg_base: encounterForm.damage,
       scaling_factor: encounterForm.difficulty_multiplier,
+      pre_battle_dialogue: dialoguePayload,
       metadata: {
         ...petMeta,
         rewards: { exp: encounterForm.exp, coins: encounterForm.coins, gems: encounterForm.gems, base_exp: encounterForm.exp_reward_base },
@@ -444,6 +466,17 @@ export default function MobsTab() {
     }
     setSavingEncounter(true);
     const petMeta = encounterForm.metadata || {};
+    const dialoguePayload = encounterForm.dialogue_enabled
+      ? {
+          enabled: true,
+          scene: {
+            npc_name: encounterForm.dialogue_npc_name || encounterForm.name,
+            npc_sprite_url: encounterForm.dialogue_npc_sprite_url || '',
+            background_url: encounterForm.dialogue_background_url || '',
+          },
+          script: encounterForm.dialogue_script.filter((l) => l.text.trim()),
+        }
+      : null;
     const { error } = await supabase
       .from('encounter_pool')
       .update({
@@ -462,8 +495,9 @@ export default function MobsTab() {
         base_dmg: encounterForm.damage,
         dmg_base: encounterForm.damage,
         scaling_factor: encounterForm.difficulty_multiplier,
+        pre_battle_dialogue: dialoguePayload,
         metadata: {
-          ...petMeta, // Preserve existing metadata fields including pet_config
+          ...petMeta,
           rewards: { exp: encounterForm.exp, coins: encounterForm.coins, gems: encounterForm.gems, base_exp: encounterForm.exp_reward_base },
           stats: { hp: encounterForm.hp, damage: encounterForm.damage },
           display_mode: encounterForm.display_mode,
@@ -1356,6 +1390,106 @@ export default function MobsTab() {
                 })}
               </div>
             )}
+
+            <div className="mt-4 p-3 rounded-lg border border-gray-800 bg-black/40 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-black uppercase text-amber-400">
+                  Pre-Battle Dialogue
+                </span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <span className="text-[9px] text-gray-500">{encounterForm.dialogue_enabled ? 'ON' : 'OFF'}</span>
+                  <input
+                    type="checkbox"
+                    checked={encounterForm.dialogue_enabled}
+                    onChange={(e) => setEncounterForm((prev) => ({ ...prev, dialogue_enabled: e.target.checked }))}
+                    className="w-4 h-4 accent-amber-500"
+                  />
+                </label>
+              </div>
+              {encounterForm.dialogue_enabled && (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    placeholder="NPC Name (defaults to encounter name)"
+                    value={encounterForm.dialogue_npc_name}
+                    onChange={(e) => setEncounterForm((prev) => ({ ...prev, dialogue_npc_name: e.target.value }))}
+                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+                  />
+                  <input
+                    type="text"
+                    placeholder="NPC Sprite URL (defaults to encounter icon)"
+                    value={encounterForm.dialogue_npc_sprite_url}
+                    onChange={(e) => setEncounterForm((prev) => ({ ...prev, dialogue_npc_sprite_url: e.target.value }))}
+                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Dialogue Background URL"
+                    value={encounterForm.dialogue_background_url}
+                    onChange={(e) => setEncounterForm((prev) => ({ ...prev, dialogue_background_url: e.target.value }))}
+                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+                  />
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-bold uppercase text-gray-500">Script Lines</span>
+                    {encounterForm.dialogue_script.map((line, idx) => (
+                      <div key={idx} className="flex gap-1 items-start">
+                        <span className="text-[9px] text-gray-600 mt-2.5 w-4 shrink-0">{idx + 1}.</span>
+                        <input
+                          type="text"
+                          placeholder="Dialogue text..."
+                          value={line.text}
+                          onChange={(e) => {
+                            setEncounterForm((prev) => {
+                              const next = [...prev.dialogue_script];
+                              next[idx] = { ...next[idx], text: e.target.value };
+                              return { ...prev, dialogue_script: next };
+                            });
+                          }}
+                          className="flex-1 bg-black border border-gray-700 rounded px-2 py-1.5 text-xs text-white"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Image URL (opt)"
+                          value={line.image_url || ''}
+                          onChange={(e) => {
+                            setEncounterForm((prev) => {
+                              const next = [...prev.dialogue_script];
+                              next[idx] = { ...next[idx], image_url: e.target.value || undefined };
+                              return { ...prev, dialogue_script: next };
+                            });
+                          }}
+                          className="w-32 bg-black border border-gray-700 rounded px-2 py-1.5 text-xs text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEncounterForm((prev) => ({
+                              ...prev,
+                              dialogue_script: prev.dialogue_script.filter((_, i) => i !== idx),
+                            }));
+                          }}
+                          className="text-red-500 hover:text-red-400 text-xs px-1 mt-1"
+                        >
+                          x
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEncounterForm((prev) => ({
+                          ...prev,
+                          dialogue_script: [...prev.dialogue_script, { text: '' }],
+                        }));
+                      }}
+                      className="text-[10px] text-amber-400 hover:text-amber-300 font-bold uppercase"
+                    >
+                      + Add Line
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="flex gap-2">
             {editingEncounterId && (

@@ -251,6 +251,7 @@ export const InviteFriendsModal: React.FC<InviteFriendsModalProps> = ({
               renderItem={renderFriendItem}
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
+              getItemLayout={(_data, index) => ({ length: 84, offset: 84 * index, index })}
             />
           )}
 
