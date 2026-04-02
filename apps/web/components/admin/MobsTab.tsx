@@ -410,6 +410,7 @@ export default function MobsTab() {
       const { data } = supabase.storage.from('game-assets').getPublicUrl(filePath);
       setEncounterForm((prev) => {
         const next = [...prev.dialogue_script];
+        if (!next[lineIdx]) return prev;
         next[lineIdx] = { ...next[lineIdx], image_url: `${data.publicUrl}?t=${Date.now()}` };
         return { ...prev, dialogue_script: next };
       });
@@ -1675,9 +1676,8 @@ export default function MobsTab() {
                                 ...prev,
                                 dialogue_script: prev.dialogue_script.filter((_, i) => i !== idx),
                               }));
-                              if (dialoguePreviewIndex >= encounterForm.dialogue_script.length - 1) {
-                                setDialoguePreviewIndex(Math.max(0, encounterForm.dialogue_script.length - 2));
-                              }
+                              const newLen = encounterForm.dialogue_script.length - 1;
+                              setDialoguePreviewIndex((cur) => Math.min(cur, Math.max(0, newLen - 1)));
                             }}
                             className="p-1 text-red-500/40 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
                             title="Remove line"
