@@ -57,7 +57,9 @@ import { playWorldMapFootstep } from "@/utils/audio";
 import { useSystemNews } from "@/hooks/useSystemNews";
 import { useMapCharacter } from "@/hooks/useMapCharacter";
 import { STEPS_PER_TILE } from "@/hooks/useLocalMovementBudget";
-import { useJeffreyMapDemo, JEFFREY_MAP_DEMO_ENCOUNTER_ID } from "@/hooks/useJeffreyMapDemo";
+import { DialogueScene } from "@/components/DialogueScene";
+import { makeImageFromView } from "@shopify/react-native-skia";
+import type { SkImage } from "@shopify/react-native-skia";
 
 import type { User } from "@/types/user";
 import type { PartyPreviewItem } from "@/context/TransitionContext";
@@ -185,31 +187,31 @@ export const WorldMapScreen = () => {
   const { startTransition } = useTransition();
 
   const flushPendingVisionRef = useRef<() => void>(() => {});
+  const [dialogueEncounter, setDialogueEncounter] = useState<any>(null);
+  const pendingBattleEncounterRef = useRef<any>(null);
 
-  const {
-    explorationOptions: jeffreyExplorationOptions,
-    onBankedStepsSpent,
-    resetDemo: resetJeffreyDemo,
-    ensureShopItemsForPreview,
-    captureMapSnapshotForBattle,
-  } = useJeffreyMapDemo({
-    encounterId: JEFFREY_MAP_DEMO_ENCOUNTER_ID,
-    mapId: activeMapId,
-    userRef,
-    activePetRef,
-    allShopItemsRef,
-    viewRef,
-    navigation,
-    startTransition,
-    activeDirection,
-    isMoving,
-  });
+  const ensureShopItemsForPreview = useCallback(async () => {
+    const cached = allShopItemsRef.current;
+    if (cached?.length) return cached;
+    const { data, error } = await supabase.from("shop_items").select("*");
+    if (error) return [];
+    return data ?? [];
+  }, [allShopItemsRef]);
 
-  const onBattleEncounter = useCallback(
+  const captureMapSnapshotForBattle = useCallback(async (): Promise<SkImage | null> => {
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    await new Promise<void>((r) => setTimeout(r, 50));
+    try {
+      return await makeImageFromView(viewRef);
+    } catch (e) {
+      console.warn("[WorldMap] makeImageFromView failed", e);
+      return null;
+    }
+  }, [viewRef]);
+
+  const startBattleTransition = useCallback(
     async (enc: any) => {
       if (!enc?.id) return;
-      activeDirection.value = null;
-      isMoving.value = false;
       try {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         const u = userRef.current;
@@ -229,19 +231,46 @@ export const WorldMapScreen = () => {
           partyPreview,
         );
       } catch (err) {
-        console.error("[WorldMap] Random encounter battle failed:", err);
+        console.error("[WorldMap] Battle transition failed:", err);
       }
     },
-    [activeDirection, isMoving, ensureShopItemsForPreview, captureMapSnapshotForBattle, startTransition, navigation, activeMapId],
+    [ensureShopItemsForPreview, captureMapSnapshotForBattle, startTransition, navigation, activeMapId],
+  );
+
+  const onBattleEncounter = useCallback(
+    async (enc: any) => {
+      if (!enc?.id) return;
+      activeDirection.value = null;
+      isMoving.value = false;
+      if (enc.pre_battle_dialogue?.enabled && enc.pre_battle_dialogue?.script?.length) {
+        pendingBattleEncounterRef.current = enc;
+        setDialogueEncounter(enc);
+        return;
+      }
+      await startBattleTransition(enc);
+    },
+    [activeDirection, isMoving, startBattleTransition],
+  );
+
+  const handleDialogueAction = useCallback(
+    (event: string) => {
+      if (event === "START_BATTLE") {
+        setDialogueEncounter(null);
+        const enc = pendingBattleEncounterRef.current;
+        pendingBattleEncounterRef.current = null;
+        if (enc) {
+          void startBattleTransition(enc);
+        }
+      }
+    },
+    [startBattleTransition],
   );
 
   const explorationOptions = useMemo(
     () => ({
-      ...jeffreyExplorationOptions,
       onBattleEncounter,
-      excludeEncounterIds: [JEFFREY_MAP_DEMO_ENCOUNTER_ID],
     }),
-    [jeffreyExplorationOptions, onBattleEncounter],
+    [onBattleEncounter],
   );
 
   const {
@@ -315,10 +344,9 @@ export const WorldMapScreen = () => {
       const next = { ...prev, steps_banked: nextBank };
       setUser(next);
       userRef.current = next;
-      onBankedStepsSpent(cost);
       return true;
     },
-    [movementBudget, setUser, onBankedStepsSpent],
+    [movementBudget, setUser],
   );
 
   // Ref keeps saveSessionPosition stable; do not call setUser inside it (avoids focus blur/enter loops).
@@ -432,7 +460,6 @@ export const WorldMapScreen = () => {
   useFocusEffect(
     useCallback(() => {
       logWorldMapScreenSync("focus:enter");
-      resetJeffreyDemo();
       battleInFlightRef.current = false;
       void (async () => {
         await playTrack("Beginning Map");
@@ -443,7 +470,7 @@ export const WorldMapScreen = () => {
         logWorldMapScreenSync("focus:blur:saveSessionPosition");
         saveSessionPosition();
       };
-    }, [playTrack, startBackgroundMusic, refreshProfile, saveSessionPosition, resetJeffreyDemo]),
+    }, [playTrack, startBackgroundMusic, refreshProfile, saveSessionPosition]),
   );
 
   const handleUnstuck = useCallback(async () => {
@@ -746,6 +773,21 @@ export const WorldMapScreen = () => {
           }}
           activeInteraction={activeInteraction || selectedNode}
           mapId={activeMapId}
+        />
+
+        <DialogueScene
+          visible={!!dialogueEncounter}
+          nodeName={dialogueEncounter?.pre_battle_dialogue?.scene?.npc_name ?? dialogueEncounter?.name ?? ""}
+          backgroundUrl={dialogueEncounter?.pre_battle_dialogue?.scene?.background_url ? { uri: dialogueEncounter.pre_battle_dialogue.scene.background_url } : undefined}
+          npcSpriteUrl={dialogueEncounter?.pre_battle_dialogue?.scene?.npc_sprite_url ? { uri: dialogueEncounter.pre_battle_dialogue.scene.npc_sprite_url } : dialogueEncounter?.icon_url ? { uri: dialogueEncounter.icon_url } : undefined}
+          dialogueScript={dialogueEncounter?.pre_battle_dialogue?.script ?? []}
+          onClose={() => {
+            setDialogueEncounter(null);
+            pendingBattleEncounterRef.current = null;
+            battleInFlightRef.current = false;
+          }}
+          onAction={handleDialogueAction}
+          actionButtons={[{ label: "FIGHT", target_event: "START_BATTLE" }]}
         />
 
         <LevelUpModal
