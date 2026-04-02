@@ -416,11 +416,21 @@ export default function BattleScreen() {
   );
 
   if (loading) {
+    // While the walk-in transition overlay is playing, show a fully transparent
+    // backing so the overlay is the only thing visible. BattleAssetWarmer still
+    // pre-warms sprites in the background.
+    if (isTransitioning) {
       return (
-          <View style={[styles.container, { backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center' }]}>
-              <BattleAssetWarmer party={party} enemy={enemy} spriteUrls={preloadedSpriteUrls} />
-          </View>
+        <View style={[styles.container, { backgroundColor: 'transparent' }]}>
+          <BattleAssetWarmer party={party} enemy={enemy} spriteUrls={preloadedSpriteUrls} />
+        </View>
       );
+    }
+    return (
+      <View style={[styles.container, { backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <BattleAssetWarmer party={party} enemy={enemy} spriteUrls={preloadedSpriteUrls} />
+      </View>
+    );
   }
 
   if (currentPhase === PHASE.VICTORY) {

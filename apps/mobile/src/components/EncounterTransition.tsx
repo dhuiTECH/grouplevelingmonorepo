@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Dimensions, View, Text } from 'react-native';
 import {
   Canvas,
@@ -21,6 +21,7 @@ import { useTransition } from '@/context/TransitionContext';
 import LayeredAvatar from '@/components/LayeredAvatar';
 import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import type { PartyPreviewItem } from '@/context/TransitionContext';
+import { supabase } from '@/lib/supabase';
 
 const { width, height } = Dimensions.get('window');
 
@@ -50,10 +51,12 @@ function PartyMemberWalk({
   item,
   index,
   walkProgress,
+  allShopItems,
 }: {
   item: PartyPreviewItem;
   index: number;
   walkProgress: Animated.SharedValue<number>;
+  allShopItems: any[];
 }) {
   const startAt = (index * STAGGER_DELAY) / WALK_DURATION;
 
@@ -121,7 +124,7 @@ function PartyMemberWalk({
                 square 
                 hideBackground 
                 style={styles.avatarNoBox} 
-                allShopItems={item.allShopItems || []} 
+                allShopItems={allShopItems} 
               />
             ) : (
               <Text style={styles.placeholderText}>?</Text>
@@ -152,6 +155,32 @@ export const EncounterTransition = () => {
 
   /** Never use a fake `user: null` preview — that renders a naked LayeredAvatar. */
   const party = partyPreview && partyPreview.length > 0 ? partyPreview : [];
+
+  // If the partyPreview was built before allShopItems loaded (race condition),
+  // fetch them here so walk-in avatars always render with clothing.
+  const [resolvedShopItems, setResolvedShopItems] = useState<any[]>([]);
+  const shopFetchedRef = useRef(false);
+  useEffect(() => {
+    if (!isTransitioning) {
+      shopFetchedRef.current = false;
+      setResolvedShopItems([]);
+      return;
+    }
+    if (shopFetchedRef.current) return;
+    const playerItem = party.find((p) => p.type === 'player') as any | undefined;
+    const cached: any[] = playerItem?.allShopItems ?? [];
+    if (cached.length > 0) {
+      shopFetchedRef.current = true;
+      setResolvedShopItems(cached);
+      return;
+    }
+    shopFetchedRef.current = true;
+    void (async () => {
+      const { data, error } = await supabase.from('shop_items').select('*');
+      if (!error && data?.length) setResolvedShopItems(data);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTransitioning]);
 
   const progress = useSharedValue(0);
   const walkProgress = useSharedValue(0);
@@ -268,6 +297,7 @@ export const EncounterTransition = () => {
                 item={item as PartyPreviewItem}
                 index={index}
                 walkProgress={walkProgress}
+                allShopItems={resolvedShopItems}
               />
             ))}
           </View>
