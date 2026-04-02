@@ -10,7 +10,7 @@ import { useActivePet } from '@/contexts/ActivePetContext';
 import { useSkills } from '@/hooks/useSkills';
 import { useBattleStore } from '@/store/useBattleStore';
 import { usePets } from '@/hooks/usePets';
-import { fetchSkillAnimation } from '@/api/skillAnimations';
+import { fetchSkillAnimation, fetchSkillAnimationsBatch, resolveSkillKeys } from '@/api/skillAnimations';
 import type { SkillAnimationConfig } from '@/components/SkillSpriteVfx';
 
 // --- Constants & Types ---
@@ -224,7 +224,6 @@ export const useBattleLogic = ({
     } as SkillAnimationConfig;
   };
 
-  // Pre-fetch skill_animations for loadout so VFX can start immediately on press (no network delay)
   useEffect(() => {
     if (!party.length || loadingSkills) return;
     const abilities = party[0]?.abilities ?? getBattleSkills();
@@ -236,51 +235,50 @@ export const useBattleLogic = ({
     const preloadAssets = async () => {
       preloadBattleSounds();
 
-      const seen = new Set<string>();
-      const promises: Promise<any>[] = [];
+      try {
+        const batchResults = await fetchSkillAnimationsBatch(abilities);
+        const assetPreloads: Promise<any>[] = [];
+        const spriteUrls: string[] = [];
+        const configsByKey = new Map<string, SkillAnimationConfig>();
 
-      abilities.forEach((ability: { id?: string; name?: string }) => {
-        const key = [ability.id, ability.name].filter(Boolean).join('|');
-        if (!key || seen.has(key)) return;
-        seen.add(key);
-
-        const p = fetchSkillAnimation(ability.id ?? null, ability.name ?? null).then(async (row) => {
-          if (!row) return;
+        batchResults.forEach((row, skillId) => {
           const hasSprite = row.sprite_url && String(row.sprite_url).trim();
           const hasSfx = row.sfx_url && String(row.sfx_url).trim();
           if (!hasSprite && !hasSfx) return;
 
           const config = buildAnimationConfig(row);
-          animationConfigCacheRef.current[row.skill_id] = config;
-          if (ability.name) animationConfigCacheRef.current[ability.name] = config;
-          if (ability.id) animationConfigCacheRef.current[ability.id] = config;
+          configsByKey.set(skillId, config);
+          animationConfigCacheRef.current[skillId] = config;
 
-          const preloads: Promise<any>[] = [];
           if (hasSprite && row.sprite_url) {
-            preloads.push(
-              Image.prefetch(row.sprite_url).then(() => {
-                setPreloadedSpriteUrls(prev => (prev.includes(row.sprite_url!) ? prev : [...prev, row.sprite_url!]));
-              }),
-            );
+            spriteUrls.push(row.sprite_url);
+            assetPreloads.push(Image.prefetch(row.sprite_url));
           }
           if (hasSfx && row.sfx_url) {
-            preloads.push(preloadSfxUrl(String(row.sfx_url).trim()));
+            assetPreloads.push(preloadSfxUrl(String(row.sfx_url).trim()));
           }
-          await Promise.all(preloads);
         });
-        promises.push(p);
-      });
 
-      // 2. Preload Generic/Common Effects
-      try {
-        // Example: moon_slash.png from your assets
-        // promises.push(Asset.fromModule(require('../../assets/effects/moon_slash.png')).downloadAsync());
-      } catch (e) {
-        // ignore
-      }
+        for (const ability of abilities) {
+          const candidateKeys = resolveSkillKeys([ability]);
+          for (const key of candidateKeys) {
+            const config = configsByKey.get(key);
+            if (config) {
+              if (ability.id) animationConfigCacheRef.current[ability.id] = config;
+              if (ability.name) animationConfigCacheRef.current[ability.name] = config;
+              break;
+            }
+          }
+        }
 
-      try {
-        await Promise.all(promises);
+        if (spriteUrls.length > 0) {
+          setPreloadedSpriteUrls(prev => {
+            const combined = new Set([...prev, ...spriteUrls]);
+            return Array.from(combined);
+          });
+        }
+
+        await Promise.all(assetPreloads);
       } catch (e) {
         console.warn('[Battle] Some assets failed to preload', e);
       } finally {

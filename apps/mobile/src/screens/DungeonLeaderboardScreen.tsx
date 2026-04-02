@@ -165,6 +165,7 @@ export default function DungeonLeaderboardScreen() {
             renderItem={renderRankItem}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
+            getItemLayout={(_data, index) => ({ length: 74, offset: 74 * index, index })}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#06b6d4" />
             }

@@ -336,21 +336,34 @@ export const WorldMapScreen = () => {
     movementBudget.value = user.steps_banked ?? 0;
   }, [user?.id, user?.steps_banked]);
 
+  const pendingStepsSyncRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const syncStepsBankToContext = useCallback(() => {
+    const prev = userRef.current;
+    if (!prev) return;
+    const nextBank = Math.max(0, Math.floor(movementBudget.value));
+    if (prev.steps_banked === nextBank) return;
+    const next = { ...prev, steps_banked: nextBank };
+    setUser(next);
+    userRef.current = next;
+  }, [movementBudget, setUser]);
+
   const spendStepsBank = useCallback(
     (cost: number) => {
-      console.log("[WorldMap] spendStepsBank called", { cost, budget: movementBudget.value, hasUser: !!userRef.current });
       if (cost <= 0) return true;
       if (movementBudget.value < cost) return false;
       movementBudget.value -= cost;
       const prev = userRef.current;
       if (!prev) return false;
-      const nextBank = Math.max(0, Math.floor(movementBudget.value));
-      const next = { ...prev, steps_banked: nextBank };
-      setUser(next);
-      userRef.current = next;
+      userRef.current = { ...prev, steps_banked: Math.max(0, Math.floor(movementBudget.value)) };
+      if (pendingStepsSyncRef.current) clearTimeout(pendingStepsSyncRef.current);
+      pendingStepsSyncRef.current = setTimeout(() => {
+        pendingStepsSyncRef.current = null;
+        syncStepsBankToContext();
+      }, 500);
       return true;
     },
-    [movementBudget, setUser],
+    [movementBudget, syncStepsBankToContext],
   );
 
   // Ref keeps saveSessionPosition stable; do not call setUser inside it (avoids focus blur/enter loops).
@@ -358,8 +371,23 @@ export const WorldMapScreen = () => {
   const userIdRef = useRef(user?.id);
   userIdRef.current = user?.id;
 
+  useEffect(() => {
+    return () => {
+      if (pendingStepsSyncRef.current) {
+        clearTimeout(pendingStepsSyncRef.current);
+        pendingStepsSyncRef.current = null;
+      }
+    };
+  }, []);
+
   /** DB + vision flush only. React `user` coords are updated in useFocusEffect cleanup (real blur). */
   const saveSessionPosition = useCallback(() => {
+    if (pendingStepsSyncRef.current) {
+      clearTimeout(pendingStepsSyncRef.current);
+      pendingStepsSyncRef.current = null;
+    }
+    syncStepsBankToContext();
+
     const pos = latestPos.current;
     const uid = userIdRef.current;
     const u = userRef.current;
@@ -392,7 +420,7 @@ export const WorldMapScreen = () => {
       x: pos.x,
       y: pos.y,
     });
-  }, []);
+  }, [syncStepsBankToContext]);
 
   useEffect(() => {
     if (activeMapId && user != null) {
