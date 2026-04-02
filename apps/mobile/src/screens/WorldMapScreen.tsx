@@ -215,7 +215,10 @@ export const WorldMapScreen = () => {
       try {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         const u = userRef.current;
-        if (!u) return;
+        if (!u) {
+          battleInFlightRef.current = false;
+          return;
+        }
         const shop = await ensureShopItemsForPreview();
         const ap = activePetRef.current;
         const partyPreview: PartyPreviewItem[] = [
@@ -232,9 +235,10 @@ export const WorldMapScreen = () => {
         );
       } catch (err) {
         console.error("[WorldMap] Battle transition failed:", err);
+        battleInFlightRef.current = false;
       }
     },
-    [ensureShopItemsForPreview, captureMapSnapshotForBattle, startTransition, navigation, activeMapId],
+    [ensureShopItemsForPreview, captureMapSnapshotForBattle, startTransition, navigation, activeMapId, battleInFlightRef],
   );
 
   const onBattleEncounter = useCallback(
