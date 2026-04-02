@@ -238,7 +238,7 @@ export const WorldMapScreen = () => {
         battleInFlightRef.current = false;
       }
     },
-    [ensureShopItemsForPreview, captureMapSnapshotForBattle, startTransition, navigation, activeMapId, battleInFlightRef],
+    [ensureShopItemsForPreview, captureMapSnapshotForBattle, startTransition, navigation, activeMapId],
   );
 
   const onBattleEncounter = useCallback(
