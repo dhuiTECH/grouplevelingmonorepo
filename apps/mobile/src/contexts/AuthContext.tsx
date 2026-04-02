@@ -1,4 +1,4 @@
-import React, { useEffect, createContext, useContext, useState, ReactNode } from 'react';
+import React, { useEffect, useCallback, createContext, useContext, useState, ReactNode } from 'react';
 import { Platform } from 'react-native';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
@@ -65,7 +65,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
     }
   };
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) return;
 
@@ -148,7 +148,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
     } catch (err) {
       console.error('Fatal error refreshing profile:', err);
     }
-  };
+  }, []);
 
   useEffect(() => {
     // Handle deep links for OAuth
