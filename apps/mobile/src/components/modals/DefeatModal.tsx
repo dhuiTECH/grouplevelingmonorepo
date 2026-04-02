@@ -16,6 +16,11 @@ import Svg, {
 import { MotiView, AnimatePresence } from 'moti';
 import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import LayeredAvatar from '@/components/LayeredAvatar';
+import {
+  SYSTEM_WINDOW_FROM,
+  SYSTEM_WINDOW_TO,
+  SYSTEM_WINDOW_TRANSITION,
+} from '@/utils/systemWindowMotion';
 
 // --- Constants ---
 const VIEWBOX_WIDTH = 1000;
@@ -89,17 +94,23 @@ export const DefeatModal: React.FC<DefeatModalProps> = ({
         >
           <SafeAreaView style={styles.safeFill} edges={['top', 'bottom']}>
           <View style={styles.container}>
-            {/* Main Scaled Canvas — expand from below like system modals (SettingsModal) */}
+            {/* Main Scaled Canvas — thin strip → full panel (matches web SystemWindow) */}
             <MotiView
               from={{
-                scaleX: scaleX * 0.88,
-                scaleY: scaleY * 0.88,
-                opacity: 0,
-                translateY: 40,
+                scaleX,
+                scaleY: scaleY * SYSTEM_WINDOW_FROM.scaleY,
+                opacity: SYSTEM_WINDOW_FROM.opacity,
+                translateY: 0,
               }}
-              animate={{ scaleX, scaleY, opacity: 1, translateY: 0 }}
-              transition={{ type: 'spring', damping: 18, stiffness: 220 }}
-              style={{ width: VIEWBOX_WIDTH, height: VIEWBOX_HEIGHT, justifyContent: 'center', alignItems: 'center' }}
+              animate={{ scaleX, scaleY, opacity: SYSTEM_WINDOW_TO.opacity, translateY: 0 }}
+              transition={SYSTEM_WINDOW_TRANSITION}
+              style={{
+                width: VIEWBOX_WIDTH,
+                height: VIEWBOX_HEIGHT,
+                justifyContent: 'center',
+                alignItems: 'center',
+                transformOrigin: 'center',
+              }}
             >
               
               {/* --- BACKGROUND SVG --- */}

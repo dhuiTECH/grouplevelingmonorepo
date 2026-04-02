@@ -21,6 +21,11 @@ import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import LayeredAvatar from '@/components/LayeredAvatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { persistBattleRewards } from '@/utils/persistBattleRewards';
+import {
+  SYSTEM_WINDOW_FROM,
+  SYSTEM_WINDOW_TO,
+  SYSTEM_WINDOW_TRANSITION,
+} from '@/utils/systemWindowMotion';
 
 // --- Types ---
 interface VictoryPlayerStats {
@@ -165,10 +170,10 @@ export function VictoryScreen({
       <SafeAreaView style={[styles.container, { justifyContent: 'center', paddingHorizontal: 24 }]} edges={['top', 'bottom']}>
         <BattleAssetWarmer party={party} enemy={enemy} spriteUrls={spriteUrls} />
         <MotiView
-          from={{ opacity: 0, scale: 0.92, translateY: 52 }}
-          animate={{ opacity: 1, scale: 1, translateY: 0 }}
-          transition={{ type: 'spring', damping: 18, stiffness: 220 }}
-          style={styles.petCaptureCard}
+          from={{ ...SYSTEM_WINDOW_FROM, translateY: 0 }}
+          animate={{ ...SYSTEM_WINDOW_TO, translateY: 0 }}
+          transition={SYSTEM_WINDOW_TRANSITION}
+          style={[styles.petCaptureCard, { transformOrigin: 'center' }]}
         >
           <Text style={styles.cinematicText}>VICTORY</Text>
           <Text style={styles.petCaptureTitle}>New Companion Detected</Text>
@@ -242,10 +247,10 @@ export function VictoryScreen({
       
       <View style={styles.centeredContent}>
         <MotiView
-          from={{ opacity: 0, scale: 0.85 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ type: 'timing', duration: 450 }}
-          style={styles.slWindow}
+          from={SYSTEM_WINDOW_FROM}
+          animate={SYSTEM_WINDOW_TO}
+          transition={SYSTEM_WINDOW_TRANSITION}
+          style={[styles.slWindow, { transformOrigin: 'center' }]}
         >
           <Scanlines />
           <MechanicalBorder position="top" />
@@ -809,6 +814,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(148, 163, 184, 0.4)',
+    overflow: 'hidden',
     padding: 24,
     alignItems: 'center',
     shadowColor: '#000',

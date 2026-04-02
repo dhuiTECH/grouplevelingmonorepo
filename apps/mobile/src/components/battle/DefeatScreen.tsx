@@ -7,6 +7,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BattleAssetWarmer } from '@/components/BattleAssetWarmer';
 import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import { LayeredAvatar } from '@/components/LayeredAvatar';
+import {
+  SYSTEM_WINDOW_FROM,
+  SYSTEM_WINDOW_TO,
+  SYSTEM_WINDOW_TRANSITION,
+} from '@/utils/systemWindowMotion';
 
 interface DefeatScreenProps {
   party: any[];
@@ -65,10 +70,10 @@ export function DefeatScreen({ party, enemy, spriteUrls, onReturnToMap }: Defeat
       
       <View style={styles.centeredContent}>
         <MotiView
-          from={{ opacity: 0, scale: 0.9, translateY: 56 }}
-          animate={{ opacity: 1, scale: 1, translateY: 0 }}
-          transition={{ type: 'spring', damping: 18, stiffness: 220 }}
-          style={styles.slWindow}
+          from={SYSTEM_WINDOW_FROM}
+          animate={SYSTEM_WINDOW_TO}
+          transition={SYSTEM_WINDOW_TRANSITION}
+          style={[styles.slWindow, { transformOrigin: 'center' }]}
         >
           <Scanlines />
           <MechanicalBorder position="top" />
