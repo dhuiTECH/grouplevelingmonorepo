@@ -25,6 +25,12 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@repo/avatar-constants": [
+        "../../packages/avatar-constants/src/index.ts"
+      ],
+      "@repo/map-autotile": [
+        "../../packages/map-autotile/src/index.ts"
       ]
     }
   },
