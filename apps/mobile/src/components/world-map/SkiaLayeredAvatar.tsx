@@ -12,6 +12,7 @@ import {
   FilterMode,
   Mask
 } from '@shopify/react-native-skia';
+import { globalImageCache } from './useSkiaAssets';
 import { 
   SharedValue, 
   useDerivedValue, 
@@ -75,8 +76,12 @@ interface SkiaLayerProps {
 }
 
 const SkiaLayer: React.FC<SkiaLayerProps> = ({ uri, centerX, centerY, dbScale, scaleRatio, isBackground, size, tintColor, opacity = 1, maskUrl, rotation = 0 }) => {
-  const skiaImg = useImage(uri ? uri : null);
-  const maskImg = useImage(maskUrl ? maskUrl : null);
+  const cachedImg = uri ? globalImageCache.get(uri.split('?')[0]) : undefined;
+  const cachedMask = maskUrl ? globalImageCache.get(maskUrl.split('?')[0]) : undefined;
+  const fallbackImg = useImage(!cachedImg && uri ? uri : null);
+  const fallbackMask = useImage(!cachedMask && maskUrl ? maskUrl : null);
+  const skiaImg = cachedImg || fallbackImg;
+  const maskImg = cachedMask || fallbackMask;
 
   const multiplyMatrix = useMemo(() => {
     if (!tintColor) return null;
@@ -167,8 +172,12 @@ interface SkiaAnimatedLayerProps {
 }
 
 const SkiaAnimatedLayer: React.FC<SkiaAnimatedLayerProps> = ({ uri, x, y, width, height, centerX, centerY, tintColor, frameWidth, frameHeight, totalFrames = 4, fps = 10, maskUrl, size, rotation = 0 }) => {
-  const skiaImg = useImage(uri ? uri : null);
-  const maskImg = useImage(maskUrl ? maskUrl : null);
+  const cachedImg = uri ? globalImageCache.get(uri.split('?')[0]) : undefined;
+  const cachedMask = maskUrl ? globalImageCache.get(maskUrl.split('?')[0]) : undefined;
+  const fallbackImg = useImage(!cachedImg && uri ? uri : null);
+  const fallbackMask = useImage(!cachedMask && maskUrl ? maskUrl : null);
+  const skiaImg = cachedImg || fallbackImg;
+  const maskImg = cachedMask || fallbackMask;
   const currentFrame = useSharedValue(0);
   const frameTimer = useSharedValue(0);
 

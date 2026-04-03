@@ -182,6 +182,7 @@ export const WorldMapScreen = () => {
   allShopItemsRef.current = allShopItems;
 
   const viewRef = useAnimatedRef<View>();
+  const skiaCanvasRef = useRef<any>(null);
   const { startTransition } = useTransition();
 
   const flushPendingVisionRef = useRef<() => void>(() => {});
@@ -209,8 +210,14 @@ export const WorldMapScreen = () => {
         if (ap?.pet_details) {
           partyPreview.push({ type: "pet" as const, petDetails: ap.pet_details });
         }
+        let snapshot = null;
+        try {
+          if (skiaCanvasRef.current?.makeImageSnapshot) {
+            snapshot = skiaCanvasRef.current.makeImageSnapshot();
+          }
+        } catch (_e) {}
         startTransition(
-          null,
+          snapshot,
           () => navigation.navigate("Battle", { encounterId: enc.id, mapId: activeMapId }),
           partyPreview,
         );
@@ -741,6 +748,7 @@ export const WorldMapScreen = () => {
           petZIndex={petZIndex}
           avatarData={avatarData}
           allShopItems={allShopItems}
+          canvasRef={skiaCanvasRef}
         >
           <WorldNodesLayer
             nodes={nodesInVision ?? []}

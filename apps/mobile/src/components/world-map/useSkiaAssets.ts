@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Skia, SkImage } from '@shopify/react-native-skia';
 
 // Global cache to avoid reloading across unmounts/remounts
-const globalImageCache = new Map<string, SkImage>();
+export const globalImageCache = new Map<string, SkImage>();
 
 export const useSkiaAssets = (urls: string[]) => {
   const [images, setImages] = useState<Map<string, SkImage>>(new Map(globalImageCache));

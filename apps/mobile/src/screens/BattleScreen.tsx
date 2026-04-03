@@ -426,7 +426,7 @@ export default function BattleScreen() {
   if (loading) {
     if (isTransitioning) {
       return (
-        <View style={[styles.container, { backgroundColor: 'transparent' }]}>
+        <View style={[styles.container, { backgroundColor: COLORS.background }]}>
           <BattleAssetWarmer party={party} enemy={enemy} spriteUrls={preloadedSpriteUrls} />
         </View>
       );

@@ -75,6 +75,8 @@ interface SkiaWorldMapProps {
   onTileMoveStart?: (running: boolean) => void;
   /** Fired when a move was requested but blocked (stamina or collision). */
   onTileMoveBlocked?: (reason: "stamina" | "collision") => void;
+  /** Ref forwarded to the Skia Canvas for snapshot capture. */
+  canvasRef?: React.RefObject<any>;
 }
 
 // Frame-based movement: fixed px per frame (3 = walk, 6 = run). Durations in ms for reference only.
@@ -119,6 +121,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   enableCloudShadows = true,
   onTileMoveStart,
   onTileMoveBlocked,
+  canvasRef,
 }) => {
   const { width, height } = useWindowDimensions();
 
@@ -215,8 +218,30 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
         if (url) urls.add(url.split("?")[0]);
       }
     }
+
+    if (avatarData) {
+      const equipped = avatarData.cosmetics?.filter((c: any) => c.equipped) || [];
+      const baseSkin = equipped.find((c: any) => {
+        const s = c.shop_items?.slot?.trim().toLowerCase();
+        return s === 'avatar' || s === 'base_body';
+      });
+      const baseUrl = baseSkin?.shop_items?.image_url || avatarData.base_body_url || avatarData.avatar_url;
+      if (baseUrl) urls.add(baseUrl.split("?")[0]);
+      if (avatarData.base_body_silhouette_url) urls.add(avatarData.base_body_silhouette_url.split("?")[0]);
+
+      for (const c of equipped) {
+        const item = c.shop_items;
+        if (!item) continue;
+        if (item.image_url) urls.add(item.image_url.split("?")[0]);
+        if (item.image_url_female) urls.add(item.image_url_female.split("?")[0]);
+        if (item.silhouette_url) urls.add(item.silhouette_url.split("?")[0]);
+        if (item.eraser_mask_url) urls.add(item.eraser_mask_url.split("?")[0]);
+        if (item.eraser_mask_url_female) urls.add(item.eraser_mask_url_female.split("?")[0]);
+      }
+    }
+
     return Array.from(urls);
-  }, [visionGrid, mapSettings, activePet, nodesInVision]);
+  }, [visionGrid, mapSettings, activePet, nodesInVision, avatarData]);
 
   const images = useSkiaAssets(urlsToLoad);
 
@@ -530,6 +555,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   return (
     <View style={StyleSheet.absoluteFill}>
       <Canvas
+        ref={canvasRef}
         style={{ position: "absolute", width, height, zIndex: 1 }}
         pointerEvents="none"
       >
