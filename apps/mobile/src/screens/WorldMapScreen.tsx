@@ -187,6 +187,9 @@ export const WorldMapScreen = () => {
   const { startTransition } = useTransition();
 
   const flushPendingVisionRef = useRef<() => void>(() => {});
+  const invokeFlushPendingVision = useCallback(() => {
+    flushPendingVisionRef.current();
+  }, []);
   const [dialogueEncounter, setDialogueEncounter] = useState<any>(null);
   const pendingBattleEncounterRef = useRef<any>(null);
 
@@ -211,7 +214,10 @@ export const WorldMapScreen = () => {
 
   const startBattleTransition = useCallback(
     async (enc: any) => {
-      if (!enc?.id) return;
+      if (!enc?.id) {
+        battleInFlightRef.current = false;
+        return;
+      }
       try {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         const u = userRef.current;
@@ -243,7 +249,10 @@ export const WorldMapScreen = () => {
 
   const onBattleEncounter = useCallback(
     async (enc: any) => {
-      if (!enc?.id) return;
+      if (!enc?.id) {
+        battleInFlightRef.current = false;
+        return;
+      }
       activeDirection.value = null;
       isMoving.value = false;
       if (enc.pre_battle_dialogue?.enabled && enc.pre_battle_dialogue?.script?.length) {
@@ -264,7 +273,13 @@ export const WorldMapScreen = () => {
         pendingBattleEncounterRef.current = null;
         if (enc) {
           void startBattleTransition(enc);
+        } else {
+          battleInFlightRef.current = false;
         }
+      } else {
+        setDialogueEncounter(null);
+        pendingBattleEncounterRef.current = null;
+        battleInFlightRef.current = false;
       }
     },
     [startBattleTransition],
@@ -476,6 +491,23 @@ export const WorldMapScreen = () => {
   useEffect(() => {
     activeDirection.value = null;
   }, [activeDirection]);
+
+  useAnimatedReaction(
+    () => ({
+      moving: isMoving.value,
+      dir: activeDirection.value,
+    }),
+    (state, prevState) => {
+      if (
+        prevState &&
+        (prevState.moving || prevState.dir !== null) &&
+        !state.moving &&
+        state.dir === null
+      ) {
+        runOnJS(invokeFlushPendingVision)();
+      }
+    },
+  );
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next: AppStateStatus) => {

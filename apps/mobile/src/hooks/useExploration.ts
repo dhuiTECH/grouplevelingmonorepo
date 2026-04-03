@@ -121,6 +121,7 @@ export const useExploration = (
     if (!currentMapId || currentMapId === "undefined") return EMPTY_ENCOUNTER_POOL;
     return s.encountersByMap[currentMapId] ?? EMPTY_ENCOUNTER_POOL;
   });
+  encounterPoolRef.current = encounterPoolForMap;
 
   // Pending vision refresh — set during movement when drifted 5+ tiles.
   // Only flushed when player stops; no server calls during movement.
