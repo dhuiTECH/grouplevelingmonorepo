@@ -123,12 +123,9 @@ export const useExploration = (
   });
   encounterPoolRef.current = encounterPoolForMap;
 
-  // Pending vision refresh — set during movement when drifted 5+ tiles.
-  // Only flushed when player stops; no server calls during movement.
-  const pendingRefreshCenterRef = useRef<{ x: number; y: number } | null>(null);
-
-  // Deferred vision state — refreshVision updates refs, flushPendingVision applies to React.
-  // Prevents setState during movement (avoids rubberbanding).
+  // Deferred vision state — discoveries/nodes are written to refs during refreshVision,
+  // then applied to React state by flushPendingVision (called on blur/background).
+  // gridCenter and chunksVersion update inline during movement.
   const hasPendingVisionRef = useRef(false);
   const unlockedRef = useRef<Set<string>>(new Set());
   const gridCenterRef = useRef<{ x: number; y: number }>({
@@ -574,7 +571,6 @@ export const useExploration = (
   const flushPendingVision = useCallback(() => {
     logWorldMapSync("flushPendingVision:start", {
       hasPendingVision: hasPendingVisionRef.current,
-      hasPendingCenter: Boolean(pendingRefreshCenterRef.current),
       gridCenterRef: { ...gridCenterRef.current },
     });
 
@@ -696,7 +692,6 @@ export const useExploration = (
           }
         }
 
-        pendingRefreshCenterRef.current = { x: nx, y: ny };
         const dist =
           Math.abs(nx - lastRefreshCenter.current.x) +
           Math.abs(ny - lastRefreshCenter.current.y);
@@ -710,7 +705,6 @@ export const useExploration = (
           setGridCenter({ x: nx, y: ny });
           gridCenterRef.current = { x: nx, y: ny };
           lastRefreshCenter.current = { x: nx, y: ny };
-          pendingRefreshCenterRef.current = null;
           void refreshVision(nx, ny, false, undefined, { chunksOnly: true });
         }
 
