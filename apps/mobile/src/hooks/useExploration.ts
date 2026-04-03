@@ -136,8 +136,6 @@ export const useExploration = (
     y: user?.world_y || 0,
   });
   const chunksVersionRef = useRef(0);
-  /** Chunk cache updated in refreshVision; React bumps `chunksVersion` only in flushPendingVision (movement stop). */
-  const pendingChunksBumpRef = useRef(false);
 
   useEffect(() => {
     userRef.current = user;
@@ -339,9 +337,8 @@ export const useExploration = (
   }, [gridCenter.x, gridCenter.y, unlocked, nodes, globalTileMap]);
 
   // 2. REFRESH DATA (Fetching Chunks/Nodes/Discoveries)
-  // Chunk data is written to chunkCache refs; `chunksVersion` bumps in flushPendingVision
-  // (movement stop) via pendingChunksBumpRef — avoids globalTileMap/visionGrid re-renders mid-move.
-  // Discoveries/nodes still flush via flushPendingVision on movement stop.
+  // Chunk data is written to chunkCache refs; `chunksVersion` bumps inline when chunks arrive.
+  // Discoveries/nodes flush via flushPendingVision on blur/background.
   const refreshVision = useCallback(
     async (
       cx: number,

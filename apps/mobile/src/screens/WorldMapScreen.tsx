@@ -187,9 +187,6 @@ export const WorldMapScreen = () => {
   const { startTransition } = useTransition();
 
   const flushPendingVisionRef = useRef<() => void>(() => {});
-  const invokeFlushPendingVision = useCallback(() => {
-    flushPendingVisionRef.current();
-  }, []);
   const [dialogueEncounter, setDialogueEncounter] = useState<any>(null);
   const pendingBattleEncounterRef = useRef<any>(null);
 
@@ -382,7 +379,6 @@ export const WorldMapScreen = () => {
   );
 
   // Ref keeps saveSessionPosition stable; do not call setUser inside it (avoids focus blur/enter loops).
-  // flushPendingVisionRef is set after useExploration (same flush as Jeffrey defer).
   const userIdRef = useRef(user?.id);
   userIdRef.current = user?.id;
 
