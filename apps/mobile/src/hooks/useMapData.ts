@@ -19,6 +19,12 @@ function normalizeMapSettings(settings: any) {
     cleanWaterSheetUrl: settings.water_sheet_url
       ? settings.water_sheet_url.split("?")[0]
       : undefined,
+    cleanDirtv2SheetUrl: settings.dirtv2_sheet_url
+      ? settings.dirtv2_sheet_url.split("?")[0]
+      : undefined,
+    cleanWaterv2SheetUrl: settings.waterv2_sheet_url
+      ? settings.waterv2_sheet_url.split("?")[0]
+      : undefined,
     cleanFoamSheetUrl: settings.foam_sheet_url
       ? settings.foam_sheet_url.split("?")[0]
       : undefined,
