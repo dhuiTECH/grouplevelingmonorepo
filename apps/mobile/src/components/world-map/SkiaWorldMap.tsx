@@ -144,8 +144,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
     const BUFFER_X = 8;
     const BUFFER_Y_TOP = 8;
     const BUFFER_Y_BOTTOM = 15;
-    /** Match useExploration GRID_REFRESH_DISTANCE − 1 (max Manhattan drift before recenter). */
-    const CAMERA_DRIFT_BUFFER = 5;
+    const CAMERA_DRIFT_BUFFER = 10;
 
     const screenTilesX = Math.ceil(width / tileSize);
     const screenTilesY = Math.ceil(height / tileSize);

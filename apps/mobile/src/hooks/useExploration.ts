@@ -17,11 +17,11 @@ const CHUNK_SIZE = 16;
 // Only recenter visionGrid when player moves 5+ tiles from grid center (keeps SkiaWorldMap memo stable).
 const GRID_REFRESH_DISTANCE = 5;
 
-// Buffer zone: grid is larger than "visible" so we don't need a new array every few steps.
-// 30x30 grid (radius 15) = 10-tile buffer each side if refresh is at 5.
-// Prevents flickering at edges on large screens (iPad, Pro Max) during fast movement.
-const VISIBLE_RADIUS_X = 18;
-const VISIBLE_RADIUS_Y = 20;
+// Oversized vision grid: radius is much larger than the screen + culling range so that
+// when gridCenter updates by GRID_REFRESH_DISTANCE tiles, only tiles far off-screen
+// are added/removed — on-screen tiles never change, eliminating rubberbanding.
+const VISIBLE_RADIUS_X = 30;
+const VISIBLE_RADIUS_Y = 32;
 
 // Large prefetch radii — minimize server round-trips during gameplay.
 // Client holds more data; server sync only when player stops.
@@ -592,18 +592,9 @@ export const useExploration = (
       setChunksVersion((v) => v + 1);
     }
 
-    // Apply the latest known player position to gridCenter.
-    const target = pendingRefreshCenterRef.current ?? gridCenterRef.current;
-    pendingRefreshCenterRef.current = null;
-
-    setGridCenter({ x: target.x, y: target.y });
-    lastRefreshCenter.current = { x: target.x, y: target.y };
-    gridCenterRef.current = { x: target.x, y: target.y };
-
-    // No refreshVision here; chunks are prefetched during movement via chunksOnly.
     logWorldMapSync("flushPendingVision:end", {
-      gridCenterX: target.x,
-      gridCenterY: target.y,
+      gridCenterX: gridCenterRef.current.x,
+      gridCenterY: gridCenterRef.current.y,
     });
   }, []);
 
@@ -724,9 +715,10 @@ export const useExploration = (
             dist,
             threshold: GRID_REFRESH_DISTANCE,
           });
-          // Do not call setGridCenter here — that is setState mid-movement.
-          // pendingRefreshCenterRef already tracks this; flushPendingVision applies it on stop.
+          setGridCenter({ x: nx, y: ny });
+          gridCenterRef.current = { x: nx, y: ny };
           lastRefreshCenter.current = { x: nx, y: ny };
+          pendingRefreshCenterRef.current = null;
           void refreshVision(nx, ny, false, undefined, { chunksOnly: true });
         }
 
