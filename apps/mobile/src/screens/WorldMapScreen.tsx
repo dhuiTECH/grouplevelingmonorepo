@@ -247,7 +247,7 @@ export const WorldMapScreen = () => {
         const enc = pendingBattleEncounterRef.current;
         pendingBattleEncounterRef.current = null;
         if (enc) {
-          void startBattleTransition(enc);
+          startBattleTransition(enc);
         } else {
           battleInFlightRef.current = false;
         }
