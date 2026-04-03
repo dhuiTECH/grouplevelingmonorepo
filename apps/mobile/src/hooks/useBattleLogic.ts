@@ -403,12 +403,21 @@ export const useBattleLogic = ({
       setLoading(true);
       
       try {
-        const cachedEncounter =
-          !isBoss && encounterId && currentMapId
-            ? useEncounterPoolStore.getState().getEncounterById(currentMapId, encounterId)
-            : undefined;
+        let cachedEncounter: any = undefined;
+        if (!isBoss && encounterId) {
+          const store = useEncounterPoolStore.getState();
+          if (currentMapId) {
+            cachedEncounter = store.getEncounterById(currentMapId, encounterId);
+          }
+          if (!cachedEncounter) {
+            const allMaps = store.encountersByMap;
+            for (const mId of Object.keys(allMaps)) {
+              const found = allMaps[mId]?.find((e: any) => String(e?.id) === String(encounterId));
+              if (found) { cachedEncounter = found; break; }
+            }
+          }
+        }
 
-        /** Runs in parallel with party setup when cache miss (party_members + cosmetics). */
         const encounterPoolPromise =
           !isBoss && encounterId && !cachedEncounter
             ? supabase.from('encounter_pool').select('*').eq('id', encounterId).single()
