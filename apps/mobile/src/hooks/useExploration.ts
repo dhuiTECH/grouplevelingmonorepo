@@ -567,7 +567,7 @@ export const useExploration = (
     [],
   );
 
-  // Applies deferred vision data to React state. Call when player stops.
+  // Applies deferred discoveries/nodes to React state. Called on blur/background.
   const flushPendingVision = useCallback(() => {
     logWorldMapSync("flushPendingVision:start", {
       hasPendingVision: hasPendingVisionRef.current,
