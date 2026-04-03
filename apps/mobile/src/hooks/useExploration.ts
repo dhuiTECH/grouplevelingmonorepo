@@ -428,7 +428,7 @@ export const useExploration = (
 
           if (wroteChunkTiles) {
             chunksVersionRef.current += 1;
-            pendingChunksBumpRef.current = true;
+            setChunksVersion((v) => v + 1);
           }
           logWorldMapSync("refreshVision:chunksOnly:complete", {
             cx,
@@ -551,7 +551,7 @@ export const useExploration = (
 
         if (wroteChunkTiles) {
           chunksVersionRef.current += 1;
-          pendingChunksBumpRef.current = true;
+          setChunksVersion((v) => v + 1);
         }
         logWorldMapSync("refreshVision:full:complete", {
           cx,
@@ -585,11 +585,6 @@ export const useExploration = (
       setUnlocked(unlockedRef.current);
       setNodes(nodesRef.current);
       hasPendingVisionRef.current = false;
-    }
-
-    if (pendingChunksBumpRef.current) {
-      pendingChunksBumpRef.current = false;
-      setChunksVersion((v) => v + 1);
     }
 
     logWorldMapSync("flushPendingVision:end", {

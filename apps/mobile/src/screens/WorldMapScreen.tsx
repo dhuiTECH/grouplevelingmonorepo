@@ -492,23 +492,6 @@ export const WorldMapScreen = () => {
     activeDirection.value = null;
   }, [activeDirection]);
 
-  useAnimatedReaction(
-    () => ({
-      moving: isMoving.value,
-      dir: activeDirection.value,
-    }),
-    (state, prevState) => {
-      if (
-        prevState &&
-        (prevState.moving || prevState.dir !== null) &&
-        !state.moving &&
-        state.dir === null
-      ) {
-        runOnJS(invokeFlushPendingVision)();
-      }
-    },
-  );
-
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
       if (next === "background" || next === "inactive") {
