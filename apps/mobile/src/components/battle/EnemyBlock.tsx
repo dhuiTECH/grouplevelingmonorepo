@@ -1,12 +1,11 @@
 import React, { type RefObject, useEffect } from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, Easing, withSpring } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, Easing } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import { EnemyHPBar } from './EnemyHPBar';
 import { COLORS } from './battleTheme';
 import { useBattleStore } from '@/store/useBattleStore';
-import { PHASE } from '@/store/useBattleStore';
 
 /** Layout reference; icon + spritesheet enemies share the same rendered sprite size. */
 const ENEMY_REFERENCE = 290;
@@ -34,7 +33,6 @@ export function EnemyBlock({
   onEnterComplete,
 }: EnemyBlockProps) {
   const enemy = useBattleStore(state => state.enemy);
-  const currentPhase = useBattleStore(state => state.currentPhase);
   const lastDamageEvent = useBattleStore(state => state.lastDamageEvent);
   
   // Local state for visual HP to allow smooth bars
@@ -49,24 +47,18 @@ export function EnemyBlock({
     }
   }, [enemy?.hp]);
 
-  // Reanimated values
   const lungeY = useSharedValue(0);
-  const scale = useSharedValue(1);
 
-  // Trigger lunge or hit animations based on damage events
   useEffect(() => {
     if (!lastDamageEvent) return;
 
-    // Enemy is attacking
     if (lastDamageEvent.casterCharId === 'ENEMY' || (lastDamageEvent.targetId !== 'ENEMY' && !lastDamageEvent.casterCharId)) {
       lungeY.value = withSequence(
         withTiming(50, { duration: 150, easing: Easing.out(Easing.cubic) }),
         withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) })
       );
     }
-    // Enemy is hit
     else if (lastDamageEvent.targetId === 'ENEMY') {
-      // Small flinch
       lungeY.value = withSequence(
         withTiming(-10, { duration: 100 }),
         withTiming(0, { duration: 100 })
@@ -74,19 +66,9 @@ export function EnemyBlock({
     }
   }, [lastDamageEvent?.timestamp]);
 
-  // Scale up during enemy strike phase
-  useEffect(() => {
-    if (currentPhase === PHASE.ENEMY_STRIKE) {
-      scale.value = withSpring(1.1);
-    } else {
-      scale.value = withSpring(1);
-    }
-  }, [currentPhase]);
-
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
       { translateY: lungeY.value },
-      { scale: scale.value }
     ]
   }));
 
@@ -182,5 +164,4 @@ const styles = StyleSheet.create({
   },
   enemyImage: { width: ENEMY_IMAGE_SIZE, height: ENEMY_IMAGE_SIZE },
   enemyEmoji: { fontSize: 88 },
-  enemyAttacking: { borderColor: '#ef4444', transform: [{ scale: 1.1 }] },
 });

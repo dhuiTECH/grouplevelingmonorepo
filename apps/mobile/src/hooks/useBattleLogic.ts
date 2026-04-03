@@ -390,15 +390,17 @@ export const useBattleLogic = ({
     // Don't re-init if battle has already ended (prevents user/context updates from wiping VICTORY/DEFEAT)
     if (battleEndedRef.current) return;
 
-    setAssetsLoaded(false);
+    setBattleState(() => ({
+      assetsLoaded: false,
+      currentPhase: PHASE.ACTIVE,
+      queueIndex: 0,
+      logs: ['BATTLE START'],
+      plannedAbilities: [],
+      chainCount: 0,
+      selectedAbilityId: null,
+    }));
     const initBattle = async () => {
       setLoading(true);
-      setCurrentPhase(PHASE.ACTIVE);
-      setQueueIndex(0);
-      setLogs(['BATTLE START']);
-      setPlannedAbilities([]);
-      setChainCount(0);
-      setSelectedAbilityId(null);
       
       try {
         const cachedEncounter =
@@ -634,7 +636,7 @@ export const useBattleLogic = ({
 
   // --- Realtime Sync ---
   useEffect(() => {
-    if (!user?.party_id || !enemy || !assetsLoaded) return;
+    if (!user?.party_id || !enemy) return;
 
     const channelId = `battle:${user.party_id}:${encounterId || raidId}`;
     const channel = supabase.channel(channelId)
@@ -681,7 +683,7 @@ export const useBattleLogic = ({
       channel.unsubscribe();
       realtimeChannelRef.current = null;
     };
-  }, [user?.party_id, !!enemy, assetsLoaded]);
+  }, [user?.party_id, !!enemy]);
 
   // --- Helpers ---
   const addLog = (msg: string) => setLogs(prev => [msg, ...prev].slice(0, 2));
@@ -1178,17 +1180,9 @@ export const useBattleLogic = ({
 
   const startEnemyAttack = () => {
     attackResolvedRef.current = false;
-    setCurrentPhase(PHASE.ENEMY_STRIKE);
-    // setParryTimer(0);
     parryTimerAnim.setValue(0);
     parryTimerRef.current = 0;
-    setParryWindowActive(true);
-    setParryPreDelay(0.12 + Math.random() * 0.12); // 0.12–0.24s variable windup
-    setFocusMode(false);
-    setBurstCharged(false);
-    setComboMultiplier(1.0);
 
-    // Weighted pattern pick for variety (NORMAL/RHYTHM/MIXED more common, FLURRY/HEAVY/SWIPE surprise)
     const patternRoll = Math.random();
     let selectedPattern: string;
     if (patternRoll < 0.28) selectedPattern = ATTACK_PATTERN.NORMAL;
@@ -1197,23 +1191,22 @@ export const useBattleLogic = ({
     else if (patternRoll < 0.88) selectedPattern = ATTACK_PATTERN.SWIPE_STORM;
     else if (patternRoll < 0.96) selectedPattern = ATTACK_PATTERN.FAST_FLURRY;
     else selectedPattern = ATTACK_PATTERN.HEAVY_SLOW;
-    setCurrentPattern(selectedPattern);
 
-    // Variable target count: 3–7, pattern-specific bias
     let count: number;
-    if (selectedPattern === ATTACK_PATTERN.FAST_FLURRY) count = 5 + Math.floor(Math.random() * 3); // 5–7
-    else if (selectedPattern === ATTACK_PATTERN.HEAVY_SLOW) count = 3 + Math.floor(Math.random() * 2); // 3–4
-    else count = 4 + Math.floor(Math.random() * 4); // 4–7
+    if (selectedPattern === ATTACK_PATTERN.FAST_FLURRY) count = 5 + Math.floor(Math.random() * 3);
+    else if (selectedPattern === ATTACK_PATTERN.HEAVY_SLOW) count = 3 + Math.floor(Math.random() * 2);
+    else count = 4 + Math.floor(Math.random() * 4);
     count = Math.max(3, Math.min(7, count));
 
     const newTargets: any[] = [];
-    const baseFirstHit = 6 + Math.floor(Math.random() * 8); // 6–13 variable first prompt
+    const baseFirstHit = 6 + Math.floor(Math.random() * 8);
     let lastTime = baseFirstHit;
-    const rhythmBase = 30; // Slightly slower rhythm (was 28)
+    const rhythmBase = 30;
     const dirs = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
     const usedZones = new Set<number>();
-    let swipeRun = 0; // for MIXED: allow 1–3 swipes in a row
-    const mixedSwipeChance = 0.5 + Math.random() * 0.25; // 50–75% swipe in MIXED for better balance
+    let swipeRun = 0;
+    const mixedSwipeChance = 0.5 + Math.random() * 0.25;
+    const batchTs = Date.now();
 
     for (let i = 0; i < count; i++) {
       let type = QTE_TYPE.TAP;
@@ -1222,14 +1215,14 @@ export const useBattleLogic = ({
 
       switch (selectedPattern) {
         case ATTACK_PATTERN.RHYTHM:
-          gap = rhythmBase + (Math.random() - 0.5) * 6; // humanized rhythm ±3
+          gap = rhythmBase + (Math.random() - 0.5) * 6;
           type = Math.random() < 0.45 ? QTE_TYPE.SWIPE : QTE_TYPE.TAP;
           if (type === QTE_TYPE.SWIPE) direction = dirs[Math.floor(Math.random() * dirs.length)];
           break;
         case ATTACK_PATTERN.SWIPE_STORM:
           type = QTE_TYPE.SWIPE;
           direction = dirs[Math.floor(Math.random() * dirs.length)];
-          gap = 37 + Math.random() * 12; // Slightly slower swipes (was 34)
+          gap = 37 + Math.random() * 12;
           break;
         case ATTACK_PATTERN.MIXED:
           if (swipeRun > 0 || Math.random() < mixedSwipeChance) {
@@ -1239,20 +1232,20 @@ export const useBattleLogic = ({
           } else {
             swipeRun = 0;
           }
-          gap = 32 + Math.random() * 18; // Slightly slower mixed (was 30)
+          gap = 32 + Math.random() * 18;
           break;
         case ATTACK_PATTERN.FAST_FLURRY:
-          gap = 18 + Math.random() * 10; // Slightly slower flurry (was 17)
+          gap = 18 + Math.random() * 10;
           type = Math.random() < 0.45 ? QTE_TYPE.SWIPE : QTE_TYPE.TAP;
           if (type === QTE_TYPE.SWIPE) direction = dirs[Math.floor(Math.random() * dirs.length)];
           break;
         case ATTACK_PATTERN.HEAVY_SLOW:
-          gap = 47 + Math.random() * 20; // Slightly slower heavy (was 44)
+          gap = 47 + Math.random() * 20;
           type = Math.random() < 0.5 ? QTE_TYPE.SWIPE : QTE_TYPE.TAP;
           if (type === QTE_TYPE.SWIPE) direction = dirs[Math.floor(Math.random() * dirs.length)];
           break;
         default:
-          gap = 28 + Math.random() * 28; // Slightly slower normal (was 26)
+          gap = 28 + Math.random() * 28;
           type = Math.random() < 0.5 ? QTE_TYPE.SWIPE : QTE_TYPE.TAP;
           if (type === QTE_TYPE.SWIPE) direction = dirs[Math.floor(Math.random() * dirs.length)];
           break;
@@ -1262,7 +1255,7 @@ export const useBattleLogic = ({
       const { x, y } = pickZone(usedZones, selectedPattern === ATTACK_PATTERN.FAST_FLURRY);
 
       newTargets.push({
-        id: `t-${Date.now()}-${i}`,
+        id: `t-${batchTs}-${i}`,
         type,
         direction,
         x,
@@ -1274,8 +1267,17 @@ export const useBattleLogic = ({
       lastTime = startTime;
     }
 
-    setQteTargets(newTargets);
-    setQteStats({ hits: 0, misses: 0, perfects: 0 });
+    setBattleState(() => ({
+      currentPhase: PHASE.ENEMY_STRIKE,
+      parryWindowActive: true,
+      parryPreDelay: 0.12 + Math.random() * 0.12,
+      focusMode: false,
+      burstCharged: false,
+      comboMultiplier: 1.0,
+      currentPattern: selectedPattern,
+      qteTargets: newTargets,
+      qteStats: { hits: 0, misses: 0, perfects: 0 },
+    }));
   };
 
   const startEnemyTurn = () => {

@@ -207,22 +207,18 @@ export const useSkills = (userId?: string) => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // 1. Fetch Skill Definitions from DB (non-fatal if table missing)
-        const { data: allSkills, error: defError } = await supabase
-          .from('skills')
-          .select('*');
-        if (!defError) setSkillDefinitions(allSkills || []);
+        const [skillsResult, userSkillsResult, profileResult] = await Promise.all([
+          supabase.from('skills').select('*'),
+          supabase.from('user_skills').select('*').eq('user_id', effectiveUserId),
+          supabase.from('profiles').select('skill_loadout').eq('id', effectiveUserId).single(),
+        ]);
 
-        // 2. Fetch User's Unlocked Skills
-        const { data: userSkills, error: skillsError } = await supabase
-          .from('user_skills')
-          .select('*')
-          .eq('user_id', effectiveUserId);
+        const allSkills = skillsResult.data;
+        if (!skillsResult.error) setSkillDefinitions(allSkills || []);
 
-        if (skillsError) throw skillsError;
-        let finalUserSkills = userSkills || [];
+        if (userSkillsResult.error) throw userSkillsResult.error;
+        let finalUserSkills = userSkillsResult.data || [];
 
-        // 2b. Grant starter skill if user has none and is at least level 1
         const userLevel = user?.level ?? 0;
         const userClassName = user?.current_class;
         if (finalUserSkills.length === 0 && userLevel >= 1 && userClassName) {
@@ -246,15 +242,8 @@ export const useSkills = (userId?: string) => {
         }
         setUnlockedSkills(finalUserSkills);
 
-        // 3. Fetch Equipped Loadout from profiles table (source of truth)
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('skill_loadout')
-          .eq('id', effectiveUserId)
-          .single();
-
-        if (profileError) throw profileError;
-        const raw = profile?.skill_loadout ?? [];
+        if (profileResult.error) throw profileResult.error;
+        const raw = profileResult.data?.skill_loadout ?? [];
         setLoadout(padLoadoutToFour(dedupeLoadout(raw)));
       } catch (err) {
         console.error('Error fetching skills data:', err);

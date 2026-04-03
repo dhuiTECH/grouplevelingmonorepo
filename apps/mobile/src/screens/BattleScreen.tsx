@@ -203,7 +203,7 @@ export default function BattleScreen() {
   const battlefieldBg = enemy?.metadata?.bg_url || enemy?.metadata?.visuals?.bg_url;
 
   useEffect(() => {
-    if (loading || !assetsLoaded) return;
+    if (loading) return;
     const longest = Math.max(petCycleDuration, enemyCycleDuration, 2000);
     // Adjusted timing to better match sprite sheet length
     // Previously was stopping too early/late. 
@@ -230,9 +230,11 @@ export default function BattleScreen() {
 
   useEffect(() => {
     if (currentPhase === PHASE.ENEMY_STRIKE || currentPhase === PHASE.ENEMY_WINDUP) {
-      setEnemySpriteActive(true);
+      const task = InteractionManager.runAfterInteractions(() => {
+        setEnemySpriteActive(true);
+      });
+      return () => task.cancel?.();
     } else if (enemySpriteActive && currentPhase === PHASE.ACTIVE) {
-      // When returning to Active, let it finish one cycle or stop after duration
       const t = setTimeout(() => setEnemySpriteActive(false), enemyCycleDuration);
       return () => clearTimeout(t);
     }
@@ -422,9 +424,6 @@ export default function BattleScreen() {
   );
 
   if (loading) {
-    // While the walk-in transition overlay is playing, show a fully transparent
-    // backing so the overlay is the only thing visible. BattleAssetWarmer still
-    // pre-warms sprites in the background.
     if (isTransitioning) {
       return (
         <View style={[styles.container, { backgroundColor: 'transparent' }]}>
