@@ -222,10 +222,6 @@ export const useExploration = (
     return () => clearTimeout(id);
   }, [user?.id, currentMapId, nodes, unlocked, chunksVersion]);
 
-  useEffect(() => {
-    encounterPoolRef.current = encounterPoolForMap;
-  }, [encounterPoolForMap]);
-
   // Separate camera position for visionGrid that only updates when we actually
   // want the grid to recalculate (initial load, chunk fetch, teleport).
   const [gridCenter, setGridCenter] = useState<{ x: number; y: number }>({
@@ -670,6 +666,9 @@ export const useExploration = (
             setRaidModalVisible(true);
           }
         } else {
+          if (__DEV__ && encounterPoolRef.current.length === 0) {
+            logWorldMapSync("onTileEnter:encounterPool empty", { nx, ny, mapId: currentMapId });
+          }
           if (encounterPoolRef.current.length > 0) {
             const pool = encounterPoolRef.current.filter(
               (e) => (e.spawn_weight ?? 0) > 0,
