@@ -234,6 +234,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
         if (!item) continue;
         if (item.image_url) urls.add(item.image_url.split("?")[0]);
         if (item.image_url_female) urls.add(item.image_url_female.split("?")[0]);
+        if (item.image_base_url) urls.add(item.image_base_url.split("?")[0]);
         if (item.silhouette_url) urls.add(item.silhouette_url.split("?")[0]);
         if (item.eraser_mask_url) urls.add(item.eraser_mask_url.split("?")[0]);
         if (item.eraser_mask_url_female) urls.add(item.eraser_mask_url_female.split("?")[0]);
