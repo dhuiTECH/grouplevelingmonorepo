@@ -262,6 +262,8 @@ export const useBattleLogic = ({
       return;
     }
 
+    setAssetsLoaded(true);
+
     const preloadAssets = async () => {
       preloadBattleSounds();
 
@@ -311,8 +313,6 @@ export const useBattleLogic = ({
         await Promise.all(assetPreloads);
       } catch (e) {
         console.warn('[Battle] Some assets failed to preload', e);
-      } finally {
-        setAssetsLoaded(true);
       }
     };
 
