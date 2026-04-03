@@ -87,7 +87,7 @@ export function useMapData(userId: string | undefined) {
           const { data } = await supabase
             .from("encounter_pool")
             .select("*")
-            .eq("map_id", id);
+            .or(`map_id.eq.${id},map_id.is.null`);
           return data ?? [];
         });
 
