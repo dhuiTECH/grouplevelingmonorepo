@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { DEFAULT_HAIR_TINT_HEX } from '@repo/avatar-constants';
 import {
   Group,
@@ -637,6 +637,36 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
     return layers.sort((a, b) => a.zIndex - b.zIndex);
   }, [user, size, activeVisualGender, scaleRatio, activeSkinColor, useSkiaTint, baseBodyImage, finalEquippedCosmetics, activeMasks]);
 
+  const [layersReady, setLayersReady] = useState(false);
+  const readyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (layersReady) return;
+    if (!baseBodyImage) {
+      setLayersReady(true);
+      return;
+    }
+    const cleanUrl = baseBodyImage.split('?')[0];
+    if (globalImageCache.has(cleanUrl)) {
+      setLayersReady(true);
+      return;
+    }
+    const checkInterval = setInterval(() => {
+      if (globalImageCache.has(cleanUrl)) {
+        setLayersReady(true);
+        clearInterval(checkInterval);
+      }
+    }, 50);
+    readyTimerRef.current = setTimeout(() => {
+      clearInterval(checkInterval);
+      setLayersReady(true);
+    }, 500);
+    return () => {
+      clearInterval(checkInterval);
+      if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+    };
+  }, [baseBodyImage, layersReady]);
+
   const rootTransform = useDerivedValue(() => {
     const tx = x.value;
     const ty = y.value;
@@ -670,7 +700,7 @@ export const SkiaLayeredAvatar: React.FC<SkiaLayeredAvatarProps> = ({
       <Circle cx={radius} cy={radius} r={radius} color="#0f172a" />
 
       {/* 2. Avatar Layers: background slot does NOT breathe; rest breathe & flip */}
-      <Group clip={rrect(rect(0, 0, size ?? 48, size ?? 48), radius, radius)}>
+      <Group clip={rrect(rect(0, 0, size ?? 48, size ?? 48), radius, radius)} opacity={layersReady ? 1 : 0}>
         {sortedLayers.map((layer) => {
           const layerContent = layer.isAnimated ? (
             <SkiaAnimatedLayer

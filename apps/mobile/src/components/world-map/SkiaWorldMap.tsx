@@ -238,10 +238,27 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
         if (item.eraser_mask_url) urls.add(item.eraser_mask_url.split("?")[0]);
         if (item.eraser_mask_url_female) urls.add(item.eraser_mask_url_female.split("?")[0]);
       }
+
+      const weapon = equipped.find((c: any) => c.shop_items?.slot?.trim().toLowerCase() === 'weapon');
+      const gripType = weapon?.shop_items?.grip_type;
+      if (gripType && allShopItems) {
+        const ownedGrip = avatarData.cosmetics?.find((c: any) =>
+          c.shop_items?.slot?.trim().toLowerCase() === 'hand_grip' &&
+          c.shop_items?.grip_type?.toLowerCase() === gripType.toLowerCase()
+        );
+        const gripItem = ownedGrip?.shop_items || allShopItems.find((item: any) =>
+          item.slot?.trim().toLowerCase() === 'hand_grip' &&
+          item.grip_type?.toLowerCase() === gripType.toLowerCase()
+        );
+        if (gripItem) {
+          if (gripItem.image_url) urls.add(gripItem.image_url.split("?")[0]);
+          if (gripItem.image_url_female) urls.add(gripItem.image_url_female.split("?")[0]);
+        }
+      }
     }
 
     return Array.from(urls);
-  }, [visionGrid, mapSettings, activePet, nodesInVision, avatarData]);
+  }, [visionGrid, mapSettings, activePet, nodesInVision, avatarData, allShopItems]);
 
   const images = useSkiaAssets(urlsToLoad);
 
