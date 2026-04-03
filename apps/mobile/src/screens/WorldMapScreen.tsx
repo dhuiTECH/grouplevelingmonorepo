@@ -58,8 +58,6 @@ import { useSystemNews } from "@/hooks/useSystemNews";
 import { useMapCharacter } from "@/hooks/useMapCharacter";
 import { STEPS_PER_TILE } from "@/hooks/useLocalMovementBudget";
 import { DialogueScene } from "@/components/DialogueScene";
-import { makeImageFromView } from "@shopify/react-native-skia";
-import type { SkImage } from "@shopify/react-native-skia";
 
 import type { User } from "@/types/user";
 import type { PartyPreviewItem } from "@/context/TransitionContext";
@@ -190,27 +188,8 @@ export const WorldMapScreen = () => {
   const [dialogueEncounter, setDialogueEncounter] = useState<any>(null);
   const pendingBattleEncounterRef = useRef<any>(null);
 
-  const ensureShopItemsForPreview = useCallback(async () => {
-    const cached = allShopItemsRef.current;
-    if (cached?.length) return cached;
-    const { data, error } = await supabase.from("shop_items").select("*");
-    if (error) return [];
-    return data ?? [];
-  }, [allShopItemsRef]);
-
-  const captureMapSnapshotForBattle = useCallback(async (): Promise<SkImage | null> => {
-    await new Promise<void>((r) => requestAnimationFrame(() => r()));
-    await new Promise<void>((r) => setTimeout(r, 50));
-    try {
-      return await makeImageFromView(viewRef);
-    } catch (e) {
-      console.warn("[WorldMap] makeImageFromView failed", e);
-      return null;
-    }
-  }, [viewRef]);
-
   const startBattleTransition = useCallback(
-    async (enc: any) => {
+    (enc: any) => {
       if (!enc?.id) {
         battleInFlightRef.current = false;
         return;
@@ -222,7 +201,7 @@ export const WorldMapScreen = () => {
           battleInFlightRef.current = false;
           return;
         }
-        const shop = await ensureShopItemsForPreview();
+        const shop = allShopItemsRef.current ?? [];
         const ap = activePetRef.current;
         const partyPreview: PartyPreviewItem[] = [
           { type: "player" as const, user: u, allShopItems: shop },
@@ -230,9 +209,8 @@ export const WorldMapScreen = () => {
         if (ap?.pet_details) {
           partyPreview.push({ type: "pet" as const, petDetails: ap.pet_details });
         }
-        const snapshot = await captureMapSnapshotForBattle();
         startTransition(
-          snapshot,
+          null,
           () => navigation.navigate("Battle", { encounterId: enc.id, mapId: activeMapId }),
           partyPreview,
         );
@@ -241,11 +219,11 @@ export const WorldMapScreen = () => {
         battleInFlightRef.current = false;
       }
     },
-    [ensureShopItemsForPreview, captureMapSnapshotForBattle, startTransition, navigation, activeMapId],
+    [startTransition, navigation, activeMapId],
   );
 
   const onBattleEncounter = useCallback(
-    async (enc: any) => {
+    (enc: any) => {
       if (!enc?.id) {
         battleInFlightRef.current = false;
         return;
@@ -257,7 +235,7 @@ export const WorldMapScreen = () => {
         setDialogueEncounter(enc);
         return;
       }
-      await startBattleTransition(enc);
+      startBattleTransition(enc);
     },
     [activeDirection, isMoving, startBattleTransition],
   );
@@ -668,7 +646,7 @@ export const WorldMapScreen = () => {
         const randomId = data[Math.floor(Math.random() * data.length)].id;
         const u = userRef.current;
         if (!u) return;
-        const shop = await ensureShopItemsForPreview();
+        const shop = allShopItemsRef.current ?? [];
         const ap = activePetRef.current;
         const partyPreview: PartyPreviewItem[] = [
           { type: "player" as const, user: u, allShopItems: shop },
@@ -679,9 +657,8 @@ export const WorldMapScreen = () => {
             petDetails: ap.pet_details,
           });
         }
-        const snapshot = await captureMapSnapshotForBattle();
         startTransition(
-          snapshot,
+          null,
           () =>
             navigation.navigate("Battle", {
               encounterId: randomId,
@@ -699,8 +676,6 @@ export const WorldMapScreen = () => {
   }, [
     startTransition,
     navigation,
-    ensureShopItemsForPreview,
-    captureMapSnapshotForBattle,
     activeMapId,
   ]);
 
