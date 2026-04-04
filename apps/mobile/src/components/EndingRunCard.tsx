@@ -6,6 +6,7 @@ import { GlitchText } from '@/components/GlitchText';
 import { LayeredAvatar } from '@/components/LayeredAvatar';
 import Svg, { Polyline } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import polyline from '@mapbox/polyline';
 import { User } from '@/types/user';
 
 const { width: WINDOW_WIDTH } = Dimensions.get('window');
@@ -22,6 +23,10 @@ interface EndingRunCardProps {
     distance: number;
     duration: number;
     routeCoordinates?: Array<{ latitude: number; longitude: number }>;
+    /** Google-encoded polyline (same as tracker / upload); decoded for mini-map when routeCoordinates omitted */
+    encodedPolyline?: string;
+    /** Free roam / scouting XP (1 per 10 m) */
+    xpEarned?: number;
   };
   user: User;
   missionName?: string;
@@ -98,9 +103,38 @@ export const EndingRunCard = forwardRef(({
   const paceSec = Math.round((paceVal - paceMin) * 60);
   const paceStr = `${paceMin}'${paceSec.toString().padStart(2, '0')}" /km`;
 
+  /** Build lat/lng path for mini-map: explicit points, or decode from encodedPolyline (matches RunPolylineMap). */
+  const routePointsForMiniMap = useMemo(() => {
+    const downsample = (pts: { latitude: number; longitude: number }[]) => {
+      if (pts.length <= 280) return pts;
+      const step = Math.ceil(pts.length / 280);
+      const out: { latitude: number; longitude: number }[] = [];
+      for (let i = 0; i < pts.length; i += step) out.push(pts[i]);
+      const last = pts[pts.length - 1];
+      const lastOut = out[out.length - 1];
+      if (
+        lastOut.latitude !== last.latitude ||
+        lastOut.longitude !== last.longitude
+      ) {
+        out.push(last);
+      }
+      return out;
+    };
+
+    if (runData.routeCoordinates && runData.routeCoordinates.length >= 2) {
+      return downsample(runData.routeCoordinates);
+    }
+    if (runData.encodedPolyline && runData.encodedPolyline.length > 0) {
+      const raw = polyline.decode(runData.encodedPolyline, 5);
+      const pts = raw.map(([latitude, longitude]: [number, number]) => ({ latitude, longitude }));
+      return pts.length >= 2 ? downsample(pts) : null;
+    }
+    return null;
+  }, [runData.routeCoordinates, runData.encodedPolyline]);
+
   // Convert Route to SVG Points
   const svgRoute = useMemo(() => {
-    const coords = runData.routeCoordinates;
+    const coords = routePointsForMiniMap;
     if (!coords || coords.length < 2) return "100,125 150,110 200,130 250,115"; // Subtle placeholder so you can see it's working
 
     let minLat = coords[0].latitude;
@@ -128,7 +162,7 @@ export const EndingRunCard = forwardRef(({
       const y = padding + (1 - (c.latitude - minLat) / latSpan) * height; // Invert Y for latitude
       return `${x},${y}`;
     }).join(' ');
-  }, [runData.routeCoordinates]);
+  }, [routePointsForMiniMap]);
 
   // 1. STANDARD LAYOUT (Full & Minimal)
   const renderStandard = () => (
@@ -154,10 +188,18 @@ export const EndingRunCard = forwardRef(({
       <Image source={require('../../assets/icons/groupleveling-logo.png')} style={styles.logo} contentFit="contain" />
       <View style={[styles.bottomSection, variant === 'minimal' && styles.bottomSectionMinimal]}>
         <View style={styles.footerContainer}>
-          <View style={styles.statsContainer}>
-            <View style={styles.dataItem}><Text style={styles.dataLabel}>DISTANCE</Text><Text style={styles.dataValue}>{distanceKm}</Text></View>
-            <View style={styles.dataItem}><Text style={styles.dataLabel}>PACE</Text><Text style={styles.dataValue}>{paceStr}</Text></View>
-            <View style={styles.dataItem}><Text style={styles.dataLabel}>TIME</Text><Text style={styles.dataValue}>{timeStr}</Text></View>
+          <View style={styles.statsColumn}>
+            <View style={styles.statsContainer}>
+              <View style={styles.dataItem}><Text style={styles.dataLabel}>DISTANCE</Text><Text style={styles.dataValue}>{distanceKm}</Text></View>
+              <View style={styles.dataItem}><Text style={styles.dataLabel}>PACE</Text><Text style={styles.dataValue}>{paceStr}</Text></View>
+              <View style={styles.dataItem}><Text style={styles.dataLabel}>TIME</Text><Text style={styles.dataValue}>{timeStr}</Text></View>
+            </View>
+            {runData.xpEarned != null && !Number.isNaN(Number(runData.xpEarned)) ? (
+              <View style={styles.xpEarnedRow}>
+                <Text style={styles.dataLabel}>XP EARNED</Text>
+                <Text style={styles.dataValue}>{Math.round(Number(runData.xpEarned))}</Text>
+              </View>
+            ) : null}
           </View>
           <View style={styles.miniMapContainer}>
             <Image source={require('../../assets/missionmap.webp')} style={styles.miniMapBackground} />
@@ -187,6 +229,12 @@ export const EndingRunCard = forwardRef(({
           <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>PACE</Text><Text style={styles.stickerDataValue}>{paceStr}</Text></View>
           <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>TIME</Text><Text style={styles.stickerDataValue}>{timeStr}</Text></View>
         </View>
+        {runData.xpEarned != null && !Number.isNaN(Number(runData.xpEarned)) ? (
+          <View style={styles.stickerXpRow}>
+            <Text style={styles.stickerDataLabel}>XP</Text>
+            <Text style={styles.stickerDataValue}>{Math.round(Number(runData.xpEarned))}</Text>
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -231,6 +279,12 @@ export const EndingRunCard = forwardRef(({
             <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>PACE</Text><Text style={styles.stickerDataValue}>{paceStr}</Text></View>
             <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>TIME</Text><Text style={styles.stickerDataValue}>{timeStr}</Text></View>
           </View>
+          {runData.xpEarned != null && !Number.isNaN(Number(runData.xpEarned)) ? (
+            <View style={styles.stickerXpRow}>
+              <Text style={styles.stickerDataLabel}>XP</Text>
+              <Text style={styles.stickerDataValue}>{Math.round(Number(runData.xpEarned))}</Text>
+            </View>
+          ) : null}
         </View>
       </View>
     );
@@ -365,11 +419,14 @@ const styles = StyleSheet.create({
     alignItems: 'center', // Vertically center stats and map
     width: '100%',
   },
+  statsColumn: {
+    flex: 1,
+    marginRight: 15,
+    alignItems: 'flex-end',
+  },
   statsContainer: {
     flexDirection: 'row',
-    flex: 1,
-    justifyContent: 'flex-end', // Push stats to the right towards the map
-    marginRight: 15, // Gap between stats and map
+    justifyContent: 'flex-end',
   },
   dataItem: {
     alignItems: 'center', // Center label and value
@@ -429,6 +486,21 @@ const styles = StyleSheet.create({
   },
   stickerTitle: { color: '#22d3ee', fontSize: 16, fontWeight: '900', fontStyle: 'italic', letterSpacing: 2, marginBottom: 15, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
   stickerDataRow: { flexDirection: 'row', justifyContent: 'center', gap: 20, width: '100%' },
+  stickerXpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 10,
+    width: '100%',
+  },
+  xpEarnedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 8,
+  },
   stickerDataItem: { alignItems: 'center' },
   stickerDataLabel: { color: '#94a3b8', fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 4 },
   stickerDataValue: { color: '#FFF', fontSize: 18, fontWeight: '900', fontVariant: ['tabular-nums'], textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },

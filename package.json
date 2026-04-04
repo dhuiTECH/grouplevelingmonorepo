@@ -13,10 +13,19 @@
     "check-types": "turbo run check-types",
     "web": "pnpm --filter web dev",
     "mobile": "pnpm --filter mobile start",
-    "kill": "taskkill /F /IM node.exe"
+    "kill": "taskkill /F /IM node.exe",
+    "seed-dungeons": "ts-node --project tsconfig.seed.json seed_dungeons.ts",
+    "seed-dungeons:help": "node -e \"console.log('If grid rows keep appearing: (1) Stop any running seed terminal with Ctrl+C. (2) pnpm kill  (Windows) kills ALL node — use if a stuck seeder. (3) Apply migration 20260409120000 — DB blocks new Metro Vancouver Grid inserts.')\""
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7"
   },
   "devDependencies": {
+    "@types/node": "^22.10.5",
     "prettier": "^3.7.4",
+    "ts-node": "^10.9.2",
     "turbo": "^2.8.10",
     "typescript": "5.9.2"
   }

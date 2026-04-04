@@ -1,51 +1,124 @@
-import React, { useEffect, useCallback, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useEffect, useCallback, useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  Image,
+  Platform,
+} from 'react-native';
 import MapView, { Polyline } from '@/utils/maps';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
-import { useRunTracker } from '@/hooks/useRunTracker';
+import { useBackgroundRunRecorder } from '@/hooks/useBackgroundRunRecorder';
+import { uploadRun } from '@/lib/runUpload';
+import { insertFreeHuntFromRecordingSession } from '@/lib/freeHuntUpload';
+import { readRecordingPathCoordinates } from '@/lib/readRecordingPath';
+import { resetRecordingSession } from '@/lib/runRecordingDb';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio } from '@/contexts/AudioContext';
 import { InviteFriendsModal } from '@/components/modals/InviteFriendsModal';
-import { useAuth } from '@/contexts/AuthContext';
 import { Users } from 'lucide-react-native';
-import { supabase } from '@/lib/supabase';
 
 const DungeonTrackerScreen = () => {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
-  const { dungeon } = route.params || {};
+  const { dungeon, mode } = route.params || {};
+  const isFreeRun = mode === 'free_run';
   const { stopBackgroundMusic, playTrack } = useAudio();
-  const { user } = useAuth();
-  
+
   const [inviteModalVisible, setInviteModalVisible] = useState(false);
-  const [partySize, setPartySize] = useState(1);
+  const [uploading, setUploading] = useState(false);
+  const autoStartCancelledRef = useRef(false);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [livePathCoords, setLivePathCoords] = useState<{ latitude: number; longitude: number }[]>([]);
 
-  const { 
-    isTracking, 
-    distance, 
-    duration, 
-    routeCoordinates, 
-    startRun, 
-    stopRun 
-  } = useRunTracker();
+  const {
+    isRecording: isTracking,
+    distance,
+    duration,
+    startRecording: startRun,
+    stopRecording: stopRun,
+  } = useBackgroundRunRecorder();
 
-  // Fetch party size if in party
+  /** One immediate start + one delayed retry; then inline error + Try again (native only). */
   useEffect(() => {
-    const fetchPartySize = async () => {
-      if (user?.current_party_id) {
-        const { count } = await supabase
-          .from('party_members')
-          .select('*', { count: 'exact', head: true })
-          .eq('party_id', user.current_party_id);
-        setPartySize(count || 1);
-      } else {
-        setPartySize(1);
+    if (Platform.OS === 'web') return;
+    if (isTracking) {
+      setGpsError(null);
+      return;
+    }
+    if (autoStartCancelledRef.current) return;
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    async function attemptStart() {
+      if (autoStartCancelledRef.current) return;
+      const ok = await startRun();
+      if (cancelled || autoStartCancelledRef.current) return;
+      if (ok) {
+        setGpsError(null);
+        return;
+      }
+      retryTimer = setTimeout(async () => {
+        if (cancelled || autoStartCancelledRef.current) return;
+        const ok2 = await startRun();
+        if (cancelled || autoStartCancelledRef.current) return;
+        if (ok2) {
+          setGpsError(null);
+          return;
+        }
+        setGpsError(
+          'Could not start GPS. Allow location access and background location (Always) in system settings, then tap Try again.'
+        );
+      }, 1500);
+    }
+
+    setGpsError(null);
+    void attemptStart();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [isTracking, startRun]);
+
+  /** Poll SQLite for recorded points while scouting (MVP; see plan for future hook-based path). */
+  useEffect(() => {
+    if (!isFreeRun || Platform.OS === 'web' || !isTracking) {
+      if (!isTracking) setLivePathCoords([]);
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      const rows = await readRecordingPathCoordinates();
+      if (!cancelled) {
+        setLivePathCoords(rows.map((r) => ({ latitude: r.lat, longitude: r.lng })));
       }
     };
+    void tick();
+    const id = setInterval(() => {
+      void tick();
+    }, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [isFreeRun, isTracking]);
 
-    fetchPartySize();
-  }, [user?.current_party_id, inviteModalVisible]);
+  const onRetryGps = useCallback(() => {
+    setGpsError(null);
+    void (async () => {
+      const ok = await startRun();
+      if (ok) setGpsError(null);
+      else
+        setGpsError(
+          'Could not start GPS. Allow location access and background location (Always) in system settings, then tap Try again.'
+        );
+    })();
+  }, [startRun]);
 
   // Play "Beginning Map" music when entering the tracker screen
   useFocusEffect(
@@ -79,24 +152,61 @@ const DungeonTrackerScreen = () => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={() => {
+            autoStartCancelledRef.current = true;
+            navigation.goBack();
+          }}
+          style={styles.backButton}
+        >
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>SYSTEM TRACKER</Text>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {isFreeRun ? 'Scouting for Mana...' : 'SYSTEM TRACKER'}
+        </Text>
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={styles.headerIconBtn}
+            onPress={() => setInviteModalVisible(true)}
+            activeOpacity={0.85}
+            accessibilityLabel="Party invites"
+          >
+            <Users size={20} color="#22d3ee" />
+          </TouchableOpacity>
+          {dungeon ? (
+            <TouchableOpacity
+              style={styles.headerLeaderboardBtn}
+              onPress={() => {
+                navigation.navigate('DungeonLeaderboard', { dungeon });
+              }}
+              activeOpacity={0.85}
+              accessibilityLabel="Open leaderboard for this gate"
+            >
+              <Image
+                source={require('../../assets/icons/goldtrophy.png')}
+                style={styles.headerLeaderboardIcon}
+              />
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
 
       {/* MAP BACKGROUND */}
       <MapView
         style={styles.map}
         showsUserLocation
-        followsUserLocation
+        followsUserLocation={isTracking}
         userInterfaceStyle="dark"
       >
-        <Polyline 
-          coordinates={routeCoordinates}
-          strokeColor="#06b6d4" // Cyan color
-          strokeWidth={4}
-        />
+        {Platform.OS !== 'web' && isFreeRun && livePathCoords.length >= 2 ? (
+          <Polyline
+            coordinates={livePathCoords}
+            strokeColor="rgba(34, 211, 238, 0.92)"
+            strokeWidth={4}
+            lineCap="round"
+            lineJoin="round"
+          />
+        ) : null}
       </MapView>
 
       {/* OVERLAY UI */}
@@ -105,8 +215,22 @@ const DungeonTrackerScreen = () => {
         style={styles.overlay}
       >
         <View style={styles.statsContainer}>
-           <Text style={styles.dungeonName}>{dungeon?.name?.toUpperCase() || 'UNKNOWN ZONE'}</Text>
-           <Text style={styles.objectiveText}>OBJECTIVE: RUN {dungeon?.target_distance_meters || 5000} METERS</Text>
+           <Text style={styles.dungeonName}>
+             {isFreeRun ? 'FREE ROAM' : dungeon?.name?.toUpperCase() || 'UNKNOWN ZONE'}
+           </Text>
+           <Text style={styles.objectiveText}>
+             {isFreeRun
+               ? isTracking
+                 ? 'SCOUTING — YOUR PATH IS DRAWN ON THE MAP'
+                 : gpsError
+                   ? 'GPS COULD NOT START'
+                   : 'RUN ANYWHERE — MANA FLOWS WHERE YOU MOVE'
+               : isTracking
+                 ? 'RECORDING — END RUN WHEN FINISHED'
+                 : gpsError
+                   ? 'GPS COULD NOT START'
+                   : 'OBJECTIVE: RECORD A ROUTE — WE WILL MATCH YOU TO A GLOBAL DUNGEON'}
+           </Text>
            
            <View style={styles.statsRow}>
              <View style={styles.statBox}>
@@ -130,42 +254,76 @@ const DungeonTrackerScreen = () => {
            </View>
 
            {!isTracking ? (
-             <>
-               <TouchableOpacity 
-                 style={styles.btnParty} 
-                 onPress={() => setInviteModalVisible(true)}
-               >
-                 <Users size={18} color="#22d3ee" />
-                 <Text style={styles.btnPartyText}>
-                   PARTY {partySize > 1 ? `(${partySize})` : 'INVITE'}
+             gpsError ? (
+               <View style={styles.gpsErrorBlock}>
+                 <Text style={styles.gpsErrorText}>{gpsError}</Text>
+                 <TouchableOpacity style={styles.gpsRetryBtn} onPress={onRetryGps} activeOpacity={0.9}>
+                   <Text style={styles.gpsRetryBtnText}>TRY AGAIN</Text>
+                 </TouchableOpacity>
+               </View>
+             ) : (
+               <View style={styles.autoStartRow}>
+                 <ActivityIndicator size="small" color="#22d3ee" />
+                 <Text style={styles.autoStartText}>
+                   {Platform.OS === 'web'
+                     ? 'Recording requires the mobile app'
+                     : 'Connecting GPS…'}
                  </Text>
-               </TouchableOpacity>
-
-               <TouchableOpacity
-                style={styles.btnStart}
-                onPress={() => startRun(dungeon?.target_distance_meters || 5000)}
-              >
-                 <Text style={styles.btnText}>INITIALIZE TRACKING</Text>
-               </TouchableOpacity>
-             </>
+               </View>
+             )
            ) : (
-             <TouchableOpacity 
-               style={[
-                 styles.btnStop, 
-                 distance < (dungeon?.target_distance_meters || 5000) * 0.99 && styles.btnDisabled
-               ]} 
-               onPress={() => {
-                const report = stopRun();
-                console.log("Run Report:", report);
-                // Navigate to RunComplete with the data
-                navigation.navigate('RunComplete', { 
-                  runData: report, 
-                  dungeon: dungeon 
-                });
-             }}>
-               <Text style={styles.btnText}>
-                 {distance >= (dungeon?.target_distance_meters || 5000) * 0.99 ? "COMPLETE MISSION" : "ABANDON MISSION"}
-               </Text>
+             <TouchableOpacity
+               style={[styles.btnStop, uploading && styles.btnDisabled]}
+               disabled={uploading}
+               onPress={async () => {
+                 if (uploading) return;
+                 setUploading(true);
+                 try {
+                   const report = await stopRun();
+                   if (isFreeRun) {
+                     const insert = await insertFreeHuntFromRecordingSession();
+                     navigation.navigate('RunComplete', {
+                       runData: {
+                         ...report,
+                         distance: insert.distanceMeters,
+                         xpEarned: insert.xpEarned,
+                         encodedPolyline: insert.encodedPolyline,
+                         recordedViaGlobalEngine: false,
+                       },
+                       mode: 'free_run',
+                     });
+                   } else {
+                     const upload = await uploadRun(report.duration);
+                     navigation.navigate('RunComplete', {
+                       runData: {
+                         ...report,
+                         encodedPolyline: upload.encodedPolyline,
+                         recordedViaGlobalEngine: true,
+                       },
+                       dungeon,
+                       matchResult: { matchedDungeonId: upload.matchedDungeonId },
+                     });
+                   }
+                 } catch (e) {
+                   console.error('[DungeonTracker] upload failed', e);
+                   alert(e instanceof Error ? e.message : 'Failed to upload run');
+                   if (isFreeRun) {
+                     try {
+                       await resetRecordingSession();
+                     } catch {
+                       /* ignore */
+                     }
+                   }
+                 } finally {
+                   setUploading(false);
+                 }
+               }}
+             >
+               {uploading ? (
+                 <ActivityIndicator color="#fff" />
+               ) : (
+                 <Text style={styles.btnText}>{isFreeRun ? 'END SCOUT RUN' : 'END RUN & UPLOAD'}</Text>
+               )}
              </TouchableOpacity>
            )}
         </View>
@@ -193,19 +351,57 @@ const styles = StyleSheet.create({
     zIndex: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
   },
   backButton: {
-    padding: 8,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 20,
-    marginRight: 15,
+    borderRadius: 22,
   },
   headerTitle: {
-    color: '#fff',
-    fontSize: 14,
+    flex: 1,
+    marginHorizontal: 6,
+    textAlign: 'center',
+    fontFamily: 'Exo2-Regular',
+    color: '#22d3ee',
+    fontSize: 10,
     fontWeight: '900',
     letterSpacing: 2,
+    textTransform: 'uppercase',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
+  },
+  headerLeaderboardBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    borderWidth: 1,
+    borderColor: '#fbbf24',
+  },
+  headerLeaderboardIcon: {
+    width: 24,
+    height: 24,
+    resizeMode: 'contain',
   },
   map: {
     flex: 1,
@@ -307,22 +503,43 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 2,
   },
-  btnParty: {
+  autoStartRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(34, 211, 238, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.3)',
-    paddingVertical: 12,
-    borderRadius: 8,
+    gap: 12,
+    paddingVertical: 20,
     width: '100%',
-    marginBottom: 15,
   },
-  btnPartyText: {
-    color: '#22d3ee',
+  autoStartText: {
+    color: '#94a3b8',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  gpsErrorBlock: {
+    paddingVertical: 12,
+    gap: 12,
+    width: '100%',
+  },
+  gpsErrorText: {
+    color: '#fecaca',
     fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  gpsRetryBtn: {
+    backgroundColor: 'rgba(34,211,238,0.2)',
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.45)',
+    alignItems: 'center',
+  },
+  gpsRetryBtnText: {
+    color: '#22d3ee',
+    fontSize: 13,
     fontWeight: '900',
     letterSpacing: 2,
   },

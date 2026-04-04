@@ -10,10 +10,28 @@ import { User } from '@/types/user';
 import { useAuth } from '@/contexts/AuthContext';
 import { OptimizedAvatarModal } from '@/components/modals/OptimizedAvatarModal';
 
+function formatPaceSecondsPerKm(raw: unknown): string {
+  const secPerKm = Number(raw);
+  if (!Number.isFinite(secPerKm) || secPerKm <= 0) return '—';
+  const s = Math.max(0, secPerKm);
+  const m = Math.floor(s / 60);
+  const sec = Math.round(s - m * 60);
+  const secClamped = sec >= 60 ? 59 : sec;
+  return `${m}:${secClamped.toString().padStart(2, '0')}/km`;
+}
+
+function formatRunDistanceKm(raw: unknown): string {
+  const m = Number(raw);
+  if (!Number.isFinite(m) || m <= 0) return '—';
+  const km = m / 1000;
+  return `${km >= 10 ? km.toFixed(0) : km.toFixed(1)} km`;
+}
+
 export default function DungeonLeaderboardScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation();
   const { dungeon } = route.params || {};
+  const isGlobalPaceLeaderboard = dungeon?.globalLeaderboard === true;
   const { shopItems } = useGameData();
   const { user: currentUser } = useAuth();
   
@@ -25,7 +43,8 @@ export default function DungeonLeaderboardScreen() {
   const fetchLeaderboard = useCallback(async () => {
     try {
       setLoading(true);
-      let leaderboardQuery = supabase.from('best_dungeon_times').select('*');
+      const table = dungeon?.globalLeaderboard === true ? 'best_global_dungeon_times' : 'best_dungeon_times';
+      let leaderboardQuery = supabase.from(table).select('*');
       if (dungeon?.id) {
         leaderboardQuery = leaderboardQuery.eq('dungeon_id', dungeon.id);
       } else {
@@ -68,13 +87,13 @@ export default function DungeonLeaderboardScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dungeon?.tier, dungeon?.id]);
+  }, [dungeon?.tier, dungeon?.id, dungeon?.globalLeaderboard]);
 
   // Fetch on mount and whenever screen comes back into focus (e.g. after completing a run)
   useFocusEffect(
     useCallback(() => {
       if (dungeon?.tier || dungeon?.id) fetchLeaderboard();
-    }, [dungeon?.tier, dungeon?.id, fetchLeaderboard])
+    }, [dungeon?.tier, dungeon?.id, dungeon?.globalLeaderboard, fetchLeaderboard])
   );
 
   const onRefresh = useCallback(() => {
@@ -128,9 +147,11 @@ export default function DungeonLeaderboardScreen() {
 
         <View style={styles.statsColumn}>
           <Text style={styles.scoreValue}>{formatScore(item.leaderboard_score)}</Text>
-          <Text style={styles.scoreLabel}>SCORE</Text>
+          <Text style={styles.scoreLabel}>{isGlobalPaceLeaderboard ? 'PACE SCORE' : 'SCORE'}</Text>
           <Text style={styles.subStat}>
-            {formatTime(item.best_time_seconds)} · {Math.round(Number(item.best_elevation_gain_meters) || 0)}m elev
+            {isGlobalPaceLeaderboard
+              ? `${formatPaceSecondsPerKm(item.best_pace_seconds_per_km)} · ${formatRunDistanceKm(item.best_distance_meters)}`
+              : `${formatTime(item.best_time_seconds)} · ${Math.round(Number(item.best_elevation_gain_meters) || 0)}m elev`}
           </Text>
         </View>
       </View>
@@ -149,9 +170,12 @@ export default function DungeonLeaderboardScreen() {
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <Ionicons name="chevron-back" size={24} color="#fff" />
           </TouchableOpacity>
-          <View>
+          <View style={styles.headerTitleBlock}>
             <Text style={styles.headerTitle}>LEADERBOARD</Text>
             <Text style={styles.headerSubtitle}>{dungeon?.name?.toUpperCase() || 'DUNGEON'}</Text>
+            {isGlobalPaceLeaderboard ? (
+              <Text style={styles.headerHint}>Ranked by fastest pace (same gate, any distance)</Text>
+            ) : null}
           </View>
         </View>
 
@@ -213,11 +237,21 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 2,
   },
+  headerTitleBlock: {
+    flex: 1,
+  },
   headerSubtitle: {
     color: '#fff',
     fontSize: 18,
     fontWeight: '900',
     fontStyle: 'italic',
+  },
+  headerHint: {
+    color: '#64748b',
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 4,
+    letterSpacing: 0.3,
   },
   centerContainer: {
     flex: 1,

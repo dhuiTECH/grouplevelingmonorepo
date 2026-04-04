@@ -1,4 +1,7 @@
-/** Matches `best_dungeon_times.leaderboard_score` in the DB (higher = better). */
+/**
+ * Matches `best_dungeon_times.leaderboard_score` (higher = better).
+ * Global gates use `best_global_dungeon_times`: pace-based score (100000 / sec per km).
+ */
 export const DUNGEON_RUN_ELEVATION_SCORE_PER_METER = 10;
 export const DUNGEON_RUN_TIME_SCORE_NUMERATOR = 100_000;
 

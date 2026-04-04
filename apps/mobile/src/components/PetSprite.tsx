@@ -17,6 +17,10 @@ import { Image } from 'expo-image';
 // Create an animated version of expo-image
 const AnimatedExpoImage = Animated.createAnimatedComponent(Image);
 
+/** Idle “breathing” scale amplitude (battle / UI); keep subtle so it doesn’t overpower the sprite. */
+const BREATH_SCALE_PEAK = 1.012;
+const BREATH_HALF_DURATION_MS = 1400;
+
 export const PetSprite = ({
   imageUrl,
   action = 'idle',
@@ -48,8 +52,14 @@ export const PetSprite = ({
         frameTimer.value = 0;
         breathScale.value = withRepeat(
           withSequence(
-            withTiming(1.03, { duration: 1200, easing: Easing.inOut(Easing.sin) }),
-            withTiming(1, { duration: 1200, easing: Easing.inOut(Easing.sin) })
+            withTiming(BREATH_SCALE_PEAK, {
+              duration: BREATH_HALF_DURATION_MS,
+              easing: Easing.inOut(Easing.sin),
+            }),
+            withTiming(1, {
+              duration: BREATH_HALF_DURATION_MS,
+              easing: Easing.inOut(Easing.sin),
+            })
           ),
           -1,
           true
@@ -74,8 +84,14 @@ export const PetSprite = ({
       frameTimer.value = 0;
       breathScale.value = withRepeat(
         withSequence(
-          withTiming(1.03, { duration: 1200, easing: Easing.inOut(Easing.sin) }),
-          withTiming(1, { duration: 1200, easing: Easing.inOut(Easing.sin) })
+          withTiming(BREATH_SCALE_PEAK, {
+            duration: BREATH_HALF_DURATION_MS,
+            easing: Easing.inOut(Easing.sin),
+          }),
+          withTiming(1, {
+            duration: BREATH_HALF_DURATION_MS,
+            easing: Easing.inOut(Easing.sin),
+          })
         ),
         -1,
         true

@@ -24,8 +24,14 @@ export type RootStackParamList = {
     mapId?: string;
     partySize?: number;
   };
-  DungeonTracker: { dungeon: any };
-  RunComplete: { runData: any; dungeon: any };
+  DungeonDiscovery: undefined;
+  DungeonTracker: { dungeon?: any; mode?: 'free_run' };
+  RunComplete: {
+    runData: any;
+    dungeon?: any;
+    mode?: 'free_run';
+    matchResult?: { matchedDungeonId: string | null };
+  };
   DungeonLeaderboard: { dungeon: any };
 };
 

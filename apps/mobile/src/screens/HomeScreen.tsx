@@ -8,21 +8,23 @@ import {
   Image, 
   RefreshControl, 
   TouchableOpacity,
+  Pressable,
   Dimensions,
   Platform,
   ActivityIndicator
 } from 'react-native';
+import { MotiView } from 'moti';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAudio } from '@/contexts/AudioContext';
-import { Settings } from 'lucide-react-native';
+import { Settings, Users } from 'lucide-react-native';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useTutorial } from '@/context/TutorialContext';
 import { useDailyStepsProgress } from '@/hooks/useDailyStepsProgress';
-import { useDungeons } from '@/hooks/useDungeons';
 import { useGameData } from '@/hooks/useGameData';
 
 import { HunterHeader } from '@/components/HunterHeader';
@@ -30,14 +32,13 @@ import { ClearedGatesSection } from '@/components/ClearedGatesSection';
 import { StatusWindowModal } from '@/components/modals/StatusWindowModal';
 import VitalitySection from '@/components/VitalitySection';
 import TrainingWidget from '@/components/TrainingWidget';
-import DungeonView from '@/components/DungeonView';
-
 import TrainingLogModal from '@/components/modals/TrainingLogModal';
 import WeeklyFeedbackModal from '@/components/modals/WeeklyFeedbackModal';
 import { api as trainingApi } from '@/api/training';
 import { useWeeklyReset } from '@/hooks/useWeeklyReset';
 import { ChestOpeningModal } from '@/components/modals/ChestOpeningModal';
 import { LevelUpModal } from '@/components/modals/LevelUpModal';
+import { InviteFriendsModal } from '@/components/modals/InviteFriendsModal';
 import { supabase } from '@/lib/supabase';
 
 const HomeScreen: React.FC = () => {
@@ -47,7 +48,6 @@ const HomeScreen: React.FC = () => {
   const { showNotification } = useNotification();
   const { step, targetRef } = useTutorial();
   const { stepsToday } = useDailyStepsProgress();
-  const { dungeons, loading: dungeonsLoading } = useDungeons();
   const { shopItems } = useGameData();
   const [clearedGatesRefresh, setClearedGatesRefresh] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -57,6 +57,7 @@ const HomeScreen: React.FC = () => {
   // Test Chest State
   const [showTestChest, setShowTestChest] = useState(false);
   const [showLevelUpPreview, setShowLevelUpPreview] = useState(false);
+  const [gateRadarPartyModalVisible, setGateRadarPartyModalVisible] = useState(false);
 
   useEffect(() => {
     if (isResetDue) {
@@ -231,29 +232,80 @@ const HomeScreen: React.FC = () => {
             />
           </View>
 
-          {/* Special Instances */}
-          <DungeonView
-            user={user}
-            dungeons={dungeons}
-            activeTab="dashboard"
-            onNavigate={() => {}}
-            showNotification={() => {}}
-            setUser={setUser}
-            level={user.level}
-            rank="E-RANK"
-            onAvatarClick={() => {}}
-            selectedDungeon={null}
-            setSelectedDungeon={() => {}}
-          />
+          {/* Special Gates — Gate Radar */}
+          <View style={styles.specialGatesSection}>
+            <View style={styles.specialGatesHeader}>
+              <Image
+                source={require('../../assets/special instances.png')}
+                style={styles.specialGatesIcon}
+              />
+              <Text style={styles.specialGatesHeaderTitle}>SPECIAL GATES</Text>
+            </View>
+
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                navigation.navigate('DungeonDiscovery');
+              }}
+              style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [
+                styles.gateRadarCard,
+                (pressed || hovered) && styles.gateRadarCardActive,
+              ]}
+              android_ripple={{ color: 'rgba(34, 211, 238, 0.25)', borderless: false }}
+            >
+              <View style={styles.gateRadarScanClip}>
+                <MotiView
+                  pointerEvents="none"
+                  style={[StyleSheet.absoluteFill, styles.gateRadarRing]}
+                  from={{ opacity: 0.45, scale: 0.98 }}
+                  animate={{ opacity: 0, scale: 1.06 }}
+                  transition={{
+                    type: 'timing',
+                    duration: 2200,
+                    loop: true,
+                    repeatReverse: false,
+                  }}
+                />
+                <MotiView
+                  pointerEvents="none"
+                  style={[StyleSheet.absoluteFill, styles.gateRadarRing]}
+                  from={{ opacity: 0.35, scale: 0.98 }}
+                  animate={{ opacity: 0, scale: 1.06 }}
+                  transition={{
+                    type: 'timing',
+                    duration: 2200,
+                    loop: true,
+                    repeatReverse: false,
+                    delay: 750,
+                  }}
+                />
+                <LinearGradient colors={['#0f172a', '#020617']} style={styles.gateRadarGradient}>
+                  <View style={styles.gateRadarTitleRow}>
+                    <MotiView
+                      animate={{ opacity: [0.85, 1, 0.85] }}
+                      transition={{ type: 'timing', duration: 1800, loop: true }}
+                    >
+                      <Ionicons name="radio-outline" size={18} color="#22d3ee" />
+                    </MotiView>
+                    <Text style={styles.gateRadarTitle}>GATE RADAR</Text>
+                  </View>
+                  <Text style={styles.gateRadarBody}>
+                    Nearby dungeon gates show on the map. Scan to pick a gate, run the route, and clear it.
+                  </Text>
+                  <View style={styles.gateRadarCtaButton}>
+                    <Ionicons name="scan-outline" size={20} color="#020617" />
+                    <Text style={styles.gateRadarCtaButtonText}>Initiate scan</Text>
+                  </View>
+                </LinearGradient>
+              </View>
+            </Pressable>
+          </View>
 
           {/* Cleared Gates — you & friends */}
           <View style={styles.sectionHeader}>
             <Image source={require('../../assets/gates.png')} style={styles.sectionIcon} />
             <Text style={styles.sectionTitle}>CLEARED GATES</Text>
           </View>
-          <Text style={styles.subsectionHint}>
-            YOU &amp; FRIENDS · LATEST CLEARS · TIME · PACE · KUDOS
-          </Text>
 
           <ClearedGatesSection
             currentUserId={user.id}
@@ -277,6 +329,19 @@ const HomeScreen: React.FC = () => {
           >
             <Text style={styles.testLevelUpBtnText}>[DEBUG] LEVEL UP (full flow)</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.debugRunCompleteBtn}
+            onPress={() =>
+              navigation.navigate('RunComplete', {
+                demo: true,
+                runData: {},
+                dungeon: {},
+              })
+            }
+          >
+            <Text style={styles.debugRunCompleteBtnText}>[DEBUG] RUN COMPLETE (cards)</Text>
+          </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
 
@@ -294,6 +359,11 @@ const HomeScreen: React.FC = () => {
         onClose={() => setShowLevelUpPreview(false)}
         preview
         autoPlay
+      />
+
+      <InviteFriendsModal
+        visible={gateRadarPartyModalVisible}
+        onClose={() => setGateRadarPartyModalVisible(false)}
       />
     </View>
   );
@@ -410,14 +480,130 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     fontFamily: 'Exo2-Regular',
   },
-  subsectionHint: {
-    fontSize: 7,
-    fontWeight: '700',
-    color: '#64748b',
-    letterSpacing: 1,
+  specialGatesSection: {
     paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  specialGatesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 10,
+  },
+  specialGatesIcon: {
+    width: 24,
+    height: 24,
+    marginRight: 8,
+    resizeMode: 'contain',
+  },
+  specialGatesHeaderTitle: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#ef4444',
+    letterSpacing: 4,
+    flex: 1,
     fontFamily: 'Exo2-Regular',
+  },
+  gateRadarCard: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.28)',
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+  },
+  gateRadarCardActive: {
+    borderColor: 'rgba(34, 211, 238, 0.65)',
+    shadowColor: '#22d3ee',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 6,
+  },
+  gateRadarScanClip: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  gateRadarRing: {
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: 'rgba(34, 211, 238, 0.5)',
+  },
+  gateRadarGradient: {
+    padding: 18,
+    zIndex: 1,
+  },
+  gateRadarTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  gateRadarTitle: {
+    fontFamily: 'Exo2-Regular',
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#22d3ee',
+    letterSpacing: 3,
+    textTransform: 'uppercase',
+  },
+  gateRadarBody: {
+    fontFamily: 'Exo2-Regular',
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748b',
+    lineHeight: 17,
+    letterSpacing: 0.2,
+    marginTop: 10,
+  },
+  gateRadarCtaButton: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#22d3ee',
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    shadowColor: '#06b6d4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  gateRadarCtaButtonText: {
+    color: '#020617',
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  gateRadarPostRunHint: {
+    fontFamily: 'Exo2-Regular',
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#475569',
+    lineHeight: 14,
+    letterSpacing: 0.2,
+    marginTop: 10,
+  },
+  gateRadarPartyBtn: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+  },
+  gateRadarPartyBtnText: {
+    fontFamily: 'Exo2-Regular',
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#94a3b8',
+    letterSpacing: 0.5,
   },
   testChestBtn: {
     backgroundColor: '#eab308',
@@ -463,6 +649,24 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 210, 255, 0.8)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
+  },
+  debugRunCompleteBtn: {
+    marginHorizontal: 20,
+    marginBottom: 28,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(34, 211, 238, 0.55)',
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    borderRadius: 12,
+  },
+  debugRunCompleteBtnText: {
+    color: '#22d3ee',
+    fontFamily: 'Exo2-Regular',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
 });
 

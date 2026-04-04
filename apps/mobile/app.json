@@ -42,7 +42,17 @@
     },
     "plugins": [
       "expo-splash-screen",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Group Leveling to use your location to record dungeon routes and match them to global routes.",
+          "locationAlwaysPermission": "Allow Group Leveling to use your location in the background while recording a run.",
+          "locationWhenInUsePermission": "Allow Group Leveling to use your location while you use the app.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ]
     ],
     "platforms": [
       "ios",

@@ -18,6 +18,7 @@ import { supabase } from '@/lib/supabase';
 import { getCaptureItemCount, findOneCaptureCosmetic, isCaptureItem } from '@/utils/captureItem';
 import type { UserCosmetic } from '@/types/user';
 import { COLORS, BATTLE_INVENTORY_SLOTS, BATTLE_TAP_TO_CONFIRM_KEY, MELEE_IMPACT_ENTRY_DELAY_MS } from '@/components/battle/battleTheme';
+import { DEATH_DISINTEGRATION_MS } from '@/components/battle/battleDeathOutro';
 import { battleScreenStyles as styles } from '@/components/battle/battleScreenStyles';
 import { BattleFieldHud } from '@/components/battle/BattleFieldHud';
 import { BattleSkillSpriteVfxHost } from '@/components/battle/BattleSkillSpriteVfxHost';
@@ -412,7 +413,8 @@ export default function BattleScreen() {
           }
           setCapturedDuringBattle(true);
           setInventoryModalVisible(false);
-          setCurrentPhase(PHASE.VICTORY);
+          setCurrentPhase(PHASE.DEATH_OUTRO_ENEMY);
+          setTimeout(() => setCurrentPhase(PHASE.VICTORY), DEATH_DISINTEGRATION_MS);
         } catch (e) {
           console.error('Failed to use capture item:', e);
         }
@@ -615,6 +617,7 @@ export default function BattleScreen() {
                 setEnemyFigureCenter={setEnemyFigureCenter}
                 action={enemyAction}
                 onEnterComplete={handleEnemyEnterComplete}
+                deathOutro={currentPhase === PHASE.DEATH_OUTRO_ENEMY}
               />
 
               {/* Player Figures — fade in after transition so they don’t appear before walk-in is done */}
@@ -633,6 +636,7 @@ export default function BattleScreen() {
                 lastDamageEvent={lastDamageEvent}
                 lastSkillAnimationConfig={lastSkillAnimationConfig}
                 weaponGripCast={weaponGripCast}
+                partyDeathOutro={currentPhase === PHASE.DEATH_OUTRO_PARTY}
               />
 
               {/* Chain / turn labels: absolute overlay so they never push party row down */}

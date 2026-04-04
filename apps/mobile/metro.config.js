@@ -1,4 +1,5 @@
 const { getDefaultConfig } = require('expo/metro-config');
+const fs = require('fs');
 const path = require('path');
 
 const projectRoot = __dirname;
@@ -29,10 +30,25 @@ const avatarConstantsEntry = path.resolve(
   'packages/avatar-constants/src/index.ts',
 );
 
+/** Metro occasionally fails to resolve this screen in pnpm monorepo + web; force absolute path. */
+const dungeonDiscoveryScreenPath = path.resolve(
+  projectRoot,
+  'src/screens/DungeonDiscoveryScreen.tsx',
+);
+
 const upstreamResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName === '@repo/avatar-constants') {
     return { type: 'sourceFile', filePath: avatarConstantsEntry };
+  }
+  const norm = String(moduleName).replace(/\\/g, '/');
+  if (
+    fs.existsSync(dungeonDiscoveryScreenPath) &&
+    (norm.endsWith('/DungeonDiscoveryScreen') ||
+      norm.endsWith('/DungeonDiscoveryScreen.tsx') ||
+      norm === 'DungeonDiscoveryScreen')
+  ) {
+    return { type: 'sourceFile', filePath: dungeonDiscoveryScreenPath };
   }
   if (typeof upstreamResolveRequest === 'function') {
     return upstreamResolveRequest(context, moduleName, platform);

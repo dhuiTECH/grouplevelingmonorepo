@@ -41,23 +41,23 @@ export function runWeaponGripAttack(
 
   switch (preset) {
     case 'sword':
-      // Restored: wind-back → downward chop → settle (single recovery curve on all channels).
+      // Wider crescent arc for the 45-degree hand
       v.rot.value = withSequence(
         withTiming(0, { duration: 0 }),
-        withTiming(-64, { duration: t1, easing: ease }),
-        withTiming(52, { duration: t2, easing: easeIn }),
+        withTiming(-90, { duration: t1, easing: ease }),   // Deeper wind-back
+        withTiming(90, { duration: t2, easing: easeIn }),  // Deeper slash down
         withTiming(0, { duration: t3, easing: ease })
       );
       v.tx.value = withSequence(
         withTiming(0, { duration: 0 }),
-        withTiming(-6, { duration: t1, easing: ease }),
-        withTiming(18, { duration: t2, easing: easeIn }),
+        withTiming(-10, { duration: t1, easing: ease }),   // Pull back
+        withTiming(30, { duration: t2, easing: easeIn }),  // Thrust forward during the slash
         withTiming(0, { duration: t3 })
       );
       v.ty.value = withSequence(
         withTiming(0, { duration: 0 }),
-        withTiming(-4, { duration: t1, easing: ease }),
-        withTiming(58, { duration: t2, easing: easeIn }),
+        withTiming(-10, { duration: t1, easing: ease }),   // Lift up slightly during windup
+        withTiming(40, { duration: t2, easing: easeIn }),  // Bring down during strike
         withTiming(0, { duration: t3, easing: ease })
       );
       v.sc.value = withSequence(
@@ -67,26 +67,35 @@ export function runWeaponGripAttack(
         withTiming(1, { duration: t3, easing: ease })
       );
       break;
-    case 'spear':
+    case 'spear': {
+      // Snappier than default t1/t2 split so thrust lines up with hit VFX (short windup, fast thrust).
+      const dSpear = Math.min(400, Math.max(200, Math.round(durationMs * 0.68)));
+      const tw = Math.round(dSpear * 0.1);
+      const th = Math.round(dSpear * 0.24);
+      const ts = Math.max(64, dSpear - tw - th);
+      const t3RotSpear = Math.max(40, Math.round(ts * 0.4));
+      const snapOut = Easing.out(Easing.cubic);
+      const thrustEase = Easing.bezier(0.25, 0.1, 0.25, 1);
+      v.rot.value = withSequence(
+        withTiming(0, { duration: 0 }),
+        withTiming(-45, { duration: tw, easing: snapOut }),
+        withTiming(-45, { duration: th }),
+        withTiming(0, { duration: t3RotSpear, easing: ease })
+      );
       v.tx.value = withSequence(
         withTiming(0, { duration: 0 }),
-        withTiming(8, { duration: t1, easing: easeInOut }),
-        withTiming(24, { duration: t2, easing: easeInOut }),
-        withTiming(0, { duration: t3, easing: settleDrift })
+        withTiming(0, { duration: tw }),
+        withTiming(0, { duration: th }),
+        withTiming(0, { duration: ts })
       );
       v.ty.value = withSequence(
         withTiming(0, { duration: 0 }),
-        withTiming(4, { duration: t1, easing: easeInOut }),
-        withTiming(34, { duration: t2, easing: easeInOut }),
-        withTiming(0, { duration: t3, easing: settleDrift })
-      );
-      v.rot.value = withSequence(
-        withTiming(0, { duration: 0 }),
-        withTiming(4, { duration: t1, easing: easeInOut }),
-        withTiming(10, { duration: t2, easing: easeInOut }),
-        withTiming(0, { duration: t3Rot, easing: ease })
+        withTiming(8, { duration: tw, easing: snapOut }),
+        withTiming(-105, { duration: th, easing: thrustEase }),
+        withTiming(0, { duration: ts, easing: settleDrift })
       );
       break;
+    }
     case 'bow':
       v.tx.value = withSequence(
         withTiming(0, { duration: 0 }),

@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, type LayoutChangeEvent } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, Easing } from 'react-native-reanimated';
 import { ArrowUp } from 'lucide-react-native';
 import LayeredAvatar from '@/components/LayeredAvatar';
 import { PetLayeredAvatar } from '@/components/PetLayeredAvatar';
 import { StatusBarMetric } from './StatusBarMetric';
 import { COLORS, MELEE_IMPACT_ENTRY_DELAY_MS } from './battleTheme';
+import { BattleDeathDisintegrate } from './BattleDeathDisintegrate';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -28,6 +29,8 @@ interface PartyRowProps {
   lastDamageEvent?: any;
   lastSkillAnimationConfig?: { vfx_type?: string; duration_ms?: number } | null;
   weaponGripCast?: { key: number; durationMs: number; casterCharId: string; delayMs?: number } | null;
+  /** Full party row pixel dissolve before defeat (all members at 0 HP) */
+  partyDeathOutro?: boolean;
 }
 
 function PartyMemberNode({
@@ -46,6 +49,7 @@ function PartyMemberNode({
   weaponGripCast,
   partySlotIndex = 0,
   partySize = 1,
+  partyDeathOutro = false,
 }: any) {
   const isPet = char.type === 'pet';
   const lungeY = useSharedValue(0);
@@ -68,6 +72,7 @@ function PartyMemberNode({
       setLeftBattle(false);
       return;
     }
+    if (partyDeathOutro) return;
     if (leftBattle) return;
     if (deathExitStartedRef.current) return;
     deathExitStartedRef.current = true;
@@ -75,7 +80,7 @@ function PartyMemberNode({
     exitOpacity.value = withTiming(0, { duration: 480 });
     const t = setTimeout(() => setLeftBattle(true), 500);
     return () => clearTimeout(t);
-  }, [hp, leftBattle]);
+  }, [hp, leftBattle, partyDeathOutro]);
 
   useEffect(() => {
     if (!weaponGripCast || weaponGripCast.casterCharId !== char.id) {
@@ -274,41 +279,82 @@ export const PartyRow = React.memo(function PartyRow({
   lastDamageEvent,
   lastSkillAnimationConfig,
   weaponGripCast,
+  partyDeathOutro = false,
 }: PartyRowProps) {
-  // Use Animated.View for backward compatibility with the parent's partyOpacity Animated.Value
   const RNAnimated = require('react-native').Animated;
+  const partyRowCaptureRef = useRef<View>(null);
+  const [captureSize, setCaptureSize] = useState({ width: 320, height: 200 });
+  const [hidePartyForDissolve, setHidePartyForDissolve] = useState(false);
+
+  useEffect(() => {
+    if (!partyDeathOutro) setHidePartyForDissolve(false);
+  }, [partyDeathOutro]);
+
   return (
-    <RNAnimated.View style={[styles.partyContainer, { opacity: partyOpacity }]}>
-      {party.map((char: any, index: number) => {
-        const isActive = index === activeIndex;
-        const isMe = char.id === user?.id || char.id === `pet-${user?.id}`;
-        
-        return (
-          <PartyMemberNode 
-            key={char.id}
-            char={char}
-            isActive={isActive}
-            isPlayerTurnPhase={isPlayerTurnPhase}
-            isMe={isMe}
-            setActiveIndex={() => setActiveIndex(index)}
-            visualHp={visualPartyHps[char.id]}
-            allShopItems={allShopItems}
-            petAction={petAction}
-            petSpriteActive={petSpriteActive}
-            onPetEnterComplete={onPetEnterComplete}
-            lastDamageEvent={lastDamageEvent}
-            lastSkillAnimationConfig={lastSkillAnimationConfig}
-            weaponGripCast={weaponGripCast}
-            partySlotIndex={index}
-            partySize={party.length}
-          />
-        );
-      })}
-    </RNAnimated.View>
+    <View style={styles.partyRowOuter}>
+      <View
+        ref={partyRowCaptureRef}
+        collapsable={false}
+        style={styles.partyRowCaptureInner}
+        onLayout={(e: LayoutChangeEvent) => {
+          const { width, height } = e.nativeEvent.layout;
+          if (width > 0 && height > 0) setCaptureSize({ width, height });
+        }}
+      >
+        <View style={{ opacity: hidePartyForDissolve ? 0 : 1 }}>
+          <RNAnimated.View style={[styles.partyContainer, { opacity: partyOpacity }]}>
+            {party.map((char: any, index: number) => {
+              const isActive = index === activeIndex;
+              const isMe = char.id === user?.id || char.id === `pet-${user?.id}`;
+              return (
+                <PartyMemberNode
+                  key={char.id}
+                  char={char}
+                  isActive={isActive}
+                  isPlayerTurnPhase={isPlayerTurnPhase}
+                  isMe={isMe}
+                  setActiveIndex={() => setActiveIndex(index)}
+                  visualHp={visualPartyHps[char.id]}
+                  allShopItems={allShopItems}
+                  petAction={petAction}
+                  petSpriteActive={petSpriteActive}
+                  onPetEnterComplete={onPetEnterComplete}
+                  lastDamageEvent={lastDamageEvent}
+                  lastSkillAnimationConfig={lastSkillAnimationConfig}
+                  weaponGripCast={weaponGripCast}
+                  partySlotIndex={index}
+                  partySize={party.length}
+                  partyDeathOutro={partyDeathOutro}
+                />
+              );
+            })}
+          </RNAnimated.View>
+        </View>
+      </View>
+      {partyDeathOutro ? (
+        <BattleDeathDisintegrate
+          active={partyDeathOutro}
+          captureRef={partyRowCaptureRef}
+          width={captureSize.width}
+          height={captureSize.height}
+          onCaptureReady={() => setHidePartyForDissolve(true)}
+        />
+      ) : null}
+    </View>
   );
 });
 
 const styles = StyleSheet.create({
+  partyRowOuter: {
+    position: 'relative',
+    alignItems: 'center',
+    alignSelf: 'center',
+    overflow: 'visible',
+  },
+  partyRowCaptureInner: {
+    alignSelf: 'center',
+    overflow: 'visible',
+  },
   partyContainer: { flexDirection: 'row', gap: 20, marginBottom: 20, overflow: 'visible' },
   partyMemberOuter: { overflow: 'visible' },
   /** Extra vertical room so weapon/hand swings are not clipped by row layout */

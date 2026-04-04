@@ -21,6 +21,7 @@ import { TempleScreen } from '@/screens/TempleScreen';
 import WorldMapScreen from '@/screens/WorldMapScreen';
 import BattleScreen from '@/screens/BattleScreen';
 import DungeonTrackerScreen from '@/screens/DungeonTrackerScreen';
+import DungeonDiscoveryScreen from '@/screens/DungeonDiscoveryScreen';
 import RunCompleteScreen from '@/screens/RunCompleteScreen';
 import DungeonLeaderboardScreen from '@/screens/DungeonLeaderboardScreen';
 
@@ -108,6 +109,11 @@ export function AppNavigator(): JSX.Element {
               name="Battle" 
               component={BattleScreen}
               options={{ gestureEnabled: false }}
+            />
+            <Stack.Screen
+              name="DungeonDiscovery"
+              component={DungeonDiscoveryScreen}
+              options={{ headerShown: false }}
             />
             <Stack.Screen 
               name="DungeonTracker" 

@@ -1,5 +1,16 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, Pressable, ScrollView, Dimensions } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  Dimensions,
+  useWindowDimensions,
+} from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Sharing from 'expo-sharing';
 import { EndingRunCard } from '@/components/EndingRunCard';
@@ -45,6 +56,9 @@ export default function RunCompleteScreen() {
   const { user, setUser } = useAuth();
   const { shopItems } = useGameData();
   const { stopBackgroundMusic } = useAudio();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  /** Reserve space for pagination, hint, and footer buttons */
+  const slideMinHeight = Math.max(320, windowHeight - 240);
 
   // RNG Event States
   const [isScanning, setIsScanning] = useState(false);
@@ -55,13 +69,204 @@ export default function RunCompleteScreen() {
   const [partySize, setPartySize] = useState(1);
   const [partyMembers, setPartyMembers] = useState<any[]>([]);
 
-  const { runData: paramRunData, dungeon: paramDungeon, demo, isInParty = false } = route.params || {};
+  const {
+    runData: paramRunData,
+    dungeon: paramDungeon,
+    demo,
+    matchResult,
+    mode: modeParam,
+  } = route.params || {};
   const isDemo = demo === true;
   const runData = isDemo ? CAVE_OF_SHADOWS_DEMO.runData : paramRunData;
-  const dungeon = isDemo ? CAVE_OF_SHADOWS_DEMO.dungeon : paramDungeon;
+  const recordedViaGlobalEngine = paramRunData?.recordedViaGlobalEngine === true;
+  const [resolvedDungeon, setResolvedDungeon] = useState(paramDungeon);
 
   useEffect(() => {
-    if (isDemo || !paramRunData || !paramDungeon || !user?.id || runRecordedRef.current) return;
+    if (!recordedViaGlobalEngine || !matchResult?.matchedDungeonId) return;
+    void supabase
+      .from('global_dungeons')
+      .select('*')
+      .eq('id', matchResult.matchedDungeonId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setResolvedDungeon({
+            ...data,
+            target_distance_meters: data.distance_meters,
+            image_url: data.image_url || paramDungeon?.image_url,
+          });
+        }
+      });
+  }, [recordedViaGlobalEngine, matchResult?.matchedDungeonId, paramDungeon?.image_url]);
+
+  const dungeon = isDemo ? CAVE_OF_SHADOWS_DEMO.dungeon : resolvedDungeon ?? paramDungeon;
+
+  useEffect(() => {
+    if (isDemo || !paramRunData || !user?.id || runRecordedRef.current) return;
+
+    if (modeParam === 'free_run') {
+      runRecordedRef.current = true;
+      const xpEarned = Math.round(Number(paramRunData.xpEarned) || 0);
+      void (async () => {
+        if (xpEarned <= 0) return;
+        const { data: profile, error: profileFetchError } = await supabase
+          .from('profiles')
+          .select('exp')
+          .eq('id', user.id)
+          .single();
+
+        if (profileFetchError || !profile) {
+          console.error('[RunComplete] Free roam profile fetch:', profileFetchError);
+          return;
+        }
+        const newExp = (Number(profile.exp) || 0) + xpEarned;
+        const { error: profileUpdateError } = await supabase
+          .from('profiles')
+          .update({ exp: newExp })
+          .eq('id', user.id);
+
+        if (profileUpdateError) {
+          console.error('[RunComplete] Free roam XP update:', profileUpdateError);
+        } else {
+          setUser?.({ ...user, exp: newExp });
+        }
+      })();
+      return;
+    }
+
+    if (recordedViaGlobalEngine) {
+      runRecordedRef.current = true;
+
+      const runGlobalRewardsAndRng = async () => {
+        const matchedId = matchResult?.matchedDungeonId ?? null;
+        const completed = !!matchedId;
+        const distanceMeters = Math.round(Number(paramRunData.distance) || 0);
+        const durationSeconds = Math.round(Number(paramRunData.duration) || 0);
+
+        if (completed && matchedId) {
+          const { data: gd } = await supabase.from('global_dungeons').select('*').eq('id', matchedId).single();
+          const xp = Number(gd?.xp_reward) || 0;
+          const coins = Number(gd?.coin_reward) || 0;
+
+          if (xp > 0 || coins > 0) {
+            console.log(`[RunComplete] Global match rewards: xp=${xp} coins=${coins}`);
+
+            const { data: profile, error: profileFetchError } = await supabase
+              .from('profiles')
+              .select('exp, coins')
+              .eq('id', user.id)
+              .single();
+
+            if (profileFetchError) {
+              console.error('[RunComplete] Failed to fetch profile for rewards:', profileFetchError);
+            } else if (profile) {
+              const newExp = (Number(profile.exp) || 0) + xp;
+              const newCoins = (Number(profile.coins) || 0) + coins;
+
+              const { error: profileUpdateError } = await supabase
+                .from('profiles')
+                .update({ exp: newExp, coins: newCoins })
+                .eq('id', user.id);
+
+              if (profileUpdateError) {
+                console.error('[RunComplete] Failed to update profile rewards:', profileUpdateError);
+              } else {
+                setUser?.({ ...user, exp: newExp, coins: newCoins });
+              }
+            }
+
+            const { error: activityError } = await supabase.from('activities').insert({
+              hunter_id: user.id,
+              name: gd?.name || 'Dungeon',
+              type: 'dungeon',
+              distance: distanceMeters,
+              elapsed_time: durationSeconds,
+              xp_earned: xp,
+              coins_earned: coins,
+              claimed: true,
+            });
+
+            if (activityError) {
+              console.error('[RunComplete] Failed to record activity:', activityError);
+            }
+          }
+        }
+
+        if (completed) {
+          setIsScanning(true);
+          try {
+            let currentPartySize = 1;
+            if (user.current_party_id) {
+              const { data: members, error: membersError } = await supabase
+                .from('party_members')
+                .select(`
+                hunter_id,
+                profiles:hunter_id (
+                  id, 
+                  hunter_name, 
+                  avatar, 
+                  level, 
+                  hunter_rank,
+                  cosmetics:user_cosmetics(
+                    id,
+                    equipped,
+                    shop_item_id,
+                    shop_items:shop_item_id(*)
+                  )
+                )
+              `)
+                .eq('party_id', user.current_party_id);
+
+              if (!membersError && members) {
+                currentPartySize = members.length;
+                const formattedMembers = members.map((m: any) => ({
+                  ...m.profiles,
+                  name: m.profiles.hunter_name,
+                }));
+                setPartyMembers(formattedMembers);
+              }
+            }
+            setPartySize(currentPartySize);
+
+            const lckBonus = (user.lck_stat || 10) / 100;
+            const eventChance = 0.3 + (currentPartySize * 0.05) + lckBonus;
+            const roll = Math.random();
+
+            if (roll < eventChance) {
+              const typeRoll = Math.random();
+              if (typeRoll < 0.7) {
+                const { data: nodes } = await supabase.from('world_map_nodes').select('*').eq('is_random_event', true);
+                if (nodes && nodes.length > 0) {
+                  const node = nodes[Math.floor(Math.random() * nodes.length)];
+                  setRngEvent({
+                    type: node.interaction_type === 'BATTLE' ? 'BATTLE' : 'SCENE',
+                    data: node,
+                  });
+                  setShowDialogue(true);
+                }
+              } else {
+                const rarityRoll = Math.random();
+                let selectedRarity: 'small' | 'silver' | 'medium' | 'large' = 'small';
+                if (rarityRoll > 0.95) selectedRarity = 'large';
+                else if (rarityRoll > 0.8) selectedRarity = 'medium';
+                else if (rarityRoll > 0.5) selectedRarity = 'silver';
+                setChestType(selectedRarity);
+                setShowChest(true);
+              }
+            }
+          } catch (err) {
+            console.error('Error in RNG logic:', err);
+          } finally {
+            setIsScanning(false);
+          }
+        }
+      };
+
+      void runGlobalRewardsAndRng();
+      return;
+    }
+
+    if (!paramDungeon) return;
     runRecordedRef.current = true;
 
     const targetMeters = Number(paramDungeon.target_distance_meters) || 5000;
@@ -73,14 +278,14 @@ export default function RunCompleteScreen() {
         ? Math.round(Number(paramRunData.timeToTargetSeconds))
         : null;
 
-    // Be slightly lenient with distance (allow completion at 99% of target)
-    // This helps with rounding issues or GPS jitter near the finish line
-    const completed = distanceMeters >= (targetMeters * 0.99);
+    const completed = distanceMeters >= targetMeters * 0.99;
     const timeToTargetForDb = completed ? (rawTimeToTarget ?? durationSeconds) : null;
 
     const recordRunAndFetchEvent = async () => {
-      console.log(`[RunComplete] Recording run: user=${user.id} dungeon=${paramDungeon.id} distance=${distanceMeters} duration=${durationSeconds} completed=${completed}`);
-      
+      console.log(
+        `[RunComplete] Recording run: user=${user.id} dungeon=${paramDungeon.id} distance=${distanceMeters} duration=${durationSeconds} completed=${completed}`
+      );
+
       const { error: runError } = await supabase.from('dungeon_runs').insert({
         user_id: user.id,
         dungeon_id: paramDungeon.id,
@@ -90,32 +295,38 @@ export default function RunCompleteScreen() {
         elevation_gain_meters: elevationGainMeters,
         time_to_target_seconds: timeToTargetForDb,
       });
-      
+
       if (runError) {
         console.error('[RunComplete] Failed to record dungeon run:', runError);
-        // Reset ref so it can retry if the user navigates back/forth or if we add a retry button
         runRecordedRef.current = false;
         return;
       }
-      
+
       console.log('[RunComplete] Dungeon run recorded successfully');
 
       if (completed && (paramDungeon.xp_reward || paramDungeon.coin_reward)) {
         const xp = Number(paramDungeon.xp_reward) || 0;
         const coins = Number(paramDungeon.coin_reward) || 0;
-        
+
         console.log(`[RunComplete] Claiming rewards: xp=${xp} coins=${coins}`);
-        
-        const { data: profile, error: profileFetchError } = await supabase.from('profiles').select('exp, coins').eq('id', user.id).single();
-        
+
+        const { data: profile, error: profileFetchError } = await supabase
+          .from('profiles')
+          .select('exp, coins')
+          .eq('id', user.id)
+          .single();
+
         if (profileFetchError) {
           console.error('[RunComplete] Failed to fetch profile for rewards:', profileFetchError);
         } else if (profile) {
           const newExp = (Number(profile.exp) || 0) + xp;
           const newCoins = (Number(profile.coins) || 0) + coins;
-          
-          const { error: profileUpdateError } = await supabase.from('profiles').update({ exp: newExp, coins: newCoins }).eq('id', user.id);
-          
+
+          const { error: profileUpdateError } = await supabase
+            .from('profiles')
+            .update({ exp: newExp, coins: newCoins })
+            .eq('id', user.id);
+
           if (profileUpdateError) {
             console.error('[RunComplete] Failed to update profile rewards:', profileUpdateError);
           } else {
@@ -123,12 +334,18 @@ export default function RunCompleteScreen() {
             console.log('[RunComplete] Profile rewards updated successfully');
           }
         }
-        
+
         const { error: activityError } = await supabase.from('activities').insert({
-          hunter_id: user.id, name: paramDungeon.name || 'Dungeon', type: 'dungeon',
-          distance: distanceMeters, elapsed_time: durationSeconds, xp_earned: xp, coins_earned: coins, claimed: true,
+          hunter_id: user.id,
+          name: paramDungeon.name || 'Dungeon',
+          type: 'dungeon',
+          distance: distanceMeters,
+          elapsed_time: durationSeconds,
+          xp_earned: xp,
+          coins_earned: coins,
+          claimed: true,
         });
-        
+
         if (activityError) {
           console.error('[RunComplete] Failed to record activity:', activityError);
         } else {
@@ -136,12 +353,11 @@ export default function RunCompleteScreen() {
         }
       }
 
-      // RNG event (dialogue/chest) only when mission was completed (distance met)
       if (completed) {
         setIsScanning(true);
         try {
           let currentPartySize = 1;
-          if (isInParty && user.current_party_id) {
+          if (user.current_party_id) {
             const { data: members, error: membersError } = await supabase
               .from('party_members')
               .select(`
@@ -166,7 +382,7 @@ export default function RunCompleteScreen() {
               currentPartySize = members.length;
               const formattedMembers = members.map((m: any) => ({
                 ...m.profiles,
-                name: m.profiles.hunter_name // Map hunter_name to name for EndingRunCard
+                name: m.profiles.hunter_name,
               }));
               setPartyMembers(formattedMembers);
             }
@@ -174,7 +390,7 @@ export default function RunCompleteScreen() {
           setPartySize(currentPartySize);
 
           const lckBonus = (user.lck_stat || 10) / 100;
-          const eventChance = 0.3 + (partySize * 0.05) + lckBonus;
+          const eventChance = 0.3 + (currentPartySize * 0.05) + lckBonus;
           const roll = Math.random();
 
           if (roll < eventChance) {
@@ -204,14 +420,23 @@ export default function RunCompleteScreen() {
       }
     };
 
-    recordRunAndFetchEvent();
-  }, [isDemo, paramRunData, paramDungeon, user, setUser]);
+    void recordRunAndFetchEvent();
+  }, [
+    isDemo,
+    paramRunData,
+    paramDungeon,
+    user,
+    setUser,
+    recordedViaGlobalEngine,
+    matchResult?.matchedDungeonId,
+    modeParam,
+  ]);
 
   useEffect(() => {
     stopBackgroundMusic();
   }, [stopBackgroundMusic]);
   
-  if (!runData || !dungeon || !user) {
+  if (!runData || !user) {
       return (
           <View style={styles.container}>
               <Text style={{ color: 'white' }}>Error: Run data missing.</Text>
@@ -221,6 +446,10 @@ export default function RunCompleteScreen() {
           </View>
       );
   }
+
+  const dungeonName =
+    modeParam === 'free_run' && !isDemo ? 'Scouting' : dungeon?.name ?? 'RUN COMPLETE';
+  const dungeonImageUri = dungeon?.image_url ?? CAVE_OF_SHADOWS_DEMO.dungeon.image_url;
 
   // --- EXPO GO SAFE SHARE LOGIC ---
   const handleShare = async () => {
@@ -248,7 +477,7 @@ export default function RunCompleteScreen() {
   };
 
   const onScroll = (event: any) => {
-    const slide = Math.round(event.nativeEvent.contentOffset.x / WINDOW_WIDTH);
+    const slide = Math.round(event.nativeEvent.contentOffset.x / windowWidth);
     if (slide !== activeIndex) {
       setActiveIndex(slide);
     }
@@ -298,34 +527,42 @@ export default function RunCompleteScreen() {
         onAnimationComplete={() => setShowChest(false)}
       />
 
-      {/* THE 3-CARD CAROUSEL */}
+      {/* THE 3-CARD CAROUSEL — fills screen below overlays */}
       <View style={styles.carouselContainer}>
-        <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={16}>
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          style={styles.carouselScroll}
+          contentContainerStyle={styles.carouselScrollContent}
+        >
           {/* Slide 0: Full */}
-          <View style={styles.slide}>
+          <View style={[styles.slide, { width: windowWidth, minHeight: slideMinHeight }]}>
             <Pressable onPress={() => setIsModalVisible(true)}>
-              <EndingRunCard ref={cardRef} runData={runData} user={user} missionName={dungeon.name} variant="full" dungeonImage={{ uri: dungeon.image_url }} allShopItems={shopItems} />
+              <EndingRunCard ref={cardRef} runData={runData} user={user} missionName={dungeonName} variant="full" dungeonImage={{ uri: dungeonImageUri }} allShopItems={shopItems} />
             </Pressable>
           </View>
 
           {/* Slide 1: Minimal */}
-          <View style={styles.slide}>
+          <View style={[styles.slide, { width: windowWidth, minHeight: slideMinHeight }]}>
             <Pressable onPress={() => setIsModalVisible(true)}>
-              <EndingRunCard ref={cardMinimalRef} runData={runData} user={user} missionName={dungeon.name} variant="minimal" dungeonImage={{ uri: dungeon.image_url }} allShopItems={shopItems} />
+              <EndingRunCard ref={cardMinimalRef} runData={runData} user={user} missionName={dungeonName} variant="minimal" dungeonImage={{ uri: dungeonImageUri }} allShopItems={shopItems} />
             </Pressable>
           </View>
 
           {/* Slide 2: Sticker (Transparent) */}
-          <View style={styles.slide}>
+          <View style={[styles.slide, { width: windowWidth, minHeight: slideMinHeight }]}>
             <Pressable onPress={() => setIsModalVisible(true)}>
               <View style={styles.stickerPreviewBackground}>
                 <EndingRunCard
                   ref={cardStickerRef}
                   runData={runData}
                   user={user}
-                  missionName={dungeon.name}
+                  missionName={dungeonName}
                   variant="sticker"
-                  dungeonImage={{ uri: dungeon.image_url }}
+                  dungeonImage={{ uri: dungeonImageUri }}
                   allShopItems={shopItems}
                 />
               </View>
@@ -334,17 +571,17 @@ export default function RunCompleteScreen() {
 
           {/* Slide 3: Party Sticker (Transparent Collage) - Only if party exists */}
           {partyMembers.length > 0 && (
-            <View style={styles.slide}>
+            <View style={[styles.slide, { width: windowWidth, minHeight: slideMinHeight }]}>
               <Pressable onPress={() => setIsModalVisible(true)}>
                 <View style={styles.stickerPreviewBackground}>
                   <EndingRunCard
                     ref={cardPartyStickerRef}
                     runData={runData}
                     user={user}
-                    missionName={dungeon.name}
+                    missionName={dungeonName}
                     variant="party_sticker"
                     partyMembers={partyMembers}
-                    dungeonImage={{ uri: dungeon.image_url }}
+                    dungeonImage={{ uri: dungeonImageUri }}
                     allShopItems={shopItems}
                   />
                 </View>
@@ -376,10 +613,10 @@ export default function RunCompleteScreen() {
         <Pressable style={styles.modalContainer} onPress={() => setIsModalVisible(false)}>
           <View style={[styles.modalContent, activeIndex >= 2 && styles.stickerPreviewBackground]}>
              <EndingRunCard 
-              runData={runData} user={user} missionName={dungeon.name} animate={true}
+              runData={runData} user={user} missionName={dungeonName} animate={true}
               variant={getVariantForIndex(activeIndex)}
               partyMembers={partyMembers}
-              dungeonImage={{ uri: dungeon.image_url }} allShopItems={shopItems}
+              dungeonImage={{ uri: dungeonImageUri }} allShopItems={shopItems}
             />
           </View>
         </Pressable>
@@ -389,15 +626,17 @@ export default function RunCompleteScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#020617', alignItems: 'center', justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: '#020617', alignItems: 'center' },
   scanningOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,6,23,0.9)', zIndex: 50, justifyContent: 'center', alignItems: 'center' },
   scanningText: { color: '#00e5ff', marginTop: 15, fontWeight: '900', letterSpacing: 2 },
-  carouselContainer: { height: WINDOW_WIDTH + 100, width: WINDOW_WIDTH },
-  slide: { width: WINDOW_WIDTH, alignItems: 'center', justifyContent: 'center' },
-  pagination: { flexDirection: 'row', justifyContent: 'center', marginTop: 20, gap: 8 },
+  carouselContainer: { flex: 1, width: '100%', maxWidth: WINDOW_WIDTH },
+  carouselScroll: { flex: 1, width: '100%' },
+  carouselScrollContent: { flexGrow: 1, justifyContent: 'center', alignItems: 'stretch' },
+  slide: { alignItems: 'center', justifyContent: 'center' },
+  pagination: { flexDirection: 'row', justifyContent: 'center', marginTop: 8, gap: 8 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#334155' },
   activeDot: { backgroundColor: '#22d3ee', width: 12 },
-  footer: { marginTop: 20, width: '80%', gap: 15 },
+  footer: { paddingTop: 8, paddingBottom: 24, width: '80%', gap: 15, maxWidth: 420 },
   shareBtn: { backgroundColor: '#22d3ee', paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
   shareText: { color: '#0f172a', fontWeight: '900', fontSize: 16, letterSpacing: 1 },
   homeBtn: { paddingVertical: 16, alignItems: 'center' },

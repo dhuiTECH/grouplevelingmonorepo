@@ -5,6 +5,10 @@ export const PHASE = {
   ACTIVE: 'ACTIVE_PHASE',
   ENEMY_WINDUP: 'ENEMY_WINDUP',
   ENEMY_STRIKE: 'ENEMY_STRIKE',
+  /** Pixel death outro on enemy sprite before VictoryScreen */
+  DEATH_OUTRO_ENEMY: 'DEATH_OUTRO_ENEMY',
+  /** Pixel death outro on party row before DefeatModal */
+  DEATH_OUTRO_PARTY: 'DEATH_OUTRO_PARTY',
   VICTORY: 'VICTORY',
   DEFEAT: 'DEFEAT'
 };

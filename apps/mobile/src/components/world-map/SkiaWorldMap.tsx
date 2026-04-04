@@ -13,6 +13,7 @@ import {
   Circle,
   Image as SkiaImage,
   vec,
+  Oval,
 } from "@shopify/react-native-skia";
 import Reanimated, {
   useSharedValue,
@@ -125,8 +126,8 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 }) => {
   const { width, height } = useWindowDimensions();
 
-  /** Softer edge than 0.4 so vignette does not cancel the warm sun side */
-  const vignetteEdgeColor = atmosphereOverride ?? "rgba(26, 24, 44, 0.28)";
+  /** Slightly stronger warm edge to balance bright sun layers */
+  const vignetteEdgeColor = atmosphereOverride ?? "rgba(22, 13, 6, 0.52)";
 
   const { tileLibrary } = useTileLibrary();
   const petBehindOpacity = useDerivedValue(() =>
@@ -539,6 +540,9 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   const spritesheet =
     activePet?.pet_details?.metadata?.visuals?.walking_spritesheet;
 
+  const petShadowX = useDerivedValue(() => (width / 2) + petOffsetX.value - 10);
+  const petShadowY = useDerivedValue(() => (height / 2 + 5) + petOffsetY.value + 14);
+
   const playerAvatar = avatarData ? (
     <SkiaLayeredAvatar
       user={avatarData}
@@ -552,22 +556,31 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
   ) : null;
 
   const petSprite = spritesheet ? (
-    <SkiaPetSprite
-      imageUrl={spritesheet.url}
-      isMoving={isMoving}
-      activeDirection={activeDirection}
-      flipX={false}
-      scale={0.15 * (tileSize / 48)}
-      totalFrames={spritesheet.frame_count ?? 1}
-      totalTimeMs={spritesheet.duration_ms ?? 1000}
-      frameWidth={spritesheet.frame_width ?? 64}
-      frameHeight={spritesheet.frame_height ?? 64}
-      idleIndex={spritesheet.idle_frame ?? 0}
-      x={width / 2} // RAW CENTER POINT
-      y={height / 2 + 5} // Adjusted slightly down from -15 to be more natural
-      trailX={petOffsetX}
-      trailY={petOffsetY}
-    />
+    <Group>
+      <Oval 
+        x={petShadowX} 
+        y={petShadowY} 
+        width={20} 
+        height={6} 
+        color="rgba(18, 10, 5, 0.5)" 
+      />
+      <SkiaPetSprite
+        imageUrl={spritesheet.url}
+        isMoving={isMoving}
+        activeDirection={activeDirection}
+        flipX={false}
+        scale={0.15 * (tileSize / 48)}
+        totalFrames={spritesheet.frame_count ?? 1}
+        totalTimeMs={spritesheet.duration_ms ?? 1000}
+        frameWidth={spritesheet.frame_width ?? 64}
+        frameHeight={spritesheet.frame_height ?? 64}
+        idleIndex={spritesheet.idle_frame ?? 0}
+        x={width / 2} // RAW CENTER POINT
+        y={height / 2 + 5} // Adjusted slightly down from -15 to be more natural
+        trailX={petOffsetX}
+        trailY={petOffsetY}
+      />
+    </Group>
   ) : null;
 
   return (
@@ -763,7 +776,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
 
         {enableAtmosphere ? (
           <Group>
-            {/* Directional sun from west (screen left): warm lift, cooler fill toward the right */}
+            {/* Sunny yellow wash: bright lemon → soft gold haze */}
             <SkiaRect
               x={0}
               y={0}
@@ -772,17 +785,78 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
               blendMode="softLight"
             >
               <LinearGradient
-                start={vec(-width * 0.2, height * 0.16)}
-                end={vec(width * 1.08, height * 0.84)}
+                start={vec(-width * 0.22, height * 0.12)}
+                end={vec(width * 1.1, height * 0.88)}
                 colors={[
-                  "rgba(255, 234, 198, 0.36)",
-                  "rgba(255, 244, 224, 0.2)",
-                  "rgba(255, 248, 238, 0.08)",
-                  "rgba(75, 88, 118, 0.09)",
+                  "rgba(255, 238, 115, 0.46)",
+                  "rgba(255, 244, 175, 0.32)",
+                  "rgba(255, 235, 195, 0.17)",
+                  "rgba(255, 220, 150, 0.09)",
                 ]}
-                positions={[0, 0.28, 0.58, 1]}
+                positions={[0, 0.26, 0.55, 1]}
               />
             </SkiaRect>
+            <Group opacity={0.82}>
+              <SkiaRect
+                x={0}
+                y={0}
+                width={width}
+                height={height}
+                blendMode="screen"
+              >
+                <RadialGradient
+                  c={vec(width * 0.14, height * 0.18)}
+                  r={width * 0.82}
+                  colors={[
+                    "rgba(255, 244, 165, 0.56)",
+                    "rgba(255, 230, 105, 0.36)",
+                    "rgba(255, 205, 55, 0.12)",
+                    "rgba(255, 175, 25, 0)",
+                  ]}
+                  positions={[0, 0.35, 0.72, 1]}
+                />
+              </SkiaRect>
+            </Group>
+            <Group opacity={0.5}>
+              <SkiaRect
+                x={0}
+                y={0}
+                width={width}
+                height={height}
+                blendMode="screen"
+              >
+                <RadialGradient
+                  c={vec(width * 0.86, height * 0.3)}
+                  r={width * 0.46}
+                  colors={[
+                    "rgba(255, 238, 140, 0.32)",
+                    "rgba(255, 218, 90, 0.14)",
+                    "rgba(255, 190, 50, 0)",
+                  ]}
+                  positions={[0, 0.5, 1]}
+                />
+              </SkiaRect>
+            </Group>
+            <Group opacity={0.72}>
+              <SkiaRect
+                x={0}
+                y={0}
+                width={width}
+                height={height}
+                blendMode="softLight"
+              >
+                <RadialGradient
+                  c={vec(width * 0.5, height * 1.02)}
+                  r={height * 0.55}
+                  colors={[
+                    "rgba(255, 230, 110, 0.38)",
+                    "rgba(255, 210, 90, 0.14)",
+                    "rgba(255, 185, 60, 0)",
+                  ]}
+                  positions={[0, 0.4, 1]}
+                />
+              </SkiaRect>
+            </Group>
             <SkiaRect
               x={0}
               y={0}
@@ -792,7 +866,7 @@ const SkiaWorldMapInternal: React.FC<SkiaWorldMapProps> = ({
             >
               <RadialGradient
                 c={vec(width / 2, height / 2)}
-                r={width / 1.08}
+                r={width * 0.8}
                 colors={["rgba(0, 0, 0, 0)", vignetteEdgeColor]}
               />
             </SkiaRect>

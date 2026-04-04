@@ -21,6 +21,7 @@ import { SkullIcon } from './icons/SkullIcon';
 import { GlobalTerminal } from './GlobalTerminal';
 import { BlurView } from 'expo-blur';
 import { OptimizedAvatarModal } from './modals/OptimizedAvatarModal';
+import { useGameData } from '@/hooks/useGameData';
 
 const { width, height } = Dimensions.get('window');
 
@@ -44,6 +45,7 @@ export const HunterHeader: React.FC<HunterHeaderProps> = ({
   const insets = useSafeAreaInsets();
   const [showSettings, setShowSettings] = useState(false);
   const [showAvatarViewer, setShowAvatarViewer] = useState(false);
+  const { shopItems } = useGameData();
 
   return (
     <View style={styles.header}>
@@ -55,7 +57,7 @@ export const HunterHeader: React.FC<HunterHeaderProps> = ({
         activeOpacity={0.8}
       >
         <View style={styles.avatarContainer}>
-          <LayeredAvatar user={user} size={36} />
+          <LayeredAvatar user={user} size={36} allShopItems={shopItems} />
         </View>
         <View style={styles.userInfo}>
           <Text style={styles.userName}>{user.name || 'Hunter'}</Text>

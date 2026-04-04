@@ -8,7 +8,8 @@ import { useEncounterPoolStore } from '@/store/useEncounterPoolStore';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActivePet } from '@/contexts/ActivePetContext';
 import { useSkills } from '@/hooks/useSkills';
-import { useBattleStore } from '@/store/useBattleStore';
+import { useBattleStore, PHASE as STORE_PHASE } from '@/store/useBattleStore';
+import { DEATH_DISINTEGRATION_MS } from '@/components/battle/battleDeathOutro';
 import { useShallow } from 'zustand/react/shallow';
 import { usePets } from '@/hooks/usePets';
 import { fetchSkillAnimation, fetchSkillAnimationsBatch, resolveSkillKeys } from '@/api/skillAnimations';
@@ -16,13 +17,7 @@ import type { SkillAnimationConfig } from '@/components/SkillSpriteVfx';
 
 // --- Constants & Types ---
 
-export const PHASE = {
-  ACTIVE: 'ACTIVE_PHASE',
-  ENEMY_WINDUP: 'ENEMY_WINDUP',
-  ENEMY_STRIKE: 'ENEMY_STRIKE',
-  VICTORY: 'VICTORY',
-  DEFEAT: 'DEFEAT'
-};
+export const PHASE = STORE_PHASE;
 
 export const QTE_TYPE = {
   TAP: 'TAP',
@@ -621,7 +616,10 @@ export const useBattleLogic = ({
       const newHp = Math.max(0, prev.hp - totalDmg);
       if (newHp <= 0 && !battleEndedRef.current) {
         battleEndedRef.current = true;
-        setTimeout(() => setCurrentPhase(PHASE.VICTORY), 800);
+        setTimeout(() => {
+          setCurrentPhase(PHASE.DEATH_OUTRO_ENEMY);
+          setTimeout(() => setCurrentPhase(PHASE.VICTORY), DEATH_DISINTEGRATION_MS);
+        }, 800);
       }
       return { ...prev, hp: newHp };
     });
@@ -941,7 +939,8 @@ export const useBattleLogic = ({
         battleEndedRef.current = true;
         const animationDelay = cachedConfig ? Math.min(cachedConfig.duration_ms + 300, 800) : 800;
         setTimeout(() => {
-          setCurrentPhase(PHASE.VICTORY);
+          setCurrentPhase(PHASE.DEATH_OUTRO_ENEMY);
+          setTimeout(() => setCurrentPhase(PHASE.VICTORY), DEATH_DISINTEGRATION_MS);
         }, animationDelay);
         isProcessingActionsRef.current = false;
         return;
@@ -1165,7 +1164,10 @@ export const useBattleLogic = ({
                 battleEndedRef.current = true;
                 const skillDur = lastSkillAnimationConfig?.duration_ms ?? 0;
                 const victoryDelay = Math.min(skillDur + 300, 800);
-                setTimeout(() => setCurrentPhase(PHASE.VICTORY), victoryDelay);
+                setTimeout(() => {
+                  setCurrentPhase(PHASE.DEATH_OUTRO_ENEMY);
+                  setTimeout(() => setCurrentPhase(PHASE.VICTORY), DEATH_DISINTEGRATION_MS);
+                }, victoryDelay);
                 return;
             }
         } else {
@@ -1187,8 +1189,9 @@ export const useBattleLogic = ({
     if (nextParty.every(p => p.hp <= 0)) {
         battleEndedRef.current = true;
         setTimeout(() => {
-            setCurrentPhase(PHASE.DEFEAT);
-        }, 1000);
+          setCurrentPhase(PHASE.DEATH_OUTRO_PARTY);
+          setTimeout(() => setCurrentPhase(PHASE.DEFEAT), DEATH_DISINTEGRATION_MS);
+        }, 280);
         return;
     }
 
@@ -1459,7 +1462,8 @@ export const useBattleLogic = ({
         const newHp = Math.max(0, prev.hp - dmg);
         if (newHp <= 0) {
           battleEndedRef.current = true;
-          setCurrentPhase(PHASE.VICTORY);
+          setCurrentPhase(PHASE.DEATH_OUTRO_ENEMY);
+          setTimeout(() => setCurrentPhase(PHASE.VICTORY), DEATH_DISINTEGRATION_MS);
         }
         return { ...prev, hp: newHp };
       });

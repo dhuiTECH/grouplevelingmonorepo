@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
-import { User } from "@/types/user";
+import type { ShopItem, User } from "@/types/user";
 import { LayeredAvatar } from "./LayeredAvatar";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -20,6 +20,8 @@ interface PlayerCallingCardProps {
   style?: ViewStyle;
   isOwnCard?: boolean;
   onPress?: () => void;
+  /** Same as leaderboard / LayeredAvatar — needed for weapon → hand_grip resolution */
+  allShopItems?: ShopItem[];
 }
 
 export const PlayerCallingCard: React.FC<PlayerCallingCardProps> = ({
@@ -29,6 +31,7 @@ export const PlayerCallingCard: React.FC<PlayerCallingCardProps> = ({
   style,
   isOwnCard = false,
   onPress,
+  allShopItems = [],
 }) => {
   const [status, setStatus] = useState<"idle" | "copied">("idle");
 
@@ -106,6 +109,7 @@ export const PlayerCallingCard: React.FC<PlayerCallingCardProps> = ({
             user={user}
             size={config.avatarSize}
             hideBackground={true}
+            allShopItems={allShopItems}
           />
         </View>
         {/* Dark gradient overlay for text readability */}

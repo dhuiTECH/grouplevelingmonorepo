@@ -1,17 +1,18 @@
-import React, { type RefObject, useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import React, { type RefObject, useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, Dimensions, type LayoutChangeEvent } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, Easing } from 'react-native-reanimated';
 import { Image } from 'expo-image';
-import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
+import { BattleEnemyAvatar } from './BattleEnemyAvatar';
 import { EnemyHPBar } from './EnemyHPBar';
 import { COLORS } from './battleTheme';
 import { useBattleStore } from '@/store/useBattleStore';
+import { BattleDeathDisintegrate } from './BattleDeathDisintegrate';
 
 /** Layout reference; icon + spritesheet enemies share the same rendered sprite size. */
 const ENEMY_REFERENCE = 290;
 const ENEMY_ICON_SIZE = Math.round(ENEMY_REFERENCE * 0.82);
 /**
- * OptimizedPetAvatar applies a 0.8 internal scale to its sprites, so the
+ * BattleEnemyAvatar applies a 0.8 internal scale to its sprites, so the
  * effective rendered size is ENEMY_SPRITE_SIZE * 0.8. ENEMY_IMAGE_SIZE matches
  * that effective size so icon_url and metadata enemies appear the same height.
  */
@@ -24,6 +25,8 @@ interface EnemyBlockProps {
   setEnemyFigureCenter: (center: { x: number; y: number }) => void;
   action?: 'idle' | 'walk' | 'enter';
   onEnterComplete?: () => void;
+  /** Pixel dissolve on enemy sprite before victory */
+  deathOutro?: boolean;
 }
 
 export const EnemyBlock = React.memo(function EnemyBlock({
@@ -31,16 +34,24 @@ export const EnemyBlock = React.memo(function EnemyBlock({
   setEnemyFigureCenter,
   action = 'idle',
   onEnterComplete,
+  deathOutro = false,
 }: EnemyBlockProps) {
   const enemy = useBattleStore(state => state.enemy);
   const lastDamageEvent = useBattleStore(state => state.lastDamageEvent);
+  const enemyCaptureRef = useRef<View>(null);
+  const [captureSize, setCaptureSize] = useState({ width: ENEMY_FIGURE_BOX, height: ENEMY_FIGURE_BOX });
+  const [hideFigureForDissolve, setHideFigureForDissolve] = useState(false);
+
+  useEffect(() => {
+    if (!deathOutro) setHideFigureForDissolve(false);
+  }, [deathOutro]);
   
   // Local state for visual HP to allow smooth bars
   const [visualEnemyHp, setVisualEnemyHp] = React.useState(enemy?.hp || 0);
 
   useEffect(() => {
     if (enemy?.hp !== undefined) {
-      setVisualEnemyHp(prev => {
+      setVisualEnemyHp((prev: number) => {
         if (enemy.hp > prev || prev === 0) return enemy.hp;
         return enemy.hp; // Update directly for now, HPBar component handles internal smoothing
       });
@@ -87,37 +98,60 @@ export const EnemyBlock = React.memo(function EnemyBlock({
           maxHP={enemy?.maxHP || 1}
         />
       </View>
-      <Animated.View
-        ref={enemyFigureRef as any} // Reanimated interop
-        style={[styles.enemyFigure, animatedStyle]}
-        onLayout={() => {
-          if (enemyFigureRef.current && (enemyFigureRef.current as any).measureInWindow) {
-            (enemyFigureRef.current as any).measureInWindow((x: number, y: number, width: number, height: number) => {
-              setEnemyFigureCenter({ x: x + width / 2, y: y + height / 2 });
-            });
-          }
-        }}
-      >
-        {enemy?.metadata ? (
-          <OptimizedPetAvatar
-            petDetails={enemy}
-            size={ENEMY_SPRITE_SIZE}
-            hideBackground
-            borderRadius={0}
-            action={action}
-            onEnterComplete={onEnterComplete}
+      <View style={styles.enemyFigureCaptureOuter}>
+        <View
+          ref={enemyCaptureRef}
+          collapsable={false}
+          style={styles.enemyCaptureOnly}
+          onLayout={(e: LayoutChangeEvent) => {
+            const { width, height } = e.nativeEvent.layout;
+            if (width > 0 && height > 0) setCaptureSize({ width, height });
+          }}
+        >
+          <Animated.View
+            ref={enemyFigureRef as any} // Reanimated interop
+            style={[
+              styles.enemyFigure,
+              animatedStyle,
+              { opacity: hideFigureForDissolve ? 0 : 1 },
+            ]}
+            onLayout={() => {
+              if (enemyFigureRef.current && (enemyFigureRef.current as any).measureInWindow) {
+                (enemyFigureRef.current as any).measureInWindow((x: number, y: number, width: number, height: number) => {
+                  setEnemyFigureCenter({ x: x + width / 2, y: y + height / 2 });
+                });
+              }
+            }}
+          >
+            {enemy?.metadata ? (
+              <BattleEnemyAvatar
+                petDetails={enemy}
+                size={ENEMY_SPRITE_SIZE}
+                action={action}
+                onEnterComplete={onEnterComplete}
+              />
+            ) : enemy?.icon_url ? (
+              <Image
+                source={{ uri: enemy.icon_url }}
+                style={styles.enemyImage}
+                contentFit="contain"
+                cachePolicy="memory-disk"
+              />
+            ) : (
+              <Text style={styles.enemyEmoji}>👾</Text>
+            )}
+          </Animated.View>
+        </View>
+        {deathOutro ? (
+          <BattleDeathDisintegrate
+            active={deathOutro}
+            captureRef={enemyCaptureRef}
+            width={captureSize.width}
+            height={captureSize.height}
+            onCaptureReady={() => setHideFigureForDissolve(true)}
           />
-        ) : enemy?.icon_url ? (
-          <Image
-            source={{ uri: enemy.icon_url }}
-            style={styles.enemyImage}
-            contentFit="contain"
-            cachePolicy="memory-disk"
-          />
-        ) : (
-          <Text style={styles.enemyEmoji}>👾</Text>
-        )}
-      </Animated.View>
+        ) : null}
+      </View>
     </View>
   );
 });
@@ -153,14 +187,26 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 9,
   },
+  enemyFigureCaptureOuter: {
+    marginTop: -28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    width: ENEMY_FIGURE_BOX,
+    minHeight: ENEMY_FIGURE_BOX,
+  },
+  enemyCaptureOnly: {
+    width: ENEMY_FIGURE_BOX,
+    height: ENEMY_FIGURE_BOX,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   enemyFigure: {
     width: ENEMY_FIGURE_BOX,
     height: ENEMY_FIGURE_BOX,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
-    /** Pull sprite closer to HP bar after larger avatar size */
-    marginTop: -28,
   },
   enemyImage: { width: ENEMY_IMAGE_SIZE, height: ENEMY_IMAGE_SIZE },
   enemyEmoji: { fontSize: 88 },

@@ -129,22 +129,10 @@ export function ClearedGatesSection({
           id,
           hunter_name,
           current_title,
+          gender,
           user_cosmetics (
-            id,
-            equipped,
-            shop_items:shop_item_id (
-              id,
-              name,
-              image_url,
-              slot,
-              z_index,
-              rarity,
-              is_animated,
-              animation_config,
-              scale,
-              offset_x,
-              offset_y
-            )
+            *,
+            shop_items:shop_item_id (*)
           )
         `
         )
@@ -178,6 +166,7 @@ export function ClearedGatesSection({
               hunter_name: p.hunter_name as string,
               name: (p.hunter_name as string) || '',
               current_title: p.current_title as string | undefined,
+              gender: p.gender as User['gender'],
               cosmetics: uc as User['cosmetics'],
             }
           : null;

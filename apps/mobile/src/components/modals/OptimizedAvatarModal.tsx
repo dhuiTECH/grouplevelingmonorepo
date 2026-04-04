@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Modal, View, TouchableOpacity, Text, Dimensions, StyleSheet, ScrollView, NativeSyntheticEvent, NativeScrollEvent, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
@@ -37,6 +38,7 @@ export const OptimizedAvatarModal: React.FC<OptimizedAvatarModalProps> = ({
   const shotRef = useRef<ViewShot>(null);
   const { shopItems } = useGameData();
   const { showNotification } = useNotification();
+  const insets = useSafeAreaInsets();
 
   const [isSharing, setIsSharing] = useState(false);
   const [requestSent, setRequestSent] = useState(false);
@@ -145,17 +147,22 @@ export const OptimizedAvatarModal: React.FC<OptimizedAvatarModalProps> = ({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <BlurView intensity={50} tint="dark" style={styles.backdrop}>
+      <BlurView
+        intensity={50}
+        tint="dark"
+        style={[styles.backdrop, { paddingTop: insets.top + 12 }]}
+      >
         <View style={styles.modalColumn}>
         <View style={[styles.modalContent, { width: avatarSize, height: avatarSize, borderWidth: 0 }]}>
           
           {/* Header with Calling Card and Close Button */}
           <View style={styles.header} pointerEvents="box-none">
             <View pointerEvents="auto" style={{ flex: 1, marginRight: 10 }}>
-              <PlayerCallingCard 
-                user={user} 
+              <PlayerCallingCard
+                user={user}
                 size="sm"
                 isOwnCard={isOwnCard}
+                allShopItems={shopItems}
               />
             </View>
             
@@ -186,8 +193,8 @@ export const OptimizedAvatarModal: React.FC<OptimizedAvatarModalProps> = ({
             >
               {/* PAGE 1: User Avatar */}
               <View style={[styles.page, { width: containerWidth }]}>
-                <LayeredAvatar 
-                  user={user} 
+                <LayeredAvatar
+                  user={user}
                   size={avatarSize}
                   square={true}
                   allShopItems={shopItems}
@@ -298,15 +305,15 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     backgroundColor: 'rgba(0,0,0,0.95)',
   },
   modalColumn: {
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 20,
     paddingHorizontal: 16,
     paddingBottom: 24,
+    width: '100%',
   },
   viewShotFill: {
     flex: 1,
@@ -331,7 +338,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    padding: 12,
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 4,
     zIndex: 50,
   },
   closeButton: {
