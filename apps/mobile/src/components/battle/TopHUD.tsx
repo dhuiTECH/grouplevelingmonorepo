@@ -19,7 +19,7 @@ interface TopHUDProps {
   onLeaveBattle: () => void;
 }
 
-export function TopHUD({
+export const TopHUD = React.memo(function TopHUD({
   turnQueue,
   queueIndex,
   party,
@@ -92,7 +92,7 @@ export function TopHUD({
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   topHud: {

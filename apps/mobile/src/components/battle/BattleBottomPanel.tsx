@@ -31,7 +31,7 @@ interface BattleBottomPanelProps {
   turnActorDisplayName?: string;
 }
 
-export function BattleBottomPanel({
+export const BattleBottomPanel = React.memo(function BattleBottomPanel({
   partyOpacity,
   isPlayerTurnPhase,
   activeChar,
@@ -176,7 +176,7 @@ export function BattleBottomPanel({
       </View>
     </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   panelContainer: {

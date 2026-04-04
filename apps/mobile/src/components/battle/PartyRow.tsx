@@ -259,7 +259,7 @@ function PartyMemberNode({
   );
 }
 
-export function PartyRow({
+export const PartyRow = React.memo(function PartyRow({
   party,
   activeIndex,
   setActiveIndex,
@@ -306,7 +306,7 @@ export function PartyRow({
       })}
     </RNAnimated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   partyContainer: { flexDirection: 'row', gap: 20, marginBottom: 20, overflow: 'visible' },

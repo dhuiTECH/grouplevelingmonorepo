@@ -186,7 +186,15 @@ export const EncounterTransition = () => {
   const walkProgress = useSharedValue(0);
   const overlayOpacity = useSharedValue(0);
 
-  /** No snapshot: navigate immediately, then walk-in only when we have a real party preview. */
+  useEffect(() => {
+    if (!isTransitioning) return;
+    const safetyTimer = setTimeout(() => {
+      setTransitioning(false);
+      setWalkPhaseStarted(false);
+    }, 3000);
+    return () => clearTimeout(safetyTimer);
+  }, [isTransitioning, setTransitioning]);
+
   useEffect(() => {
     if (!isTransitioning || snapshotImage) return;
     setWalkPhaseStarted(false);
@@ -200,7 +208,6 @@ export const EncounterTransition = () => {
     }
     if (_onHalfway) _onHalfway();
     setWalkPhaseStarted(true);
-    // _onHalfway updates when a new transition starts; including it can re-fire navigation.
   }, [isTransitioning, snapshotImage, partyPreview, setTransitioning]);
 
   // Phase 1: Pixelation (only when a map snapshot exists)

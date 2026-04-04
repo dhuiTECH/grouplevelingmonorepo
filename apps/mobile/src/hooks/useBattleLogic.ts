@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { playHunterSound, preloadBattleSounds, preloadSfxUrl } from '@/utils/audio';
 import * as Haptics from 'expo-haptics';
 import { Animated, Vibration, Alert } from 'react-native';
@@ -212,6 +212,7 @@ export const useBattleLogic = ({
   const isProcessingActionsRef = useRef(false);
   const attackResolvedRef = useRef(false);
   const battleEndedRef = useRef(false);
+  const resolveEnemyAttackRef = useRef<(isParry: boolean, msg: string, allPerfectFromSequence?: boolean) => void>(() => {});
 
   // Constants
   const activeActorId = turnQueue[queueIndex];
@@ -746,9 +747,13 @@ export const useBattleLogic = ({
     });
   };
 
-  const switchStance = () => {
-    setStance(prev => prev.id === 'attack' ? STANCE.DEFENSE : STANCE.ATTACK);
+  const advanceTurnFast = () => {
+    setTimeout(() => advanceTurn(), 50);
   };
+
+  const switchStance = useCallback(() => {
+    setStance(prev => prev.id === 'attack' ? STANCE.DEFENSE : STANCE.ATTACK);
+  }, []);
 
   const processPlannedActions = async () => {
     if (!isPlayerTurnPhase || plannedAbilities.length === 0) return;
@@ -931,7 +936,7 @@ export const useBattleLogic = ({
 
       if (workingEnemy.hp <= 0) {
         battleEndedRef.current = true;
-        const animationDelay = cachedConfig ? (cachedConfig.duration_ms * skillUseCount) + 500 : 1000;
+        const animationDelay = cachedConfig ? Math.min((cachedConfig.duration_ms * skillUseCount) + 300, 800) : 800;
         setTimeout(() => {
           setCurrentPhase(PHASE.VICTORY);
         }, animationDelay);
@@ -1007,18 +1012,15 @@ export const useBattleLogic = ({
     }
   };
 
-  const handleQteTap = (targetId: string) => {
-    const target = qteTargets.find(t => t.id === targetId);
+  const handleQteTap = useCallback((targetId: string) => {
+    const target = qteTargetsRef.current.find(t => t.id === targetId);
     if (!target || target.status !== 'pending' || target.type !== QTE_TYPE.TAP) return;
     
     const diff = Math.abs(parryTimerRef.current - target.hitTime);
     
-    // Tap Logic
     if (diff <= 10) {
         playHunterSound('tap', true);
-
-        // Just-Frame / Perfect Check (Tight Window)
-        const isPerfect = diff <= 5; // ~80ms at 60fps logic
+        const isPerfect = diff <= 5;
         
         setQteTargets(prev => prev.map(t => t.id === targetId ? { ...t, status: isPerfect ? 'perfect' : 'hit' } : t));
         setQteStats(prev => ({ 
@@ -1028,11 +1030,11 @@ export const useBattleLogic = ({
         }));
         
         if (isPerfect) {
-            setSuccessFlash(true); // Brighter flash maybe?
-            setFocusMode(true); // Enter Bullet Time
-            setComboMultiplier(prev => prev + 0.2); // Increase rewards
+            setSuccessFlash(true);
+            setFocusMode(true);
+            setComboMultiplier(prev => prev + 0.2);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            setTimeout(() => setFocusMode(false), 500); // 0.5s of slowdown
+            setTimeout(() => setFocusMode(false), 500);
         } else {
             setSuccessFlash(true);
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -1045,16 +1047,14 @@ export const useBattleLogic = ({
         triggerShake();
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         setTimeout(() => setFailFlash(false), 300);
-        
-        // Fail usually breaks combo
         setComboMultiplier(1.0);
         setFocusMode(false);
-        resolveEnemyAttack(false, "FAILED");
+        resolveEnemyAttackRef.current(false, "FAILED");
     }
-  };
+  }, []);
 
-  const handleQteSwipe = (targetId: string, direction: string) => {
-      const target = qteTargets.find(t => t.id === targetId);
+  const handleQteSwipe = useCallback((targetId: string, direction: string) => {
+      const target = qteTargetsRef.current.find(t => t.id === targetId);
       if (!target || target.status !== 'pending' || target.type !== QTE_TYPE.SWIPE) return;
 
       const diff = Math.abs(parryTimerRef.current - target.hitTime);
@@ -1091,14 +1091,15 @@ export const useBattleLogic = ({
           setComboMultiplier(1.0);
           setFocusMode(false);
           setTimeout(() => setFailFlash(false), 300);
-          resolveEnemyAttack(false, "WRONG DIRECTION");
+          resolveEnemyAttackRef.current(false, "WRONG DIRECTION");
       }
-  };
+  }, []);
 
   const resolveEnemyAttack = (isParry: boolean, msg: string, allPerfectFromSequence?: boolean) => {
     if (attackResolvedRef.current) return;
     attackResolvedRef.current = true;
     setParryWindowActive(false);
+
     
     // ... rest of function
     if (isParry) {
@@ -1137,7 +1138,9 @@ export const useBattleLogic = ({
             setLastDamageEvent({ targetId: 'ENEMY', value: counterDmg, type: 'damage', timestamp: Date.now() });
             if (newEnemyHp <= 0) {
                 battleEndedRef.current = true;
-                setTimeout(() => setCurrentPhase(PHASE.VICTORY), 800);
+                const skillDur = lastSkillAnimationConfig?.duration_ms ?? 0;
+                const victoryDelay = Math.min(skillDur + 300, 800);
+                setTimeout(() => setCurrentPhase(PHASE.VICTORY), victoryDelay);
                 return;
             }
         } else {
@@ -1166,8 +1169,9 @@ export const useBattleLogic = ({
 
     setTimeout(() => {
         advanceTurn();
-    }, 1800);
+    }, 800);
   };
+  resolveEnemyAttackRef.current = resolveEnemyAttack;
 
   // Position zones for varied, intentional placement (avoids clustering, feels less random)
   const POSITION_ZONES = [
@@ -1208,7 +1212,7 @@ export const useBattleLogic = ({
     count = Math.max(3, Math.min(7, count));
 
     const newTargets: any[] = [];
-    const baseFirstHit = 6 + Math.floor(Math.random() * 8);
+    const baseFirstHit = 38 + Math.floor(Math.random() * 8);
     let lastTime = baseFirstHit;
     const rhythmBase = 30;
     const dirs = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
@@ -1279,7 +1283,7 @@ export const useBattleLogic = ({
     setBattleState(() => ({
       currentPhase: PHASE.ENEMY_STRIKE,
       parryWindowActive: true,
-      parryPreDelay: 0.12 + Math.random() * 0.12,
+      parryPreDelay: 0.3 + Math.random() * 0.15,
       focusMode: false,
       burstCharged: false,
       comboMultiplier: 1.0,
@@ -1295,7 +1299,7 @@ export const useBattleLogic = ({
     const target = living[Math.floor(Math.random() * living.length)];
     if (target) {
         setEnemyTargetId(target.id);
-        setTimeout(() => startEnemyAttack(), 350);
+        setTimeout(() => startEnemyAttack(), 650);
     } else {
         advanceTurn();
     }
@@ -1353,19 +1357,24 @@ export const useBattleLogic = ({
                 });
 
                 if (hasChanges) {
-                    setQteTargets(updated);
-                    if (newMisses > 0 || newHits > 0) {
-                        setQteStats(prev => ({
-                            hits: prev.hits + newHits,
-                            misses: prev.misses + newMisses,
-                            perfects: prev.perfects // Loop doesn't detect perfects, only misses/timeouts
-                        }));
-                    }
+                    const missedIds = new Set(updated.filter(t => t.status === 'miss').map(t => t.id));
+                    setTimeout(() => {
+                        setQteTargets(prev => prev.map(t =>
+                          missedIds.has(t.id) && t.status === 'pending' ? { ...t, status: 'miss' } : t
+                        ));
+                        if (newMisses > 0 || newHits > 0) {
+                            setQteStats(prev => ({
+                                hits: prev.hits + newHits,
+                                misses: prev.misses + newMisses,
+                                perfects: prev.perfects
+                            }));
+                        }
+                    }, 0);
                     
                     if (newMisses > 0) {
-                        setComboMultiplier(1.0); // Reset Combo
-                        setFocusMode(false); // End Focus
-                        resolveEnemyAttack(false, "FAILED");
+                        setComboMultiplier(1.0);
+                        setFocusMode(false);
+                        setTimeout(() => resolveEnemyAttack(false, "FAILED"), 0);
                         parryTimerRef.current = 0;
                         return;
                     }
@@ -1376,7 +1385,6 @@ export const useBattleLogic = ({
                     }
                 }
                 
-                // Check completion
                 const lastTarget = currentTargets[currentTargets.length - 1];
                 const sequenceEndTime = lastTarget ? (lastTarget.hitTime + (lastTarget.duration || 0) + 15) : 100;
 
@@ -1384,7 +1392,7 @@ export const useBattleLogic = ({
                     const finalTargets = hasChanges ? updated : currentTargets;
                     const success = finalTargets.length > 0 && finalTargets.every(t => t.status === 'hit' || t.status === 'perfect');
                     const allPerfect = success && finalTargets.every(t => t.status === 'perfect');
-                    resolveEnemyAttack(success, success ? "PERFECT SEQUENCE!" : "SEQUENCE COMPLETE", allPerfect);
+                    setTimeout(() => resolveEnemyAttack(success, success ? "PERFECT SEQUENCE!" : "SEQUENCE COMPLETE", allPerfect), 0);
                     parryTimerRef.current = 0;
                     return;
                 }
@@ -1437,14 +1445,13 @@ export const useBattleLogic = ({
         supabase.rpc('land_raid_hit', { t_raid_id: raidId, t_user_id: user.id, t_damage: dmg });
       }
 
-      // Advance turn after the impact
       setTimeout(() => {
         if (!battleEndedRef.current) {
           advanceTurn();
         }
         petTurnStartedRef.current = false;
-      }, 400);
-    }, 400); // Initial wind-up before the pet "strikes"
+      }, 150);
+    }, 200);
 
     return () => clearTimeout(timer);
   }, [queueIndex, currentPhase, activeActorType, lastSkillAnimationConfig]);

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { SkImage } from '@shopify/react-native-skia';
 
 export interface PartyPreviewMember {
@@ -16,11 +16,9 @@ export interface TransitionContextType {
   snapshotImage: SkImage | null;
   isTransitioning: boolean;
   partyPreview: PartyPreviewItem[] | null;
-  /** Pass `null` to skip pixelation + makeImageFromView (faster battle entry). */
   startTransition: (image: SkImage | null, onHalfway: () => void, partyPreview?: PartyPreviewItem[]) => void;
   setTransitioning: (value: boolean) => void;
   setSnapshot: (image: SkImage | null) => void;
-  /** Internal: halfway callback for EncounterTransition (pixelation or fast path). */
   _onHalfway?: (() => void) | null;
 }
 
@@ -30,13 +28,13 @@ export const TransitionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [snapshotImage, setSnapshotImage] = useState<SkImage | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [partyPreview, setPartyPreview] = useState<PartyPreviewItem[] | null>(null);
-  const [halfwayCallback, setHalfwayCallback] = useState<(() => void) | null>(null);
+  const halfwayRef = useRef<(() => void) | null>(null);
 
   const startTransition = useCallback((image: SkImage | null, onHalfway: () => void, preview?: PartyPreviewItem[]) => {
+    halfwayRef.current = onHalfway;
     setSnapshotImage(image);
     setPartyPreview(preview ?? null);
     setIsTransitioning(true);
-    setHalfwayCallback(() => onHalfway);
   }, []);
 
   const value: TransitionContextType = {
@@ -46,7 +44,7 @@ export const TransitionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     startTransition,
     setTransitioning: setIsTransitioning,
     setSnapshot: setSnapshotImage,
-    _onHalfway: halfwayCallback,
+    _onHalfway: halfwayRef.current,
   };
 
   return (

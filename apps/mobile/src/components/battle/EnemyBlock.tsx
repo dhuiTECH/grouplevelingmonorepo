@@ -26,7 +26,7 @@ interface EnemyBlockProps {
   onEnterComplete?: () => void;
 }
 
-export function EnemyBlock({
+export const EnemyBlock = React.memo(function EnemyBlock({
   enemyFigureRef,
   setEnemyFigureCenter,
   action = 'idle',
@@ -120,7 +120,7 @@ export function EnemyBlock({
       </Animated.View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   enemyBlockWrap: {

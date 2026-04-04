@@ -277,6 +277,9 @@ export default function BattleScreen() {
     }
   }, [sequenceFeedback]);
 
+  const handleQteTapCb = handleQteTap;
+  const handleQteSwipeCb = handleQteSwipe;
+
   const handleLeaveBattle = useCallback(() => {
       navigation.goBack();
   }, [navigation]);
@@ -694,8 +697,8 @@ export default function BattleScreen() {
         comboMultiplier={comboMultiplier}
         qteTargets={qteTargets}
         parryTimerAnim={parryTimerAnim}
-        onQteTap={handleQteTap}
-        onQteSwipe={handleQteSwipe}
+        onQteTap={handleQteTapCb}
+        onQteSwipe={handleQteSwipeCb}
       />
 
       <SequenceFeedbackOverlay sequenceFeedback={sequenceFeedback} feedbackAnim={feedbackAnim} />
