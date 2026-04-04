@@ -178,7 +178,7 @@ export const useBattleLogic = ({
   const setCurrentPhase = (val: any) => setBattleState(state => ({ currentPhase: typeof val === 'function' ? val(state.currentPhase) : val }));
   const setStance = (val: any) => setBattleState(state => ({ stance: typeof val === 'function' ? val(state.stance) : val }));
   const setStanceLevel = (val: any) => setBattleState(state => ({ stanceLevel: typeof val === 'function' ? val(state.stanceLevel) : val }));
-  const setActiveIndex = (val: any) => setBattleState(state => ({ activeIndex: typeof val === 'function' ? val(state.activeIndex) : val }));
+  const setActiveIndex = useCallback((val: any) => setBattleState(state => ({ activeIndex: typeof val === 'function' ? val(state.activeIndex) : val })), []);
   const setLogs = (val: any) => setBattleState(state => ({ logs: typeof val === 'function' ? val(state.logs) : val }));
   const setChainCount = (val: any) => setBattleState(state => ({ chainCount: typeof val === 'function' ? val(state.chainCount) : val }));
   const setTurnQueue = (val: any) => setBattleState(state => ({ turnQueue: typeof val === 'function' ? val(state.turnQueue) : val }));
@@ -216,6 +216,7 @@ export const useBattleLogic = ({
   const tapToConfirmRef = useRef(tapToConfirm);
   const advanceTurnRef = useRef<() => void>(() => {});
   const userIdRef = useRef(user?.id);
+  const processPlannedActionsRef = useRef<() => Promise<void>>(async () => {});
 
   // Constants
   const activeActorId = turnQueue[queueIndex];
@@ -753,11 +754,6 @@ export const useBattleLogic = ({
   advanceTurnRef.current = advanceTurn;
   tapToConfirmRef.current = tapToConfirm;
   userIdRef.current = user?.id;
-
-  const advanceTurnFast = () => {
-    setTimeout(() => advanceTurn(), 50);
-  };
-
   const switchStance = useCallback(() => {
     setStance(prev => prev.id === 'attack' ? STANCE.DEFENSE : STANCE.ATTACK);
   }, []);
@@ -943,7 +939,7 @@ export const useBattleLogic = ({
 
       if (workingEnemy.hp <= 0) {
         battleEndedRef.current = true;
-        const animationDelay = cachedConfig ? Math.min((cachedConfig.duration_ms * skillUseCount) + 300, 800) : 800;
+        const animationDelay = cachedConfig ? Math.min(cachedConfig.duration_ms + 300, 800) : 800;
         setTimeout(() => {
           setCurrentPhase(PHASE.VICTORY);
         }, animationDelay);
@@ -968,6 +964,12 @@ export const useBattleLogic = ({
       isProcessingActionsRef.current = false;
     }
   };
+
+  processPlannedActionsRef.current = processPlannedActions;
+
+  const stableProcessPlannedActions = useCallback(() => {
+    return processPlannedActionsRef.current();
+  }, []);
 
   const undoLastAction = useCallback(() => {
     const store = useBattleStore.getState();
@@ -1539,7 +1541,7 @@ export const useBattleLogic = ({
     isPlayerTurnPhase,
     currentAbility,
     switchStance,
-    processPlannedActions,
+    processPlannedActions: stableProcessPlannedActions,
     undoLastAction,
     skipTurn,
     handleAbilityTap,
