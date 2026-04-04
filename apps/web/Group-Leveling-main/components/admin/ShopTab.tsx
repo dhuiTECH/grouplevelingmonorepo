@@ -182,6 +182,7 @@ export default function ShopTab({
           { value: 'background', label: 'Background', count: shopItems.filter(item => item.slot === 'background').length },
           { value: 'head', label: 'Head', count: shopItems.filter(item => item.slot === 'head').length },
           { value: 'back', label: 'Back', count: shopItems.filter(item => item.slot === 'back').length },
+          { value: 'shoulder', label: 'Shoulder', count: shopItems.filter(item => item.slot === 'shoulder').length },
           { value: 'hands', label: 'Hands (Gloves)', count: shopItems.filter(item => item.slot === 'hands').length },
           { value: 'hand_grip', label: 'Hand Grip', count: shopItems.filter(item => item.slot === 'hand_grip').length },
           { value: 'feet', label: 'Feet', count: shopItems.filter(item => item.slot === 'feet').length },

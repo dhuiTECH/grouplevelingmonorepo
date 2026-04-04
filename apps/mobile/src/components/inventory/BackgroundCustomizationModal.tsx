@@ -6,6 +6,7 @@ import type { User, UserCosmetic } from '@/types/user';
 import { RANK_COLORS } from '@/constants/gameConstants';
 import { SystemWindowHeader } from '@/components/ui/SystemWindowHeader';
 import { inventoryModalsStyles as styles } from '@/components/inventory/InventoryModals.styles';
+import { useInventoryEquipPeek } from '@/hooks/useInventoryEquipPeek';
 
 interface BackgroundCustomizationModalProps {
   visible: boolean;
@@ -24,12 +25,13 @@ export function BackgroundCustomizationModal({
   onSelectItem,
   renderItemDetailsNested,
 }: BackgroundCustomizationModalProps) {
+  const { rootOpacity, triggerPeek } = useInventoryEquipPeek();
   const backgroundCosmetics =
     user.cosmetics?.filter((cosmetic: UserCosmetic) => cosmetic.shop_items?.slot === 'background') || [];
 
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
+      <View style={[styles.modalOverlay, { opacity: rootOpacity }]}>
         <View style={styles.customizationModalContent}>
           <TouchableOpacity
             onPress={onClose}
@@ -92,6 +94,7 @@ export function BackgroundCustomizationModal({
                         onPress={(e) => {
                           e.stopPropagation();
                           onEquipCosmetic(cosmetic.id, !cosmetic.equipped);
+                          triggerPeek();
                         }}
                         style={[
                           styles.customizationEquipButton,

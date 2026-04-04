@@ -7,5 +7,5 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["seed_dungeons.ts", "seed-dungeon-hotspots.ts"]
+  "include": ["seed_dungeons.ts", "seed-dungeon-hotspots.ts", "seed_ben_dover_leaderboard.ts"]
 }

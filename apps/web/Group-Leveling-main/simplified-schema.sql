@@ -128,7 +128,7 @@ CREATE TABLE public.shop_items (
   image_url text,
   thumbnail_url text,
   layer_zone text,
-  slot text CHECK (slot IN ('avatar', 'background', 'body', 'head', 'face', 'hands', 'feet', 'weapon', 'accessory', 'magic effects')),
+  slot text CHECK (slot IN ('avatar', 'background', 'body', 'head', 'face', 'hands', 'feet', 'weapon', 'accessory', 'magic effects', 'shoulder')),
   z_index integer DEFAULT 1,
   rarity text DEFAULT 'common',
   bonus_type text CHECK (bonus_type IN ('speed', 'endurance', 'defense', 'strength', 'intelligence', 'attack_damage', 'crit_percentage', 'crit_damage', 'xp_boost', 'coin_boost', 'str', 'spd', 'end', 'int', 'lck', 'per', 'wil')),

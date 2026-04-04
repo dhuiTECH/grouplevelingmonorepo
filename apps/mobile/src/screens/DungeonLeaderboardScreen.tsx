@@ -27,6 +27,18 @@ function formatRunDistanceKm(raw: unknown): string {
   return `${km >= 10 ? km.toFixed(0) : km.toFixed(1)} km`;
 }
 
+/** MM:SS, or H:MM:SS when run is ≥1 hour */
+function formatRunDuration(totalSeconds: unknown): string {
+  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+  }
+  return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+}
+
 export default function DungeonLeaderboardScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation();
@@ -101,13 +113,6 @@ export default function DungeonLeaderboardScreen() {
     fetchLeaderboard();
   }, [fetchLeaderboard]);
 
-  const formatTime = (totalSeconds: number) => {
-    const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
-    const mins = Math.floor(s / 60);
-    const secs = s % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
   const formatScore = (raw: unknown) => {
     const n = Number(raw);
     if (!Number.isFinite(n)) return '—';
@@ -150,8 +155,8 @@ export default function DungeonLeaderboardScreen() {
           <Text style={styles.scoreLabel}>{isGlobalPaceLeaderboard ? 'PACE SCORE' : 'SCORE'}</Text>
           <Text style={styles.subStat}>
             {isGlobalPaceLeaderboard
-              ? `${formatPaceSecondsPerKm(item.best_pace_seconds_per_km)} · ${formatRunDistanceKm(item.best_distance_meters)}`
-              : `${formatTime(item.best_time_seconds)} · ${Math.round(Number(item.best_elevation_gain_meters) || 0)}m elev`}
+              ? `${formatPaceSecondsPerKm(item.best_pace_seconds_per_km)} · ${formatRunDistanceKm(item.best_distance_meters)} · ${formatRunDuration(item.best_time_seconds)}`
+              : `${formatRunDuration(item.best_time_seconds)} · ${Math.round(Number(item.best_elevation_gain_meters) || 0)}m elev`}
           </Text>
         </View>
       </View>

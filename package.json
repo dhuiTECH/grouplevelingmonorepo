@@ -15,6 +15,7 @@
     "mobile": "pnpm --filter mobile start",
     "kill": "taskkill /F /IM node.exe",
     "seed-dungeons": "ts-node --project tsconfig.seed.json seed_dungeons.ts",
+    "seed:ben-dover-leaderboard": "ts-node --project tsconfig.seed.json seed_ben_dover_leaderboard.ts",
     "seed-dungeons:help": "node -e \"console.log('If grid rows keep appearing: (1) Stop any running seed terminal with Ctrl+C. (2) pnpm kill  (Windows) kills ALL node — use if a stuck seeder. (3) Apply migration 20260409120000 — DB blocks new Metro Vancouver Grid inserts.')\""
   },
   "dependencies": {

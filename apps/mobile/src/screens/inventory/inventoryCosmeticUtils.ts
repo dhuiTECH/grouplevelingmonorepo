@@ -64,6 +64,7 @@ export function getEquipmentPickerTitle(slotKey: string): string {
     eyes: 'Eyes',
     head: 'Head',
     face: 'Face',
+    shoulder: 'Shoulder',
     'multi-accessory': 'Accessories',
   };
   return titles[slotKey] || slotKey;

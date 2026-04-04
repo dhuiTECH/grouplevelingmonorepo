@@ -9,7 +9,7 @@ export interface ShopItem {
   thumbnail_url?: string;
   price: number;
   rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'monarch';
-  slot: 'weapon' | 'body' | 'back' | 'hands' | 'feet' | 'magic effects' | 'eyes' | 'head' | 'face' | 'accessory' | 'jewelry' | 'charms' | 'scarves' | 'earrings' | 'background' | 'avatar' | 'fullbody' | 'skin' | 'character' | string; // Added string for flexibility
+  slot: 'weapon' | 'body' | 'back' | 'hands' | 'feet' | 'magic effects' | 'eyes' | 'head' | 'face' | 'shoulder' | 'accessory' | 'jewelry' | 'charms' | 'scarves' | 'earrings' | 'background' | 'avatar' | 'fullbody' | 'skin' | 'character' | string; // Added string for flexibility
   is_animated?: boolean;
   animation_config?: string | {
     frameWidth: number;

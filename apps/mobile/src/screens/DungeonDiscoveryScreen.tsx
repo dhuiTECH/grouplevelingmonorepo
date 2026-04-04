@@ -185,6 +185,9 @@ export default function DungeonDiscoveryScreen() {
 
   const [modalVisible, setModalVisible] = useState(false);
   const [selected, setSelected] = useState<NearbyDungeonRow | null>(null);
+  /** #1 on global pace leaderboard for the open gate modal (cosmetics merged for LayeredAvatar) */
+  const [topRunner, setTopRunner] = useState<Record<string, unknown> | null>(null);
+  const [topRunnerLoading, setTopRunnerLoading] = useState(false);
   const [partyModalVisible, setPartyModalVisible] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
 
@@ -324,6 +327,60 @@ export default function DungeonDiscoveryScreen() {
       }
       const coords = pathLineToCoords(data?.path_line);
       setPathLineCoords(coords.length > 0 ? coords : null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [modalVisible, selected?.id]);
+
+  /** Load #1 leaderboard row for gate modal (name + avatar) */
+  useEffect(() => {
+    if (!modalVisible || !selected?.id) {
+      setTopRunner(null);
+      setTopRunnerLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setTopRunnerLoading(true);
+      setTopRunner(null);
+      try {
+        const { data: rows, error } = await supabase
+          .from('best_global_dungeon_times')
+          .select('*')
+          .eq('dungeon_id', selected.id)
+          .order('leaderboard_score', { ascending: false })
+          .limit(1);
+        if (cancelled) return;
+        if (error) {
+          console.warn('[DungeonDiscovery] top runner', error.message);
+          setTopRunner(null);
+          return;
+        }
+        const row = rows?.[0];
+        if (!row?.user_id) {
+          setTopRunner(null);
+          return;
+        }
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select(`
+            id,
+            cosmetics:user_cosmetics(
+              *,
+              shop_items:shop_item_id(*)
+            )
+          `)
+          .eq('id', row.user_id)
+          .single();
+        if (cancelled) return;
+        setTopRunner({
+          ...row,
+          cosmetics: prof?.cosmetics ?? [],
+        });
+      } finally {
+        if (!cancelled) setTopRunnerLoading(false);
+      }
     })();
     return () => {
       cancelled = true;
@@ -740,6 +797,36 @@ export default function DungeonDiscoveryScreen() {
                 </TouchableOpacity>
               </View>
               <Text style={styles.modalTitle}>{selected?.name ?? 'Unknown'}</Text>
+
+              <View style={styles.modalTopRunner}>
+                {topRunnerLoading ? (
+                  <ActivityIndicator size="small" color="#22d3ee" />
+                ) : topRunner ? (
+                  <View style={styles.modalTopRunnerInner}>
+                    <Text style={styles.modalTopRunnerRank}>#1</Text>
+                    <LayeredAvatar
+                      user={
+                        {
+                          ...topRunner,
+                          name: (topRunner.hunter_name as string) || 'Unknown',
+                          cosmetics: (topRunner.cosmetics as unknown[]) ?? [],
+                        } as any
+                      }
+                      size={52}
+                      allShopItems={shopItems}
+                    />
+                    <View style={styles.modalTopRunnerText}>
+                      <Text style={styles.modalTopRunnerEyebrow}>TOP RUNNER</Text>
+                      <Text style={styles.modalTopRunnerName} numberOfLines={1}>
+                        {(topRunner.hunter_name as string) || 'Hunter'}
+                      </Text>
+                    </View>
+                  </View>
+                ) : (
+                  <Text style={styles.modalNoRuns}>No leaderboard times yet</Text>
+                )}
+              </View>
+
               <Text style={styles.modalMeta}>
                 Distance to gate:{' '}
                 <Text style={styles.modalMetaStrong}>
@@ -1075,7 +1162,55 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '900',
     letterSpacing: 0.5,
-    marginBottom: 12,
+    marginBottom: 10,
+  },
+  modalTopRunner: {
+    minHeight: 64,
+    justifyContent: 'center',
+    marginBottom: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.35)',
+  },
+  modalTopRunnerInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalTopRunnerRank: {
+    fontFamily: 'Exo2-Regular',
+    color: '#fbbf24',
+    fontSize: 18,
+    fontWeight: '900',
+    minWidth: 36,
+  },
+  modalTopRunnerText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  modalTopRunnerEyebrow: {
+    fontFamily: 'Exo2-Regular',
+    color: '#94a3b8',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginBottom: 2,
+  },
+  modalTopRunnerName: {
+    fontFamily: 'Exo2-Regular',
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  modalNoRuns: {
+    fontFamily: 'Exo2-Regular',
+    color: '#64748b',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   modalMeta: {
     fontFamily: 'Exo2-Regular',

@@ -17,6 +17,7 @@ ADD CONSTRAINT shop_items_slot_check CHECK (slot IN (
   'head',
   'eyes',
   'back',
+  'shoulder',
   'hands',
   'feet',
   'background',

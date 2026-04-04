@@ -221,7 +221,7 @@ export default function InventoryView({ user, shopItems, equippedItems, totalSta
             💍 Equipped Accessories
           </h2>
           <div className="grid grid-cols-5 gap-2 sm:gap-3">
-            {['magic effects', 'eyes', 'head', 'face', 'accessory'].map((slot, index) => {
+            {['magic effects', 'eyes', 'head', 'face', 'shoulder', 'accessory'].map((slot, index) => {
               if (slot === 'accessory') {
                 const allAccessories = (equippedItems || []).filter((cosmetic: any) => {
                   const itemSlot = cosmetic.shop_items?.slot;
@@ -308,6 +308,7 @@ export default function InventoryView({ user, shopItems, equippedItems, totalSta
                      slot === 'eyes' ? 'eyes' :
                      slot === 'head' ? 'Head' :
                      slot === 'face' ? 'face' :
+                     slot === 'shoulder' ? 'Shoulder' :
                      slot}
                   </span>
                 </div>

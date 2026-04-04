@@ -32,7 +32,8 @@ export const CURATED_HOTSPOTS: Hotspot[] = [
   { name: 'Burnaby Lake — South', lat: 49.238, lng: -122.973, lengthMeters: 8000 },
   { name: 'Burnaby Lake — Piper Spit', lat: 49.246, lng: -122.988, lengthMeters: 6000 },
   { name: 'Deer Lake — South Shore', lat: 49.232, lng: -122.971, lengthMeters: 5000 },
-  { name: 'Central Park — Burnaby', lat: 49.228, lng: -123.012, lengthMeters: 5000 },
+  /** Distinct from other "Central Park" gates — this is the Burnaby BC loop */
+  { name: 'Central Burnaby Gate', lat: 49.228, lng: -123.012, lengthMeters: 5000 },
   { name: 'Metrotown — Bonsor', lat: 49.225, lng: -123.003, lengthMeters: 5000 },
   { name: 'BCIT — South', lat: 49.249, lng: -123.003, lengthMeters: 5000 },
   { name: 'Confederation Park — North Burnaby', lat: 49.265, lng: -123.025, lengthMeters: 5000 },

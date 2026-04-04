@@ -6,6 +6,7 @@ import {
   type RecordingCoordinateRow,
 } from '@/lib/readRecordingPath';
 import { coordsToLineStringWkt, haversinePathLengthMeters } from '@/utils/haversine';
+import { freeRoamXpFromDistanceMeters } from '@/lib/runRewards';
 
 export interface FreeHuntInsertResult {
   distanceMeters: number;
@@ -29,7 +30,7 @@ export async function insertFreeHuntFromRecordingSession(): Promise<FreeHuntInse
 
   const points = rowsToLatLngPoints(rows);
   const distanceMeters = haversinePathLengthMeters(points);
-  const xpEarned = Math.floor(distanceMeters / 10);
+  const xpEarned = freeRoamXpFromDistanceMeters(distanceMeters);
   const pathWkt = coordsToLineStringWkt(points);
   if (!pathWkt) {
     throw new Error('Not enough GPS points to record a run. Try a longer route.');

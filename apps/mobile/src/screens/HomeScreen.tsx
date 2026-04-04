@@ -11,7 +11,8 @@ import {
   Pressable,
   Dimensions,
   Platform,
-  ActivityIndicator
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { MotiView } from 'moti';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,6 +41,12 @@ import { ChestOpeningModal } from '@/components/modals/ChestOpeningModal';
 import { LevelUpModal } from '@/components/modals/LevelUpModal';
 import { InviteFriendsModal } from '@/components/modals/InviteFriendsModal';
 import { supabase } from '@/lib/supabase';
+import {
+  ENABLE_EXTERNAL_WORKOUT_SYNC,
+  importExternalWorkout,
+  buildMockExternalWorkoutRoute,
+  encodeRoutePolyline,
+} from '@/lib/externalWorkout';
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -58,6 +65,7 @@ const HomeScreen: React.FC = () => {
   const [showTestChest, setShowTestChest] = useState(false);
   const [showLevelUpPreview, setShowLevelUpPreview] = useState(false);
   const [gateRadarPartyModalVisible, setGateRadarPartyModalVisible] = useState(false);
+  const [importDebugLoading, setImportDebugLoading] = useState(false);
 
   useEffect(() => {
     if (isResetDue) {
@@ -82,6 +90,70 @@ const HomeScreen: React.FC = () => {
   const handleTestChest = () => {
     setShowTestChest(true);
   };
+
+  const handleMockExternalImport = useCallback(async () => {
+    if (!user?.id) return;
+    setImportDebugLoading(true);
+    try {
+      const route = buildMockExternalWorkoutRoute();
+      const res = await importExternalWorkout(route);
+      if (res.kind === 'disabled') {
+        Alert.alert('External import', 'Set EXPO_PUBLIC_ENABLE_EXTERNAL_WORKOUT_SYNC=true and rebuild.');
+        return;
+      }
+      if (res.kind === 'error') {
+        Alert.alert('Import failed', res.message);
+        return;
+      }
+      const r = res.result;
+      if (!r.ok) {
+        Alert.alert(
+          'Skipped',
+          r.reason === 'duplicate_time_window'
+            ? 'A run in this time window was already recorded.'
+            : r.reason
+        );
+        return;
+      }
+      const enc = encodeRoutePolyline(route.points);
+      if (r.kind === 'gate') {
+        const { data: gd } = await supabase.from('global_dungeons').select('*').eq('id', r.dungeon_id).single();
+        navigation.navigate('RunComplete', {
+          runData: {
+            distance: r.distance_meters,
+            duration: route.durationSeconds,
+            encodedPolyline: enc,
+            recordedViaGlobalEngine: true,
+          },
+          dungeon: gd
+            ? {
+                ...gd,
+                target_distance_meters: gd.distance_meters,
+                globalLeaderboard: true,
+              }
+            : {
+                id: r.dungeon_id,
+                name: 'Gate',
+                globalLeaderboard: true,
+              },
+          matchResult: { matchedDungeonId: r.dungeon_id },
+        });
+      } else {
+        navigation.navigate('RunComplete', {
+          mode: 'free_run',
+          runData: {
+            distance: r.distance_meters,
+            duration: route.durationSeconds,
+            encodedPolyline: enc,
+            xpEarned: r.xp_earned,
+            recordedViaGlobalEngine: false,
+          },
+        });
+      }
+    } finally {
+      setImportDebugLoading(false);
+    }
+  }, [navigation, user?.id]);
 
   const handleChestComplete = async () => {
     setShowTestChest(false);
@@ -342,6 +414,20 @@ const HomeScreen: React.FC = () => {
           >
             <Text style={styles.debugRunCompleteBtnText}>[DEBUG] RUN COMPLETE (cards)</Text>
           </TouchableOpacity>
+
+          {ENABLE_EXTERNAL_WORKOUT_SYNC ? (
+            <TouchableOpacity
+              style={[styles.debugRunCompleteBtn, importDebugLoading && { opacity: 0.6 }]}
+              onPress={handleMockExternalImport}
+              disabled={importDebugLoading}
+            >
+              {importDebugLoading ? (
+                <ActivityIndicator color="#22d3ee" />
+              ) : (
+                <Text style={styles.debugRunCompleteBtnText}>[DEBUG] MOCK HEALTH IMPORT → RUN COMPLETE</Text>
+              )}
+            </TouchableOpacity>
+          ) : null}
         </ScrollView>
       </SafeAreaView>
 

@@ -61,10 +61,24 @@ function tierAndXpFromStats(distanceMeters: number, elevationGainMeters: number)
   const km = distanceMeters / 1000;
   const score = km * 10 + elevationGainMeters * 0.12;
 
-  if (score >= 95) return { tier: 'S', xp: 3000 };
-  if (score >= 72) return { tier: 'A', xp: 1800 };
-  if (score >= 48) return { tier: 'B', xp: 1000 };
-  return { tier: 'C', xp: 500 };
+  let rawXp: number;
+  let tier: string;
+  if (score >= 95) {
+    tier = 'S';
+    rawXp = 3000;
+  } else if (score >= 72) {
+    tier = 'A';
+    rawXp = 1800;
+  } else if (score >= 48) {
+    tier = 'B';
+    rawXp = 1000;
+  } else {
+    tier = 'C';
+    rawXp = 500;
+  }
+  /** Align with global_dungeons XP nerf (migration 20260412120100). */
+  const xp = Math.max(1, Math.round(rawXp * 0.5));
+  return { tier, xp };
 }
 
 function downsampleLineCoords(coords: number[][], maxPoints: number): number[][] {

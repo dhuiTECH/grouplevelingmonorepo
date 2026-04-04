@@ -59,7 +59,7 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
 
   const [editingGender, setEditingGender] = useState<'male' | 'female'>('male');
 
-  const DUAL_POSITION_SLOTS = ['weapon', 'head', 'eyes', 'back', 'hands', 'accessory', 'body', 'face', 'base_body', 'face_eyes', 'face_mouth', 'hair', 'hand_grip'];
+  const DUAL_POSITION_SLOTS = ['weapon', 'head', 'eyes', 'back', 'hands', 'shoulder', 'accessory', 'body', 'face', 'base_body', 'face_eyes', 'face_mouth', 'hair', 'hand_grip'];
   const showDualPositioning = DUAL_POSITION_SLOTS.includes(formData.slot);
 
   const safeFormData = {
@@ -918,6 +918,7 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
                 { value: 'head', label: 'Head (Hats, crowns)' },
                 { value: 'eyes', label: 'Eyes (Glasses, goggles – sellable)' },
                 { value: 'back', label: 'Back (Backpacks, capes, flags)' },
+                { value: 'shoulder', label: 'Shoulder (Pauldrons, pads, mantle)' },
                 { value: 'hands', label: 'Hands (Gloves)' },
                 { value: 'feet', label: 'Feet (Shoes, boots)' },
                 { value: 'background', label: 'Background (Scenes)' },
@@ -1347,6 +1348,7 @@ const AddShopItemForm = React.memo(function AddShopItemForm({
                     { value: 'face_mouth', label: 'Mouth (Base)' },
                     { value: 'face', label: 'Face / Makeup' },
                     { value: 'back', label: 'Back' },
+                    { value: 'shoulder', label: 'Shoulder' },
                     { value: 'hands', label: 'Hands' },
                     { value: 'feet', label: 'Feet' },
                     { value: 'accessory', label: 'Accessory' },

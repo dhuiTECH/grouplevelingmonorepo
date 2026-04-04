@@ -6,6 +6,7 @@ import type { User, UserCosmetic } from '@/types/user';
 import { RANK_COLORS } from '@/constants/gameConstants';
 import { SystemWindowHeader } from '@/components/ui/SystemWindowHeader';
 import { inventoryModalsStyles as styles } from '@/components/inventory/InventoryModals.styles';
+import { useInventoryEquipPeek } from '@/hooks/useInventoryEquipPeek';
 
 interface AvatarCustomizationModalProps {
   visible: boolean;
@@ -24,12 +25,13 @@ export function AvatarCustomizationModal({
   onSelectItem,
   renderItemDetailsNested,
 }: AvatarCustomizationModalProps) {
+  const { rootOpacity, triggerPeek } = useInventoryEquipPeek();
   const avatarCosmetics =
     user.cosmetics?.filter((cosmetic: UserCosmetic) => cosmetic.shop_items?.slot === 'avatar') || [];
 
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
+      <View style={[styles.modalOverlay, { opacity: rootOpacity }]}>
         <View style={styles.customizationModalContent}>
           <TouchableOpacity
             onPress={onClose}
@@ -91,6 +93,7 @@ export function AvatarCustomizationModal({
                         onPress={(e) => {
                           e.stopPropagation();
                           onEquipCosmetic(cosmetic.id, !cosmetic.equipped);
+                          triggerPeek();
                         }}
                         style={[
                           styles.customizationEquipButton,

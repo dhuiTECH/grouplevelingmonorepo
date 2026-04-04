@@ -7,6 +7,7 @@ import type { ShopItem, UserCosmetic } from '@/types/user';
 import { RANK_COLORS } from '@/constants/gameConstants';
 import { SystemWindowHeader } from '@/components/ui/SystemWindowHeader';
 import { inventoryModalsStyles as styles } from '@/components/inventory/InventoryModals.styles';
+import { useInventoryEquipPeek } from '@/hooks/useInventoryEquipPeek';
 
 interface EquipmentGearModalProps {
   visible: boolean;
@@ -35,9 +36,11 @@ export function EquipmentGearModal({
   onEquipCosmetic,
   renderItemDetailsNested,
 }: EquipmentGearModalProps) {
+  const { rootOpacity, triggerPeek } = useInventoryEquipPeek();
+
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
+      <View style={[styles.modalOverlay, { opacity: rootOpacity }]}>
         <View style={styles.customizationModalContent}>
           <TouchableOpacity
             onPress={onClose}
@@ -152,8 +155,8 @@ export function EquipmentGearModal({
 
             <View style={[styles.section, { marginHorizontal: 0 }]}>
               <Text style={[styles.sectionHeader, { color: RANK_COLORS['B'] }]}>💍 EQUIPPED ACCESSORIES</Text>
-              <View style={styles.equippedGrid}>
-                {['magic effects', 'eyes', 'head', 'face', 'accessory'].map((slot) => {
+              <View style={styles.equippedAccessoryRow}>
+                {['magic effects', 'eyes', 'head', 'face', 'shoulder', 'accessory'].map((slot) => {
                   if (slot === 'accessory') {
                     const allAccessories = (equippedItems || []).filter((cosmetic: UserCosmetic) => {
                       const itemSlot = cosmetic.shop_items?.slot;
@@ -169,7 +172,7 @@ export function EquipmentGearModal({
                         key="multi-accessory"
                         activeOpacity={0.9}
                         style={[
-                          styles.multiAccessorySlot,
+                          styles.equippedAccessoryMultiSlot,
                           isMultiPicker ? styles.equipmentSlotSelected : null,
                         ]}
                         onPress={() =>
@@ -178,7 +181,7 @@ export function EquipmentGearModal({
                           )
                         }
                       >
-                        <View style={styles.multiAccessoryGrid}>
+                        <View style={styles.equippedAccessoryMultiGrid}>
                           {Array.from({ length: 6 }, (_, accessoryIndex) => {
                             const equippedAccessory = allAccessories[accessoryIndex];
                             const rarity = equippedAccessory?.shop_items?.rarity?.toLowerCase() || 'common';
@@ -187,7 +190,7 @@ export function EquipmentGearModal({
                               <View
                                 key={accessoryIndex}
                                 style={[
-                                  styles.miniAccessorySlot,
+                                  styles.equippedAccessoryMiniSlot,
                                   equippedAccessory
                                     ? {
                                         borderColor: RANK_COLORS[rarity.charAt(0).toUpperCase()],
@@ -226,13 +229,13 @@ export function EquipmentGearModal({
                                     </View>
                                   </View>
                                 ) : (
-                                  <LockIcon size={6} color="#4b5563" />
+                                  <LockIcon size={5} color="#4b5563" />
                                 )}
                               </View>
                             );
                           })}
                         </View>
-                        <Text style={styles.slotLabel}>Multi-Accessory</Text>
+                        <Text style={styles.equippedAccessorySlotLabel}>multi</Text>
                       </TouchableOpacity>
                     );
                   }
@@ -248,7 +251,7 @@ export function EquipmentGearModal({
                     <TouchableOpacity
                       key={slot}
                       style={[
-                        styles.equippedSlot,
+                        styles.equippedAccessorySlot,
                         equippedItem
                           ? !isAccessorySlotPicker
                             ? {
@@ -294,23 +297,28 @@ export function EquipmentGearModal({
                               },
                             ]}
                           />
-                          <View style={styles.equippedItemMediaContainer}>
-                            <ShopItemMedia item={equippedItem.shop_items} style={styles.equippedItemMedia} />
+                          <View style={styles.equippedAccessoryItemMediaContainer}>
+                            <ShopItemMedia
+                              item={equippedItem.shop_items}
+                              style={styles.equippedAccessoryItemMedia}
+                            />
                           </View>
                         </View>
                       ) : (
-                        <LockIcon size={16} color="#6b7280" />
+                        <LockIcon size={12} color="#6b7280" />
                       )}
-                      <Text style={styles.slotLabel}>
+                      <Text style={styles.equippedAccessorySlotLabel}>
                         {slot === 'magic effects'
                           ? 'aura'
                           : slot === 'eyes'
                             ? 'eyes'
                             : slot === 'head'
-                              ? 'Head'
+                              ? 'head'
                               : slot === 'face'
                                 ? 'face'
-                                : slot}
+                                : slot === 'shoulder'
+                                  ? 'shldr'
+                                  : slot}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -378,7 +386,10 @@ export function EquipmentGearModal({
                             </Text>
                           </TouchableOpacity>
                           <TouchableOpacity
-                            onPress={() => onEquipCosmetic(cosmeticItem.id, !isEquipped)}
+                            onPress={() => {
+                              onEquipCosmetic(cosmeticItem.id, !isEquipped);
+                              triggerPeek();
+                            }}
                             style={[
                               styles.equipmentPickerEquipBtn,
                               isEquipped
