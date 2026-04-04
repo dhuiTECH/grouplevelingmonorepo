@@ -213,6 +213,9 @@ export const useBattleLogic = ({
   const attackResolvedRef = useRef(false);
   const battleEndedRef = useRef(false);
   const resolveEnemyAttackRef = useRef<(isParry: boolean, msg: string, allPerfectFromSequence?: boolean) => void>(() => {});
+  const tapToConfirmRef = useRef(tapToConfirm);
+  const advanceTurnRef = useRef<() => void>(() => {});
+  const userIdRef = useRef(user?.id);
 
   // Constants
   const activeActorId = turnQueue[queueIndex];
@@ -747,6 +750,10 @@ export const useBattleLogic = ({
     });
   };
 
+  advanceTurnRef.current = advanceTurn;
+  tapToConfirmRef.current = tapToConfirm;
+  userIdRef.current = user?.id;
+
   const advanceTurnFast = () => {
     setTimeout(() => advanceTurn(), 50);
   };
@@ -955,24 +962,30 @@ export const useBattleLogic = ({
       setTimeout(() => {
         advanceTurn();
         isProcessingActionsRef.current = false;
-      }, 100);
+      }, 50);
     } catch (e) {
       console.error('processPlannedActions error:', e);
       isProcessingActionsRef.current = false;
     }
   };
 
-  const undoLastAction = () => {
-    if (plannedAbilities.length === 0) return;
-    const lastAction = plannedAbilities[plannedAbilities.length - 1];
+  const undoLastAction = useCallback(() => {
+    const store = useBattleStore.getState();
+    const abilities = store.plannedAbilities;
+    if (abilities.length === 0) return;
+    const lastAction = abilities[abilities.length - 1];
     setParty(prev => prev.map(p => p.id === lastAction.charId ? { ...p, ap: p.ap + lastAction.ability.cost } : p));
     setPlannedAbilities(prev => prev.slice(0, -1));
     setChainCount(prev => prev - 1);
     setSelectedAbilityId(null);
-  };
+  }, []);
 
-  const skipTurn = () => {
-    if (!isPlayerTurnPhase) return;
+  const skipTurn = useCallback(() => {
+    const store = useBattleStore.getState();
+    const actorId = store.turnQueue[store.queueIndex];
+    const actorType = actorId === 'ENEMY' ? ACTOR_TYPE.ENEMY : (actorId?.startsWith('pet-') ? ACTOR_TYPE.PET : ACTOR_TYPE.PLAYER);
+    const playerTurn = actorType === ACTOR_TYPE.PLAYER && store.currentPhase === PHASE.ACTIVE && actorId === userIdRef.current;
+    if (!playerTurn) return;
     if (isProcessingActionsRef.current) return;
     isProcessingActionsRef.current = true;
     
@@ -982,35 +995,45 @@ export const useBattleLogic = ({
     setChainCount(0);
     
     setTimeout(() => {
-        advanceTurn();
+        advanceTurnRef.current();
         isProcessingActionsRef.current = false;
     }, 300);
-  };
+  }, []);
 
-  const handleAbilityTap = (ability: any) => {
-    if (!isPlayerTurnPhase) return;
-    const char = party.find(p => p.id === activeChar.id);
+  const handleAbilityTap = useCallback((ability: any) => {
+    const store = useBattleStore.getState();
+    const actorId = store.turnQueue[store.queueIndex];
+    const actorType = actorId === 'ENEMY' ? ACTOR_TYPE.ENEMY : (actorId?.startsWith('pet-') ? ACTOR_TYPE.PET : ACTOR_TYPE.PLAYER);
+    const playerTurn = actorType === ACTOR_TYPE.PLAYER && store.currentPhase === PHASE.ACTIVE && actorId === userIdRef.current;
+    if (!playerTurn) return;
+
+    const curParty = store.party;
+    const curActiveIndex = store.activeIndex;
+    const curActiveChar = curParty[curActiveIndex];
+    if (!curActiveChar) return;
+
+    const char = curParty.find(p => p.id === curActiveChar.id);
     if (!char) return;
-
     if (char.ap < ability.cost) return;
 
-    if (tapToConfirm) {
-      if (selectedAbilityId === ability.id) {
-        setPlannedAbilities(prev => [...prev, { charId: activeChar.id, ability }]);
-        setParty(prev => prev.map(p => p.id === activeChar.id ? { ...p, ap: p.ap - ability.cost } : p));
+    const curSelectedId = store.selectedAbilityId;
+
+    if (tapToConfirmRef.current) {
+      if (curSelectedId === ability.id) {
+        setPlannedAbilities(prev => [...prev, { charId: curActiveChar.id, ability }]);
+        setParty(prev => prev.map(p => p.id === curActiveChar.id ? { ...p, ap: p.ap - ability.cost } : p));
         setChainCount(prev => prev + 1);
         setSelectedAbilityId(null);
       } else {
         setSelectedAbilityId(ability.id);
       }
     } else {
-      // Single-tap: add to plan immediately
-      setPlannedAbilities(prev => [...prev, { charId: activeChar.id, ability }]);
-      setParty(prev => prev.map(p => p.id === activeChar.id ? { ...p, ap: p.ap - ability.cost } : p));
+      setPlannedAbilities(prev => [...prev, { charId: curActiveChar.id, ability }]);
+      setParty(prev => prev.map(p => p.id === curActiveChar.id ? { ...p, ap: p.ap - ability.cost } : p));
       setChainCount(prev => prev + 1);
       setSelectedAbilityId(null);
     }
-  };
+  }, []);
 
   const handleQteTap = useCallback((targetId: string) => {
     const target = qteTargetsRef.current.find(t => t.id === targetId);
@@ -1357,19 +1380,17 @@ export const useBattleLogic = ({
                 });
 
                 if (hasChanges) {
-                    const missedIds = new Set(updated.filter(t => t.status === 'miss').map(t => t.id));
-                    setTimeout(() => {
-                        setQteTargets(prev => prev.map(t =>
-                          missedIds.has(t.id) && t.status === 'pending' ? { ...t, status: 'miss' } : t
-                        ));
-                        if (newMisses > 0 || newHits > 0) {
+                    setQteTargets(updated);
+                    
+                    if (newMisses > 0 || newHits > 0) {
+                        setTimeout(() => {
                             setQteStats(prev => ({
                                 hits: prev.hits + newHits,
                                 misses: prev.misses + newMisses,
                                 perfects: prev.perfects
                             }));
-                        }
-                    }, 0);
+                        }, 0);
+                    }
                     
                     if (newMisses > 0) {
                         setComboMultiplier(1.0);

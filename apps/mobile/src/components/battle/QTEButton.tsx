@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Animated, StyleSheet } from 'react-native';
+import ReAnimated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { ArrowUp } from 'lucide-react-native';
 import { QTE_TYPE } from '@/hooks/useBattleLogic';
 
@@ -12,15 +13,19 @@ interface QTEButtonProps {
 
 export const QTEButton = React.memo(function QTEButton({ target, timerAnim, onTap, onSwipe }: QTEButtonProps) {
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
-  const exitAnim = useRef(new Animated.Value(1)).current;
+  const exitOpacity = useSharedValue(1);
 
   useEffect(() => {
     if (target.status !== 'pending' && target.status !== 'active') {
-      Animated.timing(exitAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+      exitOpacity.value = withTiming(0, { duration: 200 });
     } else {
-      exitAnim.setValue(1);
+      exitOpacity.value = 1;
     }
   }, [target.status]);
+
+  const exitStyle = useAnimatedStyle(() => ({
+    opacity: exitOpacity.value,
+  }));
 
   const hitTime = target.hitTime;
   const scale = timerAnim.interpolate({
@@ -76,52 +81,54 @@ export const QTEButton = React.memo(function QTEButton({ target, timerAnim, onTa
     <Animated.View
       style={[
         styles.qteContainer,
-        { left: `${target.x}%`, top: `${target.y}%`, opacity: Animated.multiply(globalOpacity, exitAnim) },
+        { left: `${target.x}%`, top: `${target.y}%`, opacity: globalOpacity },
       ]}
     >
-      {isActive && !isHit && !isPerfect && !isMiss && (
-        <Animated.View style={[styles.qteRing, { transform: [{ scale }], borderColor: ringColor, opacity: ringOpacity }]} />
-      )}
-      <TouchableOpacity
-        activeOpacity={1}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        disabled={!isActive && !isHit && !isMiss && !isPerfect}
-        hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
-        style={[
-          styles.qteBtn,
-          isHit && { backgroundColor: '#22d3ee', borderColor: '#fff', transform: [{ scale: 1.1 }] },
-          isPerfect && {
-            backgroundColor: '#fbbf24',
-            borderColor: '#fff',
-            transform: [{ scale: 1.2 }],
-          },
-          isMiss && { backgroundColor: '#ef4444', borderColor: '#fff', opacity: 0.8 },
-          target.status === 'active' && { borderColor: '#facc15', backgroundColor: 'rgba(250, 204, 21, 0.3)' },
-          isSwipe && { borderRadius: 10, width: 80, height: 80 },
-        ]}
-      >
-        <View style={[styles.qteInner, target.status === 'active' && { backgroundColor: '#facc15' }]}>
-          {isSwipe ? (
-            <View
-              style={{
-                transform: [
-                  {
-                    rotate:
-                      swipeDir === 'UP' ? '0deg' : swipeDir === 'RIGHT' ? '90deg' : swipeDir === 'DOWN' ? '180deg' : '270deg',
-                  },
-                ],
-              }}
-            >
-              <ArrowUp size={32} color={isHit ? 'black' : 'white'} strokeWidth={4} />
-            </View>
-          ) : (
-            <Text style={[styles.qteText, target.status === 'active' && { color: 'black' }]}>
-              {isPerfect ? '!!!' : isHit ? 'OK' : isMiss ? 'X' : ''}
-            </Text>
-          )}
-        </View>
-      </TouchableOpacity>
+      <ReAnimated.View style={[{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }, exitStyle]}>
+        {isActive && !isHit && !isPerfect && !isMiss && (
+          <Animated.View style={[styles.qteRing, { transform: [{ scale }], borderColor: ringColor, opacity: ringOpacity }]} />
+        )}
+        <TouchableOpacity
+          activeOpacity={1}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          disabled={!isActive && !isHit && !isMiss && !isPerfect}
+          hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
+          style={[
+            styles.qteBtn,
+            isHit && { backgroundColor: '#22d3ee', borderColor: '#fff', transform: [{ scale: 1.1 }] },
+            isPerfect && {
+              backgroundColor: '#fbbf24',
+              borderColor: '#fff',
+              transform: [{ scale: 1.2 }],
+            },
+            isMiss && { backgroundColor: '#ef4444', borderColor: '#fff', opacity: 0.8 },
+            target.status === 'active' && { borderColor: '#facc15', backgroundColor: 'rgba(250, 204, 21, 0.3)' },
+            isSwipe && { borderRadius: 10, width: 80, height: 80 },
+          ]}
+        >
+          <View style={[styles.qteInner, target.status === 'active' && { backgroundColor: '#facc15' }]}>
+            {isSwipe ? (
+              <View
+                style={{
+                  transform: [
+                    {
+                      rotate:
+                        swipeDir === 'UP' ? '0deg' : swipeDir === 'RIGHT' ? '90deg' : swipeDir === 'DOWN' ? '180deg' : '270deg',
+                    },
+                  ],
+                }}
+              >
+                <ArrowUp size={32} color={isHit ? 'black' : 'white'} strokeWidth={4} />
+              </View>
+            ) : (
+              <Text style={[styles.qteText, target.status === 'active' && { color: 'black' }]}>
+                {isPerfect ? '!!!' : isHit ? 'OK' : isMiss ? 'X' : ''}
+              </Text>
+            )}
+          </View>
+        </TouchableOpacity>
+      </ReAnimated.View>
     </Animated.View>
   );
 });
