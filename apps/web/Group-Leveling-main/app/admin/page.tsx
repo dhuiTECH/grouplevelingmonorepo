@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { User, Clock, Trophy, LogOut, Plus, Sword, Users, Settings, Edit, Edit2, Trash2, Coins, Loader2, Sparkles, Map, CheckCircle, XCircle, Zap, Check, BookOpen, Search, X, PawPrint, Music2, ScrollText } from 'lucide-react';
+import { User, Clock, Trophy, LogOut, Plus, Sword, Users, Settings, Edit, Edit2, Trash2, Coins, Loader2, Sparkles, Map, CheckCircle, XCircle, Zap, Check, Search, X, PawPrint, Music2, ScrollText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
@@ -18,11 +18,9 @@ import DungeonsTab from '@/components/admin/DungeonsTab';
 import ShopTab from '@/components/admin/ShopTab';
 import MapTab from '@/components/admin/MapTab';
 import QuestsTab from '@/components/admin/QuestsTab';
-import ClassesTab from '@/components/admin/ClassesTab';
 import SkillsTab from '@/components/admin/SkillsTab';
 import MobsTab from '@/components/admin/MobsTab';
 import PetsTab from '@/components/admin/PetsTab';
-import AvatarBuilderTab from '@/components/admin/AvatarBuilderTab';
 import MusicTab from '@/components/admin/MusicTab';
 
 export default function AdminDashboard() {
@@ -991,10 +989,8 @@ export default function AdminDashboard() {
           <AdminNavItem id="users" icon={Users} label={`Users (${approvedUsers.length})`} active={activeTab === 'users'} onClick={setActiveTab} />
           <AdminNavItem id="dungeons" icon={Sword} label={`Dungeons (${dungeons.length})`} active={activeTab === 'dungeons'} onClick={setActiveTab} />
           <AdminNavItem id="shop" icon={Plus} label={`Shop (${shopItems.length})`} active={activeTab === 'shop'} onClick={setActiveTab} />
-          <AdminNavItem id="avatar_builder" icon={User} label="Avatar Builder" active={activeTab === 'avatar_builder'} onClick={setActiveTab} />
           <AdminNavItem id="gacha" icon={Sparkles} label="Gacha System" active={activeTab === 'gacha'} onClick={setActiveTab} />
           <AdminNavItem id="quests" icon={ScrollText} label="Quests" active={activeTab === 'quests'} onClick={setActiveTab} />
-          <AdminNavItem id="classes" icon={BookOpen} label="Classes" active={activeTab === 'classes'} onClick={setActiveTab} />
           <AdminNavItem id="skills" icon={Zap} label="Skills" active={activeTab === 'skills'} onClick={setActiveTab} />
           <AdminNavItem id="mobs" icon={Users} label="Mobs" active={activeTab === 'mobs'} onClick={setActiveTab} />
           <AdminNavItem id="pets" icon={PawPrint} label="Pets" active={activeTab === 'pets'} onClick={setActiveTab} />
@@ -1360,12 +1356,6 @@ export default function AdminDashboard() {
           />
         )}
 
-        {activeTab === 'avatar_builder' && (
-          <AvatarBuilderTab
-            shopItems={shopItems}
-          />
-        )}
-
         {activeTab === 'gacha' && (
           <section className="space-y-6">
             <div className="flex justify-between items-center">
@@ -1619,10 +1609,6 @@ export default function AdminDashboard() {
 
         {activeTab === 'quests' && (
           <QuestsTab />
-        )}
-
-        {activeTab === 'classes' && (
-          <ClassesTab />
         )}
 
         {activeTab === 'skills' && (

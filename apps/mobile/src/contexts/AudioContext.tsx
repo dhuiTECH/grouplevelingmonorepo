@@ -67,7 +67,8 @@ export function AudioProvider({ children }: AudioProviderProps): JSX.Element {
     const init = async () => {
       try {
         await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
+          // Respect the iPhone Ring/Silent switch; do not play over silent mode.
+          playsInSilentModeIOS: false,
           allowsRecordingIOS: false,
           staysActiveInBackground: false,
           interruptionModeIOS: 1,

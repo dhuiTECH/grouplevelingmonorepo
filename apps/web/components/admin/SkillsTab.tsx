@@ -2,14 +2,15 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Zap, Sword, Plus, Trash2, Filter, Search } from 'lucide-react';
+import { Zap, Sword, Plus, Trash2, Filter, Search, Users } from 'lucide-react';
+import ClassesTab from '@/components/admin/ClassesTab';
 import CreateSkillForm from '@/components/skills/CreateSkillForm';
 import SkillVisualsEditor from '@/components/skills/SkillVisualsEditor';
 import SkillBalancer from './SkillBalancer';
 import SkillLoadoutTester from './skills/SkillLoadoutTester';
 import AdminSkillTreeBuilder from './skills/AdminSkillTreeBuilder';
 
-type SubTab = 'architect' | 'database';
+type SubTab = 'architect' | 'database' | 'classes';
 
 export default function SkillsTab() {
   const [subTab, setSubTab] = useState<SubTab>('architect');
@@ -84,12 +85,12 @@ export default function SkillsTab() {
 
   return (
     <div className="text-white p-4 font-mono space-y-6">
-      {/* Sub-tabs: Tree Architect | Skill Database */}
-      <div className="flex items-center gap-4 border-b border-slate-800 pb-4">
-        <h1 className="text-xl font-black tracking-widest text-red-600 uppercase flex items-center gap-2">
+      {/* Sub-tabs: Tree Architect | Skill Database | Classes */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4 border-b border-slate-800 pb-4">
+        <h1 className="text-xl font-black tracking-widest text-red-600 uppercase flex items-center gap-2 shrink-0">
           <Zap size={22} /> Skills
         </h1>
-        <div className="flex gap-2 bg-black p-1 rounded-lg border border-slate-700">
+        <div className="flex flex-wrap gap-2 bg-black p-1 rounded-lg border border-slate-700">
           <button
             onClick={() => setSubTab('architect')}
             className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all ${
@@ -109,6 +110,16 @@ export default function SkillsTab() {
             }`}
           >
             Skill Database
+          </button>
+          <button
+            onClick={() => setSubTab('classes')}
+            className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-1.5 ${
+              subTab === 'classes'
+                ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/20'
+                : 'text-gray-500 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Users size={14} className="opacity-80" /> Classes
           </button>
         </div>
       </div>
@@ -396,6 +407,8 @@ export default function SkillsTab() {
           )}
         </>
       )}
+
+      {subTab === 'classes' && <ClassesTab />}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,8 +18,22 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAudio } from '@/contexts/AudioContext';
 import { useGameData } from '@/hooks/useGameData';
 import { supabase } from '@/lib/supabase';
-import { DialogueScene } from '@/components/DialogueScene';
+import { CoinFlipOverlay, type CoinFlipState } from '@/components/CoinFlipOverlay';
+import { DialogueScene, DIALOGUE_OPAQUE_NAVY, type DialogueLine } from '@/components/DialogueScene';
 import { ChestOpeningModal } from '@/components/modals/ChestOpeningModal';
+import {
+  CHEST_VS_SCENE_CHEST_PROBABILITY,
+  fetchRandomSceneEvent,
+  rollBaseChestTier,
+  type ChestTier,
+} from '@/screens/runCompleteChestRng';
+import {
+  grimbleOfferLines,
+  grimbleResultLines,
+  GRIMBLE_WAGER_ACTIONS,
+  GRIMBLE_WAGER_GOLD,
+} from '@/screens/grimbleWagerDialogue';
+import { callWagerRunChestFlip } from '@/lib/wagerRunChestFlip';
 
 const { width: WINDOW_WIDTH } = Dimensions.get('window');
 
@@ -65,7 +79,15 @@ export default function RunCompleteScreen() {
   const [rngEvent, setRngEvent] = useState<any>(null);
   const [showDialogue, setShowDialogue] = useState(false);
   const [showChest, setShowChest] = useState(false);
-  const [chestType, setChestType] = useState<'small' | 'silver' | 'medium' | 'large'>('small');
+  const [chestType, setChestType] = useState<ChestTier>('small');
+  const [chestClaimKey, setChestClaimKey] = useState<string>('');
+  const [showGrimbleDialogue, setShowGrimbleDialogue] = useState(false);
+  const [grimbleScript, setGrimbleScript] = useState<DialogueLine[]>([]);
+  const [grimbleOfferMode, setGrimbleOfferMode] = useState(true);
+  const [grimbleOutcomeTier, setGrimbleOutcomeTier] = useState<ChestTier | null>(null);
+  const [flipState, setFlipState] = useState<CoinFlipState>('hidden');
+  const flipResultRef = useRef<{ won: boolean; finalTier: ChestTier } | null>(null);
+  const [pendingBaseChest, setPendingBaseChest] = useState<ChestTier | null>(null);
   const [partySize, setPartySize] = useState(1);
   const [partyMembers, setPartyMembers] = useState<any[]>([]);
 
@@ -100,6 +122,88 @@ export default function RunCompleteScreen() {
   }, [recordedViaGlobalEngine, matchResult?.matchedDungeonId, paramDungeon?.image_url]);
 
   const dungeon = isDemo ? CAVE_OF_SHADOWS_DEMO.dungeon : resolvedDungeon ?? paramDungeon;
+
+  const runPostRunRng = useCallback(async () => {
+    let currentPartySize = 1;
+    if (user?.current_party_id) {
+      const { data: members, error: membersError } = await supabase
+        .from('party_members')
+        .select(`
+                hunter_id,
+                profiles:hunter_id (
+                  id, 
+                  hunter_name, 
+                  avatar, 
+                  level, 
+                  hunter_rank,
+                  cosmetics:user_cosmetics(
+                    id,
+                    equipped,
+                    shop_item_id,
+                    shop_items:shop_item_id(*)
+                  )
+                )
+              `)
+        .eq('party_id', user.current_party_id);
+
+      if (!membersError && members) {
+        currentPartySize = members.length;
+        const formattedMembers = members.map((m: any) => ({
+          ...m.profiles,
+          name: m.profiles.hunter_name,
+        }));
+        setPartyMembers(formattedMembers);
+      }
+    }
+    setPartySize(currentPartySize);
+
+    const lckBonus = (user?.lck_stat || 10) / 100;
+    const eventChance = 0.3 + currentPartySize * 0.05 + lckBonus;
+    const roll = Math.random();
+
+    if (roll >= eventChance) return;
+
+    const typeRoll = Math.random();
+    if (typeRoll < CHEST_VS_SCENE_CHEST_PROBABILITY) {
+      const { data, error } = await supabase.rpc('reserve_daily_run_chest');
+      if (error) {
+        console.warn('[RunComplete] reserve_daily_run_chest', error);
+        const ev = await fetchRandomSceneEvent(supabase);
+        if (ev) {
+          setRngEvent(ev);
+          setShowDialogue(true);
+        }
+        return;
+      }
+      const allowed = (data as { allowed?: boolean })?.allowed === true;
+      if (!allowed) {
+        const ev = await fetchRandomSceneEvent(supabase);
+        if (ev) {
+          setRngEvent(ev);
+          setShowDialogue(true);
+        }
+        return;
+      }
+      const base = rollBaseChestTier();
+      if (base === 'large') {
+        setChestType('large');
+        setChestClaimKey(`chest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+        setShowChest(true);
+        return;
+      }
+      setPendingBaseChest(base);
+      setGrimbleScript(grimbleOfferLines(base));
+      setGrimbleOfferMode(true);
+      setGrimbleOutcomeTier(null);
+      setShowGrimbleDialogue(true);
+    } else {
+      const ev = await fetchRandomSceneEvent(supabase);
+      if (ev) {
+        setRngEvent(ev);
+        setShowDialogue(true);
+      }
+    }
+  }, [user]);
 
   useEffect(() => {
     if (isDemo || !paramRunData || !user?.id || runRecordedRef.current) return;
@@ -195,65 +299,7 @@ export default function RunCompleteScreen() {
         if (completed) {
           setIsScanning(true);
           try {
-            let currentPartySize = 1;
-            if (user.current_party_id) {
-              const { data: members, error: membersError } = await supabase
-                .from('party_members')
-                .select(`
-                hunter_id,
-                profiles:hunter_id (
-                  id, 
-                  hunter_name, 
-                  avatar, 
-                  level, 
-                  hunter_rank,
-                  cosmetics:user_cosmetics(
-                    id,
-                    equipped,
-                    shop_item_id,
-                    shop_items:shop_item_id(*)
-                  )
-                )
-              `)
-                .eq('party_id', user.current_party_id);
-
-              if (!membersError && members) {
-                currentPartySize = members.length;
-                const formattedMembers = members.map((m: any) => ({
-                  ...m.profiles,
-                  name: m.profiles.hunter_name,
-                }));
-                setPartyMembers(formattedMembers);
-              }
-            }
-            setPartySize(currentPartySize);
-
-            const lckBonus = (user.lck_stat || 10) / 100;
-            const eventChance = 0.3 + (currentPartySize * 0.05) + lckBonus;
-            const roll = Math.random();
-
-            if (roll < eventChance) {
-              const typeRoll = Math.random();
-              if (typeRoll < 0.7) {
-                const { data: nodes } = await supabase.from('world_map_nodes').select('*').eq('is_random_event', true);
-                if (nodes && nodes.length > 0) {
-                  const node = nodes[Math.floor(Math.random() * nodes.length)];
-                  setRngEvent({
-                    type: node.interaction_type === 'BATTLE' ? 'BATTLE' : 'SCENE',
-                    data: node,
-                  });
-                  setShowDialogue(true);
-                }
-              } else {
-                const rarityRoll = Math.random();
-                let selectedRarity: 'small' | 'silver' | 'medium' | 'large' = 'small';
-                if (rarityRoll > 0.95) selectedRarity = 'large';
-                else if (rarityRoll > 0.8) selectedRarity = 'medium';
-                else if (rarityRoll > 0.5) selectedRarity = 'silver';
-                setChestType(selectedRarity);
-                setShowChest(true);
-              }
-            }
+            await runPostRunRng();
           } catch (err) {
             console.error('Error in RNG logic:', err);
           } finally {
@@ -356,62 +402,7 @@ export default function RunCompleteScreen() {
       if (completed) {
         setIsScanning(true);
         try {
-          let currentPartySize = 1;
-          if (user.current_party_id) {
-            const { data: members, error: membersError } = await supabase
-              .from('party_members')
-              .select(`
-                hunter_id,
-                profiles:hunter_id (
-                  id, 
-                  hunter_name, 
-                  avatar, 
-                  level, 
-                  hunter_rank,
-                  cosmetics:user_cosmetics(
-                    id,
-                    equipped,
-                    shop_item_id,
-                    shop_items:shop_item_id(*)
-                  )
-                )
-              `)
-              .eq('party_id', user.current_party_id);
-
-            if (!membersError && members) {
-              currentPartySize = members.length;
-              const formattedMembers = members.map((m: any) => ({
-                ...m.profiles,
-                name: m.profiles.hunter_name,
-              }));
-              setPartyMembers(formattedMembers);
-            }
-          }
-          setPartySize(currentPartySize);
-
-          const lckBonus = (user.lck_stat || 10) / 100;
-          const eventChance = 0.3 + (currentPartySize * 0.05) + lckBonus;
-          const roll = Math.random();
-
-          if (roll < eventChance) {
-            const typeRoll = Math.random();
-            if (typeRoll < 0.7) {
-              const { data: nodes } = await supabase.from('world_map_nodes').select('*').eq('is_random_event', true);
-              if (nodes && nodes.length > 0) {
-                const node = nodes[Math.floor(Math.random() * nodes.length)];
-                setRngEvent({ type: node.interaction_type === 'BATTLE' ? 'BATTLE' : 'SCENE', data: node });
-                setShowDialogue(true);
-              }
-            } else {
-              const rarityRoll = Math.random();
-              let selectedRarity: 'small' | 'silver' | 'medium' | 'large' = 'small';
-              if (rarityRoll > 0.95) selectedRarity = 'large';
-              else if (rarityRoll > 0.8) selectedRarity = 'medium';
-              else if (rarityRoll > 0.5) selectedRarity = 'silver';
-              setChestType(selectedRarity);
-              setShowChest(true);
-            }
-          }
+          await runPostRunRng();
         } catch (err) {
           console.error('Error in RNG logic:', err);
         } finally {
@@ -430,12 +421,66 @@ export default function RunCompleteScreen() {
     recordedViaGlobalEngine,
     matchResult?.matchedDungeonId,
     modeParam,
+    runPostRunRng,
   ]);
 
   useEffect(() => {
     stopBackgroundMusic();
   }, [stopBackgroundMusic]);
-  
+
+  const handleGrimbleClose = useCallback(() => {
+    setShowGrimbleDialogue(false);
+    const tier = grimbleOutcomeTier ?? pendingBaseChest ?? 'small';
+    setChestType(tier);
+    setChestClaimKey(`chest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    setShowChest(true);
+    setPendingBaseChest(null);
+    setGrimbleOutcomeTier(null);
+    setGrimbleOfferMode(true);
+    setGrimbleScript([]);
+  }, [grimbleOutcomeTier, pendingBaseChest]);
+
+  const handleGrimbleAction = useCallback(
+    async (event: string) => {
+      if (event === 'grimble_pass') {
+        setShowGrimbleDialogue(false);
+        const t = pendingBaseChest ?? 'small';
+        setChestType(t);
+        setChestClaimKey(`chest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+        setShowChest(true);
+        setPendingBaseChest(null);
+        setGrimbleOutcomeTier(null);
+        setGrimbleOfferMode(true);
+        setGrimbleScript([]);
+        return;
+      }
+      if (event !== 'grimble_wager') return;
+      const base = pendingBaseChest ?? 'small';
+      const coins = Number(user?.coins ?? 0);
+      if (coins < GRIMBLE_WAGER_GOLD) return;
+      setFlipState('flipping');
+      try {
+        const [result] = await Promise.all([
+          callWagerRunChestFlip(supabase, base, coins),
+          new Promise((resolve) => setTimeout(resolve, 800)), // Guarantee some spin time
+        ]);
+        if (!result.ok) {
+          setFlipState('hidden');
+          return;
+        }
+        if (user && result.new_coins !== undefined) {
+          setUser({ ...user, coins: result.new_coins });
+        }
+        const finalTier = result.final_chest_type ?? 'small';
+        flipResultRef.current = { won: result.won === true, finalTier };
+        setFlipState(result.won ? 'win' : 'lose');
+      } catch (err) {
+        setFlipState('hidden');
+      }
+    },
+    [pendingBaseChest, user, setUser],
+  );
+
   if (!runData || !user) {
       return (
           <View style={styles.container}>
@@ -521,10 +566,44 @@ export default function RunCompleteScreen() {
         </Modal>
       )}
 
+      {showGrimbleDialogue && grimbleScript.length > 0 && (
+        <Modal visible={showGrimbleDialogue} transparent animationType="fade">
+          <View style={{ flex: 1 }}>
+            <CoinFlipOverlay
+              flipState={flipState}
+              onComplete={() => {
+                setFlipState('hidden');
+                if (flipResultRef.current) {
+                  const res = flipResultRef.current;
+                  setGrimbleOutcomeTier(res.finalTier);
+                  setGrimbleScript(grimbleResultLines(res.won, res.finalTier));
+                  setGrimbleOfferMode(false);
+                  flipResultRef.current = null;
+                }
+              }}
+            />
+            <DialogueScene
+              visible={showGrimbleDialogue}
+              nodeName="Grimble"
+              opaqueBackdropColor={DIALOGUE_OPAQUE_NAVY}
+              npcSpriteUrl={require('../../assets/shop/Grimble.png')}
+              dialogueScript={grimbleScript}
+              interactionType="DIALOGUE"
+              typingSpeed={0}
+              compactActionButtons
+              actionButtons={grimbleOfferMode ? GRIMBLE_WAGER_ACTIONS : []}
+              onClose={handleGrimbleClose}
+              onAction={handleGrimbleAction}
+            />
+          </View>
+        </Modal>
+      )}
+
       <ChestOpeningModal
         isOpen={showChest}
         chestType={chestType}
         onAnimationComplete={() => setShowChest(false)}
+        claimIdempotencyKey={chestClaimKey}
       />
 
       {/* THE 3-CARD CAROUSEL — fills screen below overlays */}
@@ -673,5 +752,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     marginBottom: 4,
-  }
+  },
 });

@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ShopItem } from '@/types/user';
 import { api } from '@/api/shop';
 import { playHunterSound } from '@/utils/audio';
+import { claimLoot } from '@/lib/claimLoot';
 
 const { width, height } = Dimensions.get('window');
 
@@ -156,6 +157,38 @@ export const InteractionModal = ({
           mapId: mapId ?? undefined,
         });
         break;
+      case 'GRANT_LOOT': {
+        const nodeId = payload?.sourceId ?? activeInteraction?.id ?? 'npc-default';
+        const key = `npc-${nodeId}-${Date.now()}`;
+        (async () => {
+          try {
+            const result = await claimLoot('npc', String(nodeId), key);
+            if (result.ok) {
+              setUser((prev: any) =>
+                prev?.id
+                  ? {
+                      ...prev,
+                      exp: result.exp_total ?? prev.exp ?? 0,
+                      coins: result.coins_total ?? prev.coins ?? 0,
+                      gems: result.gems_total ?? prev.gems ?? 0,
+                    }
+                  : prev,
+              );
+              Toast.show({
+                type: 'success',
+                text1: 'Loot Claimed!',
+                text2: `+${result.exp_delta ?? 0} EXP, +${result.coins_delta ?? 0} Coins${result.gems_delta ? `, +${result.gems_delta} Gems` : ''}`,
+              });
+            }
+          } catch {
+            Alert.alert('Claim Failed', 'Network error — try again when you have signal.', [
+              { text: 'OK' },
+              { text: 'Retry', onPress: () => handleAction('GRANT_LOOT', payload) },
+            ]);
+          }
+        })();
+        break;
+      }
       default:
         onClose();
         break;

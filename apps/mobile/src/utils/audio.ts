@@ -9,7 +9,8 @@ let hasInitializedAudioMode = false;
 export async function initializeGlobalAudioMode(): Promise<void> {
   if (hasInitializedAudioMode) return;
   await Audio.setAudioModeAsync({
-    playsInSilentModeIOS: true,
+    // Match AudioProvider: honor the device silent switch on iOS.
+    playsInSilentModeIOS: false,
     allowsRecordingIOS: false,
     staysActiveInBackground: false,
     interruptionModeIOS: 1,

@@ -37,6 +37,7 @@ import { DamageNumberLayer } from '@/components/battle/vfx/DamageNumberLayer';
 import { ImpactEffects } from '@/components/battle/ImpactEffects';
 import { useBattleVisualDamage } from '@/hooks/useBattleVisualDamage';
 import { resolvePartyMemberAvatarUri } from '@/utils/partyMemberAvatarUri';
+import { getBattleLootSourceId } from '@/lib/battleLootTier';
 import { unloadSfxCache } from '@/utils/audio';
 
 export default function BattleScreen() {
@@ -496,6 +497,8 @@ export default function BattleScreen() {
         victoryParty={victoryParty}
         rewards={rewards}
         rewardApplyKey={victoryRewardApplyKey ?? undefined}
+        encounterId={encounterId}
+        battleLootSourceId={getBattleLootSourceId(enemy, !!isBoss)}
       />
     );
   }

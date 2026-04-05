@@ -31,6 +31,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width, height } = Dimensions.get('window');
 
+/** Semi-transparent navy for Grimble / post-run dialogue (run-complete UI shows through slightly). */
+export const DIALOGUE_OPAQUE_NAVY = 'rgba(10, 22, 40, 0.82)';
+
 export interface DialogueLine {
   npc_name?: string;
   text: string;
@@ -49,6 +52,8 @@ export interface DialogueSceneProps {
   visible: boolean;
   nodeName: string;
   backgroundUrl?: any;
+  /** When set, full-screen solid color; ignores `backgroundUrl` (use for post-run Grimble, etc.). */
+  opaqueBackdropColor?: string;
   npcSpriteUrl?: any;
   dialogueScript: DialogueLine[];
   onClose: () => void;
@@ -61,12 +66,15 @@ export interface DialogueSceneProps {
   isSpritesheet?: boolean;
   frameCount?: number;
   frameSize?: number;
+  /** Smaller side-by-side action buttons (e.g. Grimble wager). */
+  compactActionButtons?: boolean;
 }
 
 export function DialogueScene({
   visible,
   nodeName,
   backgroundUrl,
+  opaqueBackdropColor,
   npcSpriteUrl,
   dialogueScript,
   onClose,
@@ -79,6 +87,7 @@ export function DialogueScene({
   isSpritesheet = false,
   frameCount = 1,
   frameSize = 512,
+  compactActionButtons = false,
 }: DialogueSceneProps) {
   const insets = useSafeAreaInsets();
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -131,7 +140,19 @@ export function DialogueScene({
   }, [isSpritesheet, frameCount]);
 
   const currentLine = dialogueScript?.[currentIndex] || { text: '' };
-  
+
+  const dialogueScriptSig = (dialogueScript ?? [])
+    .map((l) => `${l.text ?? ''}\u0002${l.npc_name ?? ''}`)
+    .join('\u0001');
+
+  /** Reset line when script content changes without remounting (avoids re-running entrance animations). */
+  useEffect(() => {
+    if (!visible || !dialogueScript?.length) return;
+    setCurrentIndex(0);
+    setDisplayedText('');
+    setIsTypingComplete(false);
+  }, [visible, dialogueScriptSig]);
+
   // Resolve which portrait to show
   const currentPortrait = currentLine?.image_url ? { uri: currentLine.image_url } : npcSpriteUrl;
 
@@ -299,8 +320,9 @@ export function DialogueScene({
 
   // 3. Interaction Handling
   const handleDialogueTap = () => {
-    // State 1: Still typing -> Reveal full text immediately
-    if (!isTypingComplete) {
+    const instantLine = typingSpeed <= 0 || !!currentLine.voice_line_url;
+    // State 1: Still typing -> Reveal full text immediately (skip when line shows in full immediately)
+    if (!isTypingComplete && !instantLine) {
       setDisplayedText(currentLine.text || '');
       setIsTypingComplete(true);
       return;
@@ -311,7 +333,8 @@ export function DialogueScene({
       // Move to next line
       setCurrentIndex((prev) => prev + 1);
     } else {
-      // On last line - close the dialogue (action buttons are separate options)
+      // Last line: if action buttons are shown, wait for a button (no tap-to-close)
+      if (actionButtons.length > 0) return;
       handleComplete();
     }
   };
@@ -353,8 +376,14 @@ export function DialogueScene({
 
   if (!visible || !dialogueScript || dialogueScript.length === 0) return null;
 
+  const usePhotoBackground = !!backgroundUrl && !opaqueBackdropColor;
+  const useOpaqueBackdrop = !!opaqueBackdropColor;
+
   const isLastLine = currentIndex === dialogueScript.length - 1;
-  const showFightButton = isTypingComplete && isLastLine && interactionType === 'BATTLE';
+  const instantLine = typingSpeed <= 0 || !!currentLine.voice_line_url;
+  const textToShow = instantLine ? (currentLine.text || '') : displayedText;
+  const typingCompleteForUi = isTypingComplete || instantLine;
+  const showFightButton = typingCompleteForUi && isLastLine && interactionType === 'BATTLE';
 
   return (
     <Animated.View
@@ -362,8 +391,14 @@ export function DialogueScene({
       exiting={FadeOut}
       style={[StyleSheet.absoluteFill, { zIndex: 9999 }]}
     >
-      <View style={[styles.container, !backgroundUrl && styles.containerTransparent]}>
-        {!!backgroundUrl && (
+      <View
+        style={[
+          styles.container,
+          !usePhotoBackground && !useOpaqueBackdrop && styles.containerTransparent,
+          useOpaqueBackdrop && { backgroundColor: opaqueBackdropColor },
+        ]}
+      >
+        {usePhotoBackground && (
           <>
             <Image
               source={backgroundUrl}
@@ -372,6 +407,14 @@ export function DialogueScene({
             />
             <BlurView intensity={30} style={StyleSheet.absoluteFill} tint="dark" />
           </>
+        )}
+
+        {/* Soft glass behind large NPC when using navy post-run backdrop (not flat solid). */}
+        {!!npcSpriteUrl && useOpaqueBackdrop && (
+          <View style={styles.npcSoftBackdrop} pointerEvents="none">
+            <BlurView intensity={32} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={[StyleSheet.absoluteFill, styles.npcSoftBackdropTint]} />
+          </View>
         )}
 
         {/* NPC Sprite (Large Background) */}
@@ -406,7 +449,7 @@ export function DialogueScene({
         )}
 
         {/* Skip Button (Top Right) */}
-        <View style={styles.header}>
+        <View style={[styles.header, { zIndex: 200 }]}>
           <TouchableOpacity onPress={skipDialogue} style={styles.skipBtnTop}>
             <Text style={styles.skipTextTop}>SKIP</Text><FastForward color="rgba(255,255,255,0.7)" size={14} />
           </TouchableOpacity>
@@ -448,54 +491,71 @@ export function DialogueScene({
                   )}
                   
                   {/* Typewriter Text */}
-                  <ScrollView 
-                    style={styles.contentArea}
+                  <ScrollView
+                    style={[
+                      styles.contentArea,
+                      compactActionButtons && styles.contentAreaWhenCompactActions,
+                    ]}
                     contentContainerStyle={styles.scrollContent}
                     showsVerticalScrollIndicator={true}
                     keyboardShouldPersistTaps="handled"
                   >
-                    <Text style={styles.dialogueText}>{displayedText}</Text>
+                    <Text style={styles.dialogueText}>{textToShow}</Text>
                   </ScrollView>
-                  
-                  {/* Action Buttons - Outside ScrollView so they're always visible */}
-                  {isTypingComplete && isLastLine && actionButtons.length > 0 && (
-                    <View style={styles.actionButtonsRow}>
-                      {actionButtons.map((btn, idx) => (
-                        <TouchableOpacity
-                          key={idx}
-                          style={styles.actionBtn}
-                          onPress={() => onAction?.(btn.target_event, btn.payload)}
-                        >
-                          <Text style={styles.actionBtnText}>
-                            {btn.label || btn.target_event.replace('_', ' ')}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
                 </View>
               </View>
+
+              {/* Full-width row below portrait+text so buttons are not clipped */}
+              {typingCompleteForUi && isLastLine && actionButtons.length > 0 && (
+                <View
+                  style={[
+                    styles.actionButtonsRowFull,
+                    compactActionButtons && styles.actionButtonsRowFullCompact,
+                  ]}
+                >
+                  {actionButtons.map((btn, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={[
+                        styles.actionBtn,
+                        styles.actionBtnInRow,
+                        compactActionButtons && styles.actionBtnCompact,
+                      ]}
+                      onPress={() => onAction?.(btn.target_event, btn.payload)}
+                    >
+                      <Text
+                        style={[
+                          styles.actionBtnText,
+                          compactActionButtons && styles.actionBtnTextCompact,
+                        ]}
+                      >
+                        {btn.label || btn.target_event.replace('_', ' ')}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
 
               {/* Controls */}
               <View style={styles.footer}>
                 <View style={{ flex: 1 }} />
-                
-                {/* Always show button when not on last line, or when on last line (even with action buttons) */}
-                <TouchableOpacity
-                  onPress={handleDialogueTap}
-                  style={[styles.nextBtn, showFightButton && styles.battleBtn]}
-                >
-                  <Text style={styles.nextText}>
-                    {!isTypingComplete
-                      ? 'REVEAL'
-                      : isLastLine
-                      ? interactionType === 'BATTLE'
-                        ? 'FIGHT'
-                        : 'CLOSE'
-                      : 'NEXT'}
-                  </Text>
-                  {!showFightButton && <ChevronRight color="white" size={20} />}
-                </TouchableOpacity>
+                {!(isLastLine && actionButtons.length > 0) ? (
+                  <TouchableOpacity
+                    onPress={handleDialogueTap}
+                    style={[styles.nextBtn, showFightButton && styles.battleBtn]}
+                  >
+                    <Text style={styles.nextText}>
+                      {!typingCompleteForUi
+                        ? 'REVEAL'
+                        : isLastLine
+                          ? interactionType === 'BATTLE'
+                            ? 'FIGHT'
+                            : 'CLOSE'
+                          : 'NEXT'}
+                    </Text>
+                    {!showFightButton && <ChevronRight color="white" size={20} />}
+                  </TouchableOpacity>
+                ) : null}
               </View>
 
               {/* Progress Bar */}
@@ -524,6 +584,18 @@ const styles = StyleSheet.create({
   containerTransparent: {
     backgroundColor: 'transparent',
   },
+  npcSoftBackdrop: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: height * 0.14,
+    height: height * 0.65,
+    zIndex: 0,
+    overflow: 'hidden',
+  },
+  npcSoftBackdropTint: {
+    backgroundColor: 'rgba(10, 22, 40, 0.38)',
+  },
   spriteContainer: {
     position: 'absolute',
     left: 0,
@@ -532,6 +604,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     height: height * 0.65,
+    zIndex: 1,
   },
   sprite: {
     width: width,
@@ -571,6 +644,8 @@ const styles = StyleSheet.create({
     right: 0,
     padding: 12,
     paddingBottom: 24, // Safe area buffer
+    zIndex: 100,
+    elevation: 24,
   },
   dialogueBox: {
     minHeight: 180,
@@ -613,6 +688,7 @@ const styles = StyleSheet.create({
   textArea: {
     flex: 1,
     minHeight: 80,
+    minWidth: 0,
   },
   nameTag: {
     backgroundColor: 'rgba(0, 229, 255, 0.2)',
@@ -633,9 +709,14 @@ const styles = StyleSheet.create({
     fontFamily: 'Exo2-Bold',
   },
   contentArea: {
-    flex: 1,
     marginTop: 4,
+    minHeight: 100,
     maxHeight: height * 0.35,
+    alignSelf: 'stretch',
+  },
+  contentAreaWhenCompactActions: {
+    minHeight: 48,
+    maxHeight: height * 0.22,
   },
   scrollContent: {
     flexGrow: 1,
@@ -647,15 +728,23 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     lineHeight: 24,
   },
-  actionButtonsRow: {
+  actionButtonsRowFull: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 12,
-    marginBottom: 8,
-    paddingTop: 8,
+    flexWrap: 'nowrap',
+    alignItems: 'stretch',
+    gap: 8,
+    paddingHorizontal: 16,
+    marginTop: 8,
+    paddingTop: 10,
+    paddingBottom: 6,
     borderTopWidth: 1,
     borderTopColor: 'rgba(0, 229, 255, 0.2)',
+  },
+  actionButtonsRowFullCompact: {
+    gap: 6,
+    marginTop: 4,
+    paddingTop: 8,
+    paddingBottom: 4,
   },
   actionBtn: {
     backgroundColor: 'rgba(0, 229, 255, 0.3)',
@@ -670,12 +759,30 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  actionBtnInRow: {
+    flex: 1,
+    minWidth: 0,
+  },
+  actionBtnCompact: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
+  },
   actionBtnText: {
     color: '#00e5ff',
     fontSize: 14,
     fontWeight: 'bold',
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  actionBtnTextCompact: {
+    fontSize: 11,
+    letterSpacing: 0.2,
+    textAlign: 'center',
   },
   footer: {
     flexDirection: 'row',

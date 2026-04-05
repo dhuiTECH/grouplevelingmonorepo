@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, TouchableOpacity, TextInput, StyleSheet, Platform, useWindowDimensions, Text, Image, Pressable } from 'react-native';
 import Svg, {
   Path,
@@ -20,7 +20,7 @@ import { BattleAssetWarmer } from '@/components/BattleAssetWarmer';
 import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import LayeredAvatar from '@/components/LayeredAvatar';
 import { useAuth } from '@/contexts/AuthContext';
-import { persistBattleRewards } from '@/utils/persistBattleRewards';
+import { claimLoot, type ClaimLootResult } from '@/lib/claimLoot';
 import {
   SYSTEM_WINDOW_FROM,
   SYSTEM_WINDOW_TO,
@@ -74,6 +74,10 @@ export interface VictoryScreenProps {
   rewards?: VictoryReward[];
   /** Dedupes optimistic reward apply across React Strict Mode remounts. */
   rewardApplyKey?: string;
+  /** Encounter UUID — optional override for claim_loot source when no tier. */
+  encounterId?: string;
+  /** Resolved battle tier key, e.g. battle_tier_3 — primary source for claim_loot('battle', ...). */
+  battleLootSourceId?: string;
 }
 
 const appliedVictoryRewardKeys = new Set<string>();
@@ -136,6 +140,8 @@ export function VictoryScreen({
   victoryParty,
   rewards,
   rewardApplyKey,
+  encounterId,
+  battleLootSourceId,
 }: VictoryScreenProps) {
   const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
   const { user, setUser } = useAuth();
@@ -144,25 +150,43 @@ export function VictoryScreen({
   const shouldShowCapture =
     isCatchable && petCaptureState !== 'done' && petCaptureState !== 'skipped';
 
-  useEffect(() => {
+  const [lootClaimError, setLootClaimError] = useState(false);
+  const [lootResult, setLootResult] = useState<ClaimLootResult | null>(null);
+
+  const attemptClaimLoot = useCallback(async () => {
     if (shouldShowCapture || !rewardApplyKey || !user?.id) return;
-    if (appliedVictoryRewardKeys.has(rewardApplyKey)) return;
-    const expGained = player?.expGained ?? 0;
-    const coinsGained = rewards?.find((r) => r.id === 'gold')?.quantity ?? 0;
-    if (expGained === 0 && coinsGained === 0) return;
-    appliedVictoryRewardKeys.add(rewardApplyKey);
-    setUser((prev) =>
-      prev?.id
-        ? {
-            ...prev,
-            exp: (prev.exp ?? 0) + expGained,
-            coins: (prev.coins ?? 0) + coinsGained,
-          }
-        : prev,
-    );
-    void persistBattleRewards(user.id, expGained, coinsGained);
-    // Intentionally omit `rewards` / full `user` from deps: parent recreates `rewards` every render and would retrigger this effect.
-  }, [shouldShowCapture, rewardApplyKey, user?.id, setUser]);
+    if (appliedVictoryRewardKeys.has(rewardApplyKey) && !lootClaimError) return;
+
+    setLootClaimError(false);
+    try {
+      const sourceId = battleLootSourceId ?? encounterId ?? 'default';
+      const result = await claimLoot('battle', sourceId, rewardApplyKey);
+      setLootResult(result);
+
+      if (result.ok) {
+        appliedVictoryRewardKeys.add(rewardApplyKey);
+        setUser((prev) =>
+          prev?.id
+            ? {
+                ...prev,
+                exp: result.exp_total ?? prev.exp ?? 0,
+                coins: result.coins_total ?? prev.coins ?? 0,
+                gems: result.gems_total ?? prev.gems ?? 0,
+              }
+            : prev,
+        );
+        setLootClaimError(false);
+      } else {
+        setLootClaimError(true);
+      }
+    } catch {
+      setLootClaimError(true);
+    }
+  }, [shouldShowCapture, rewardApplyKey, user?.id, encounterId, battleLootSourceId, setUser, lootClaimError]);
+
+  useEffect(() => {
+    void attemptClaimLoot();
+  }, [attemptClaimLoot]);
 
   // --- Pet Capture View ---
   if (shouldShowCapture) {
@@ -235,7 +259,13 @@ export function VictoryScreen({
   };
 
   const partyList = victoryParty || [];
-  const rewardsList = rewards || [];
+  const rewardsList: VictoryReward[] = lootResult?.ok
+    ? [
+        ...(lootResult.coins_delta ? [{ id: 'gold', quantity: lootResult.coins_delta, imageUri: 'https://img.icons8.com/color/96/gold-bars.png', rarityColor: '#fbbf24' }] : []),
+        ...(lootResult.exp_delta ? [{ id: 'exp', quantity: lootResult.exp_delta, imageUri: 'https://img.icons8.com/color/96/experience-skill.png', rarityColor: '#3b82f6' }] : []),
+        ...(lootResult.gems_delta ? [{ id: 'gems', quantity: lootResult.gems_delta, imageUri: 'https://img.icons8.com/color/96/diamond.png', rarityColor: '#a855f7' }] : []),
+      ]
+    : (rewards || []);
   
   const totalExp = playerStats.currentExp + playerStats.expGained;
   const expPercent = Math.min(1, totalExp / (playerStats.maxExp || 100));
@@ -384,6 +414,17 @@ export function VictoryScreen({
                 ))}
               </View>
             </View>
+
+            {/* Retry banner — shown when claim_loot fails (offline / dead zone) */}
+            {lootClaimError && (
+              <TouchableOpacity
+                style={[styles.confirmButton, { backgroundColor: '#ef4444', marginBottom: 8 }]}
+                onPress={attemptClaimLoot}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.confirmButtonText}>RETRY CLAIM</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Footer Button */}
             <TouchableOpacity style={styles.confirmButton} onPress={onReturnToMap} activeOpacity={0.8}>

@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { Plus, Sparkles, Search, X, Edit, Copy, Trash2, Eye, EyeOff, Star } from 'lucide-react';
+import { Plus, Search, X, Edit, Copy, Trash2, Eye, EyeOff, Star, User } from 'lucide-react';
 import { AddShopItem } from '@/components';
 import AddShopItemForm from './AddShopItemForm';
+import AvatarBuilderTab from '@/components/admin/AvatarBuilderTab';
+
+type ShopSubTab = 'items' | 'avatar_builder';
 
 interface ShopTabProps {
   shopItems: any[];
@@ -44,6 +47,7 @@ export default function ShopTab({
   onCopyShopItem,
   onEditShopItem
 }: ShopTabProps) {
+  const [shopSubTab, setShopSubTab] = useState<ShopSubTab>('items');
   const [searchQuery, setSearchQuery] = useState('');
   const [genderFilter, setGenderFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -97,11 +101,45 @@ export default function ShopTab({
 
   return (
     <section>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4 border-b border-slate-800 pb-4 mb-6">
+        <h2 className="text-lg font-black uppercase tracking-widest text-red-400 flex items-center gap-2 shrink-0">
+          <Plus size={22} /> Shop
+        </h2>
+        <div className="flex flex-wrap gap-2 bg-black p-1 rounded-lg border border-slate-700">
+          <button
+            type="button"
+            onClick={() => setShopSubTab('items')}
+            className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all ${
+              shopSubTab === 'items'
+                ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/20'
+                : 'text-gray-500 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Items
+          </button>
+          <button
+            type="button"
+            onClick={() => setShopSubTab('avatar_builder')}
+            className={`px-4 py-2 rounded text-xs font-bold uppercase transition-all flex items-center gap-1.5 ${
+              shopSubTab === 'avatar_builder'
+                ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/20'
+                : 'text-gray-500 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <User size={14} className="opacity-80" /> Avatar Builder
+          </button>
+        </div>
+      </div>
+
+      {shopSubTab === 'avatar_builder' && <AvatarBuilderTab shopItems={shopItems} />}
+
+      {shopSubTab === 'items' && (
+        <>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-black uppercase tracking-widest text-red-400 flex items-center gap-2">
-            <Plus size={22} /> Shop Management
-          </h2>
+          <h3 className="text-sm font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
+            Shop Management
+          </h3>
           <p className="text-[10px] text-gray-500 uppercase font-bold tracking-tighter">
             Total: {shopItems.length} | Showing: {filteredItems.length}
           </p>
@@ -434,6 +472,8 @@ export default function ShopTab({
           ))
         )}
       </div>
+        </>
+      )}
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -13,6 +13,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native';
 import { MotiView } from 'moti';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,6 +39,16 @@ import WeeklyFeedbackModal from '@/components/modals/WeeklyFeedbackModal';
 import { api as trainingApi } from '@/api/training';
 import { useWeeklyReset } from '@/hooks/useWeeklyReset';
 import { ChestOpeningModal } from '@/components/modals/ChestOpeningModal';
+import { DialogueScene, DIALOGUE_OPAQUE_NAVY, type DialogueLine } from '@/components/DialogueScene';
+import { CoinFlipOverlay, type CoinFlipState } from '@/components/CoinFlipOverlay';
+import { rollBaseChestTier, type ChestTier } from '@/screens/runCompleteChestRng';
+import {
+  grimbleOfferLines,
+  grimbleResultLines,
+  GRIMBLE_WAGER_ACTIONS,
+  GRIMBLE_WAGER_GOLD,
+} from '@/screens/grimbleWagerDialogue';
+import { callWagerRunChestFlip } from '@/lib/wagerRunChestFlip';
 import { LevelUpModal } from '@/components/modals/LevelUpModal';
 import { InviteFriendsModal } from '@/components/modals/InviteFriendsModal';
 import { supabase } from '@/lib/supabase';
@@ -67,6 +78,17 @@ const HomeScreen: React.FC = () => {
   const [gateRadarPartyModalVisible, setGateRadarPartyModalVisible] = useState(false);
   const [importDebugLoading, setImportDebugLoading] = useState(false);
 
+  /** Debug: Grimble wager + chest (same RPCs as Run Complete) */
+  const [showGrimbleDialogue, setShowGrimbleDialogue] = useState(false);
+  const [grimbleScript, setGrimbleScript] = useState<DialogueLine[]>([]);
+  const [grimbleOfferMode, setGrimbleOfferMode] = useState(true);
+  const [grimbleOutcomeTier, setGrimbleOutcomeTier] = useState<ChestTier | null>(null);
+  const [flipState, setFlipState] = useState<CoinFlipState>('hidden');
+  const flipResultRef = useRef<{ won: boolean; finalTier: ChestTier } | null>(null);
+  const [grimblePendingBase, setGrimblePendingBase] = useState<ChestTier | null>(null);
+  const [showGrimbleChest, setShowGrimbleChest] = useState(false);
+  const [grimbleChestType, setGrimbleChestType] = useState<ChestTier>('small');
+
   useEffect(() => {
     if (isResetDue) {
       setShowWeeklyResetModal(true);
@@ -90,6 +112,79 @@ const HomeScreen: React.FC = () => {
   const handleTestChest = () => {
     setShowTestChest(true);
   };
+
+  const handleDebugGrimbleWagerFlow = () => {
+    const base = rollBaseChestTier();
+    if (base === 'large') {
+      setGrimbleChestType('large');
+      setShowGrimbleChest(true);
+      showNotification('Debug: rolled LARGE — no wager (max tier).', 'info');
+      return;
+    }
+    setGrimblePendingBase(base);
+    setGrimbleScript(grimbleOfferLines(base));
+    setGrimbleOfferMode(true);
+    setGrimbleOutcomeTier(null);
+    setShowGrimbleDialogue(true);
+  };
+
+  const handleGrimbleClose = useCallback(() => {
+    setShowGrimbleDialogue(false);
+    const tier = grimbleOutcomeTier ?? grimblePendingBase ?? 'small';
+    setGrimbleChestType(tier);
+    setShowGrimbleChest(true);
+    setGrimblePendingBase(null);
+    setGrimbleOutcomeTier(null);
+    setGrimbleOfferMode(true);
+    setGrimbleScript([]);
+  }, [grimbleOutcomeTier, grimblePendingBase]);
+
+  const handleGrimbleAction = useCallback(
+    async (event: string) => {
+      if (event === 'grimble_pass') {
+        setShowGrimbleDialogue(false);
+        const t = grimblePendingBase ?? 'small';
+        setGrimbleChestType(t);
+        setShowGrimbleChest(true);
+        setGrimblePendingBase(null);
+        setGrimbleOutcomeTier(null);
+        setGrimbleOfferMode(true);
+        setGrimbleScript([]);
+        return;
+      }
+      if (event !== 'grimble_wager') return;
+      const base = grimblePendingBase ?? 'small';
+      const coins = Number(user?.coins ?? 0);
+      if (coins < GRIMBLE_WAGER_GOLD) {
+        showNotification('Need 500 gold', 'error');
+        return;
+      }
+      setFlipState('flipping');
+      try {
+        const [result] = await Promise.all([
+          callWagerRunChestFlip(supabase, base, coins),
+          new Promise((resolve) => setTimeout(resolve, 800)), // Guarantee some spin time
+        ]);
+        if (!result.ok) {
+          showNotification(result.error || 'Wager failed', 'error');
+          setFlipState('hidden');
+          return;
+        }
+        if (result.devFallback) {
+          showNotification('DEV: RPC missing — local flip only (apply migration for real coins).', 'success');
+        }
+        if (user && result.new_coins !== undefined) {
+          setUser({ ...user, coins: result.new_coins });
+        }
+        const finalTier = result.final_chest_type ?? 'small';
+        flipResultRef.current = { won: result.won === true, finalTier };
+        setFlipState(result.won ? 'win' : 'lose');
+      } catch (err) {
+        setFlipState('hidden');
+      }
+    },
+    [grimblePendingBase, user, setUser, showNotification],
+  );
 
   const handleMockExternalImport = useCallback(async () => {
     if (!user?.id) return;
@@ -397,6 +492,13 @@ const HomeScreen: React.FC = () => {
 
           <TouchableOpacity
             style={styles.testLevelUpBtn}
+            onPress={handleDebugGrimbleWagerFlow}
+          >
+            <Text style={styles.testLevelUpBtnText}>[DEBUG] GRIMBLE WAGER + CHEST</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.testLevelUpBtn}
             onPress={() => setShowLevelUpPreview(true)}
           >
             <Text style={styles.testLevelUpBtnText}>[DEBUG] LEVEL UP (full flow)</Text>
@@ -435,6 +537,45 @@ const HomeScreen: React.FC = () => {
         isOpen={showTestChest}
         chestType="medium"
         onAnimationComplete={handleChestComplete}
+      />
+
+      {showGrimbleDialogue && grimbleScript.length > 0 && (
+        <Modal visible={showGrimbleDialogue} transparent animationType="fade">
+          <View style={{ flex: 1 }}>
+            <CoinFlipOverlay
+              flipState={flipState}
+              onComplete={() => {
+                setFlipState('hidden');
+                if (flipResultRef.current) {
+                  const res = flipResultRef.current;
+                  setGrimbleOutcomeTier(res.finalTier);
+                  setGrimbleScript(grimbleResultLines(res.won, res.finalTier));
+                  setGrimbleOfferMode(false);
+                  flipResultRef.current = null;
+                }
+              }}
+            />
+            <DialogueScene
+              visible={showGrimbleDialogue}
+              nodeName="Grimble"
+              opaqueBackdropColor={DIALOGUE_OPAQUE_NAVY}
+              npcSpriteUrl={require('../../assets/shop/Grimble.png')}
+              dialogueScript={grimbleScript}
+              interactionType="DIALOGUE"
+              typingSpeed={0}
+              compactActionButtons
+              actionButtons={grimbleOfferMode ? GRIMBLE_WAGER_ACTIONS : []}
+              onClose={handleGrimbleClose}
+              onAction={handleGrimbleAction}
+            />
+          </View>
+        </Modal>
+      )}
+
+      <ChestOpeningModal
+        isOpen={showGrimbleChest}
+        chestType={grimbleChestType}
+        onAnimationComplete={() => setShowGrimbleChest(false)}
       />
 
       <LevelUpModal

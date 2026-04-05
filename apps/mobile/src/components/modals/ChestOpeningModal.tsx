@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useId } from 'react';
+import React, { useEffect, useState, useRef, useId, useCallback } from 'react';
 import { View, StyleSheet, Image, Text, TouchableWithoutFeedback, Pressable } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -26,6 +26,9 @@ import { BlurView } from 'expo-blur';
 import { Audio } from 'expo-av';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import { SystemWindowHeader, SYSTEM_MECH_GLOW_GRADIENT_COLORS } from '@/components/ui/SystemWindowHeader';
+import { useAuth } from '@/contexts/AuthContext';
+import type { User } from '@/types/user';
+import { claimLoot, type ClaimLootResult } from '@/lib/claimLoot';
 
 // Constants matching the reference layout
 const MODAL_WIDTH = 380;
@@ -50,6 +53,30 @@ const chestImages = {
   large: require('../../../assets/icons/largechestmodal.png'),
 };
 
+const chestImagesOpen = {
+  small: require('../../../assets/icons/smallchestmodalopen.png'),
+  silver: require('../../../assets/icons/silverchestmodalopen.png'),
+  medium: require('../../../assets/icons/mediumchestmodalopen.png'),
+  large: require('../../../assets/icons/largechestmodalopen.png'),
+};
+
+/** Must match `styles.chestImage` — beam narrow end aligns to chest base inside the stack */
+const CHEST_IMAGE_SIZE = 280;
+const BEAM_LEFT_IN_STACK = (CHEST_IMAGE_SIZE - BEAM_CONE_W) / 2;
+/** Lifts cone origin toward the chest opening (sprite) vs. the bottom of the image box */
+const BEAM_BOTTOM_OFFSET = 56;
+
+/** Beam VFX timing (layer stays mounted until `BEAM_LINGER_MS` so loot can reveal sooner) */
+const BEAM_DELAY_MS = 600;
+const BEAM_FADE_IN_MS = 220;
+const BEAM_FADE_OUT_MS = 1600;
+const BEAM_SCALE_UP_MS = 550;
+const BEAM_SCALE_SETTLE_MS = 1400;
+/** After explosion — rewards drop without waiting for the full beam */
+const LOOT_REVEAL_DELAY_MS = 900;
+/** Unmount beam layer after scale + opacity finishes (~2550ms from sequence start) */
+const BEAM_LINGER_MS = 2600;
+
 const rewardIcons = {
   exp: require('../../../assets/expcrystal.png'),
   coin: require('../../../assets/coinicon.png'),
@@ -64,6 +91,8 @@ interface ChestOpeningModalProps {
   isOpen: boolean;
   chestType: 'small' | 'silver' | 'medium' | 'large';
   onAnimationComplete: () => void;
+  /** Unique key per chest event — reused on retry so idempotency holds. */
+  claimIdempotencyKey?: string;
 }
 
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -72,12 +101,20 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
   isOpen,
   chestType,
   onAnimationComplete,
+  claimIdempotencyKey,
 }) => {
   const scanlinePatternId = `chest-scan-${useId().replace(/:/g, '_')}`;
   const beamConeGradId = `chest-beam-cone-${useId().replace(/:/g, '_')}`;
   const [phase, setPhase] = useState<'idle' | 'opening' | 'opened'>('idle');
+  /** Keeps beam mounted after `opened` so long beam VFX can finish without delaying loot */
+  const [beamLayerVisible, setBeamLayerVisible] = useState(false);
   const [sound, setSound] = useState<Audio.Sound>();
   const shakingSoundRef = useRef<Audio.Sound | null>(null);
+  const beamUnmountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { setUser } = useAuth();
+  const [lootResult, setLootResult] = useState<ClaimLootResult | null>(null);
+  const [lootError, setLootError] = useState(false);
 
   // Phase as shared value so worklets can read it (React state not available on UI thread)
   const phaseShared = useSharedValue(0); // 0=idle, 1=opening, 2=opened
@@ -129,6 +166,13 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     if (isOpen) {
       setPhase('idle');
       phaseShared.value = 0;
+      setBeamLayerVisible(false);
+      setLootResult(null);
+      setLootError(false);
+      if (beamUnmountTimerRef.current) {
+        clearTimeout(beamUnmountTimerRef.current);
+        beamUnmountTimerRef.current = null;
+      }
 
       // Boot Sequence
       bootOpacity.value = 0;
@@ -184,6 +228,11 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
         }
       })();
     } else {
+      if (beamUnmountTimerRef.current) {
+        clearTimeout(beamUnmountTimerRef.current);
+        beamUnmountTimerRef.current = null;
+      }
+      setBeamLayerVisible(false);
       // Stop and cleanup shaking sound
       if (shakingSoundRef.current) {
         shakingSoundRef.current.stopAsync().then(() => shakingSoundRef.current?.unloadAsync());
@@ -196,11 +245,41 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     }
   }, [isOpen]);
 
+  const attemptChestClaim = useCallback(async () => {
+    if (!claimIdempotencyKey) return;
+    setLootError(false);
+    try {
+      const result = await claimLoot('chest', chestType, claimIdempotencyKey);
+      setLootResult(result);
+      if (result.ok) {
+        setUser(((prev: User | null) =>
+          prev?.id
+            ? {
+                ...prev,
+                exp: result.exp_total ?? prev.exp ?? 0,
+                coins: result.coins_total ?? prev.coins ?? 0,
+                gems: result.gems_total ?? prev.gems ?? 0,
+              }
+            : prev) as any,
+        );
+      }
+    } catch {
+      setLootError(true);
+    }
+  }, [claimIdempotencyKey, chestType, setUser]);
+
   const runOpenSequence = async () => {
     if (phase !== 'idle') return;
 
+    void attemptChestClaim();
+
     setPhase('opening');
     phaseShared.value = 1;
+    setBeamLayerVisible(true);
+    if (beamUnmountTimerRef.current) {
+      clearTimeout(beamUnmountTimerRef.current);
+      beamUnmountTimerRef.current = null;
+    }
 
     // Stop shaking sound (was looping until tap to open)
     if (shakingSoundRef.current) {
@@ -275,17 +354,30 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
     shockwaveOpacity.value = withDelay(shockDelay, withSequence(withTiming(1, { duration: 0 }), withTiming(0, { duration: 600 })));
     shockwaveScale.value = withDelay(shockDelay, withTiming(8, { duration: 600, easing: Easing.out(Easing.ease) }));
 
-    // Beam
-    const beamDelay = 600;
-    beamOpacity.value = withDelay(beamDelay, withSequence(withTiming(1, { duration: 100 }), withTiming(0, { duration: 1100 })));
-    beamScaleY.value = withDelay(beamDelay, withSequence(withTiming(1.2, { duration: 300 }), withTiming(1, { duration: 900 })));
+    // Beam — longer ramp/fade; layer unmounts at `BEAM_LINGER_MS` (loot uses `LOOT_REVEAL_DELAY_MS`)
+    beamOpacity.value = withDelay(
+      BEAM_DELAY_MS,
+      withSequence(withTiming(1, { duration: BEAM_FADE_IN_MS }), withTiming(0, { duration: BEAM_FADE_OUT_MS }))
+    );
+    beamScaleY.value = withDelay(
+      BEAM_DELAY_MS,
+      withSequence(
+        withTiming(1.2, { duration: BEAM_SCALE_UP_MS, easing: Easing.out(Easing.cubic) }),
+        withTiming(1, { duration: BEAM_SCALE_SETTLE_MS, easing: Easing.inOut(Easing.ease) })
+      )
+    );
 
-    // 3. Loot Reveal (Phase 'opened') - Trigger shortly after explosion
+    beamUnmountTimerRef.current = setTimeout(() => {
+      setBeamLayerVisible(false);
+      beamUnmountTimerRef.current = null;
+    }, BEAM_LINGER_MS);
+
+    // 3. Loot Reveal (Phase 'opened') — snappy; beam continues on its own layer
     setTimeout(() => {
       setPhase('opened');
       phaseShared.value = 2;
       animateLoot();
-    }, 900);
+    }, LOOT_REVEAL_DELAY_MS);
   };
 
   /** No withSpring completion callbacks — chaining animations in callbacks is fragile on Reanimated 4 / native. */
@@ -477,7 +569,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
             {/* HEADER — same chrome as login / signup */}
             <View style={styles.headerContainer}>
                 <SystemWindowHeader
-                  title={phase === 'opened' ? 'CACHE OPENED' : 'CHEST FOUND'}
+                  title={phase === 'opened' ? 'CHEST OPENED' : 'CHEST FOUND'}
                   containerStyle={styles.chestHeaderChrome}
                 />
                 <Text style={styles.subText}>
@@ -488,62 +580,114 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
             {/* LOOT STAGE */}
             <View style={styles.lootStage}>
 
-                {/* Beam — trapezoid cone (narrow at chest, wide above) */}
-                <AnimatedView style={[styles.beam, beamStyle]} pointerEvents="none">
-                  <Svg
-                    width={BEAM_CONE_W}
-                    height={BEAM_CONE_H}
-                    style={StyleSheet.absoluteFill}
-                  >
-                    <Defs>
-                      <SvgLinearGradient
-                        id={beamConeGradId}
-                        x1="0"
-                        y1={BEAM_CONE_H}
-                        x2="0"
-                        y2="0"
-                        gradientUnits="userSpaceOnUse"
+                {/* Beam — own layer so it can outlast the chest while loot reveals at 900ms */}
+                {beamLayerVisible && (
+                  <View style={styles.beamStage} pointerEvents="none">
+                    <AnimatedView style={[styles.beam, beamStyle]}>
+                      <Svg
+                        width={BEAM_CONE_W}
+                        height={BEAM_CONE_H}
+                        style={StyleSheet.absoluteFill}
                       >
-                        <Stop offset="0" stopColor="#ffffff" stopOpacity={0.92} />
-                        <Stop offset="0.1" stopColor="#00e5ff" stopOpacity={0.55} />
-                        <Stop offset="0.42" stopColor="#00e5ff" stopOpacity={0.18} />
-                        <Stop offset="1" stopColor="#00e5ff" stopOpacity={0} />
-                      </SvgLinearGradient>
-                    </Defs>
-                    <Polygon
-                      points={BEAM_CONE_POINTS}
-                      fill={`url(#${beamConeGradId})`}
-                    />
-                  </Svg>
-                </AnimatedView>
-
-                {/* Shockwave */}
-                {phase === 'opening' && (
-                    <AnimatedView style={[styles.shockwave, shockwaveStyle]} />
+                        <Defs>
+                          <SvgLinearGradient
+                            id={beamConeGradId}
+                            x1="0"
+                            y1={BEAM_CONE_H}
+                            x2="0"
+                            y2="0"
+                            gradientUnits="userSpaceOnUse"
+                          >
+                            <Stop offset="0" stopColor="#ffffff" stopOpacity={0.92} />
+                            <Stop offset="0.1" stopColor="#00e5ff" stopOpacity={0.55} />
+                            <Stop offset="0.42" stopColor="#00e5ff" stopOpacity={0.18} />
+                            <Stop offset="1" stopColor="#00e5ff" stopOpacity={0} />
+                          </SvgLinearGradient>
+                        </Defs>
+                        <Polygon
+                          points={BEAM_CONE_POINTS}
+                          fill={`url(#${beamConeGradId})`}
+                        />
+                      </Svg>
+                    </AnimatedView>
+                  </View>
                 )}
 
-                {/* LOOT ITEMS */}
+                {/* Chest + shockwave (beam lives in `beamStage` above) */}
+                {phase !== 'opened' && (
+                  <View style={styles.chestBeamStack}>
+                    {phase === 'opening' && (
+                      <AnimatedView style={[styles.shockwave, shockwaveStyle]} />
+                    )}
+
+                    <TouchableWithoutFeedback onPress={handleOpen}>
+                      <AnimatedView style={[styles.chestContainer, chestStyle]}>
+                        <Image
+                          source={
+                            phase === 'idle'
+                              ? chestImages[chestType]
+                              : chestImagesOpen[chestType]
+                          }
+                          style={styles.chestImage}
+                          resizeMode="contain"
+                        />
+                        <AnimatedView style={[styles.coreBurn, coreBurnStyle]} />
+
+                        {phase === 'idle' && (
+                          <View style={styles.tapToOpenContainer}>
+                            <Text style={styles.tapToOpenText}>TAP TO OPEN</Text>
+                          </View>
+                        )}
+                      </AnimatedView>
+                    </TouchableWithoutFeedback>
+                  </View>
+                )}
+
+                {/* LOOT ITEMS — driven by server result when available */}
                 <View style={styles.lootContainer}>
-                    <LootItem 
-                        style={loot1Style} 
-                        icon={rewardIcons.exp} val="+100" label="EXP" 
-                    />
-                    <LootItem 
-                        style={loot2Style} 
-                        icon={rewardIcons.coin} val="+50" label="COINS" 
-                    />
-                    <LootItem 
-                        style={loot3Style} 
-                        icon={rewardIcons.gems} val="+3" label="GEMS" 
-                    />
-                    <LootItem 
-                        style={loot4Style} 
-                        icon={rewardIcons.weapon} val="+1" label="WEAPON" 
-                    />
+                    {lootResult?.ok ? (
+                      <>
+                        {(lootResult.exp_delta ?? 0) > 0 && (
+                          <LootItem style={loot1Style} icon={rewardIcons.exp} val={`+${lootResult.exp_delta}`} label="EXP" />
+                        )}
+                        {(lootResult.coins_delta ?? 0) > 0 && (
+                          <LootItem style={loot2Style} icon={rewardIcons.coin} val={`+${lootResult.coins_delta}`} label="COINS" />
+                        )}
+                        {(lootResult.gems_delta ?? 0) > 0 && (
+                          <LootItem style={loot3Style} icon={rewardIcons.gems} val={`+${lootResult.gems_delta}`} label="GEMS" />
+                        )}
+                        {(lootResult.items ?? []).length > 0 && (
+                          <LootItem style={loot4Style} icon={rewardIcons.weapon} val={`+${lootResult.items![0].quantity}`} label="ITEM" />
+                        )}
+                        {(lootResult.exp_delta ?? 0) === 0 && (lootResult.coins_delta ?? 0) === 0 && (lootResult.gems_delta ?? 0) === 0 && (lootResult.items ?? []).length === 0 && (
+                          <AnimatedView style={[styles.lootItem, loot1Style]}>
+                            <Text style={styles.lootLabel}>NO ITEMS FOUND</Text>
+                          </AnimatedView>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <LootItem style={loot1Style} icon={rewardIcons.exp} val="..." label="EXP" />
+                        <LootItem style={loot2Style} icon={rewardIcons.coin} val="..." label="COINS" />
+                        <LootItem style={loot3Style} icon={rewardIcons.gems} val="..." label="GEMS" />
+                      </>
+                    )}
                 </View>
 
-                {/* CLAIM BUTTON - only when loot is shown */}
-                {phase === 'opened' && (
+                {/* Retry banner for offline / dead zone failures */}
+                {lootError && phase === 'opened' && (
+                  <View style={styles.claimButtonWrap}>
+                    <Pressable
+                      style={({ pressed }) => [styles.claimButton, pressed && styles.claimButtonPressed, { backgroundColor: '#ef4444' }]}
+                      onPress={attemptChestClaim}
+                    >
+                      <Text style={styles.claimButtonText}>RETRY CLAIM</Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                {/* CLAIM BUTTON - only when loot is shown and no error */}
+                {phase === 'opened' && !lootError && (
                   <View style={styles.claimButtonWrap}>
                     <Pressable
                       style={({ pressed }) => [styles.claimButton, pressed && styles.claimButtonPressed]}
@@ -552,27 +696,6 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
                       <Text style={styles.claimButtonText}>CLAIM</Text>
                     </Pressable>
                   </View>
-                )}
-
-                {/* CHEST */}
-                {phase !== 'opened' && (
-                    <TouchableWithoutFeedback onPress={handleOpen}>
-                        <AnimatedView style={[styles.chestContainer, chestStyle]}>
-                            <Image
-                                source={chestImages[chestType]}
-                                style={styles.chestImage}
-                                resizeMode="contain"
-                            />
-                            {/* Core Burn Overlay */}
-                            <AnimatedView style={[styles.coreBurn, coreBurnStyle]} />
-                            
-                            {phase === 'idle' && (
-                                <View style={styles.tapToOpenContainer}>
-                                    <Text style={styles.tapToOpenText}>TAP TO OPEN</Text>
-                                </View>
-                            )}
-                        </AnimatedView>
-                    </TouchableWithoutFeedback>
                 )}
 
                 {/* Super Flash Overlay */}
@@ -707,12 +830,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 0,
   },
+  /** Same footprint / centering as `chestBeamStack` so the beam stays on the chest after loot appears */
+  beamStage: {
+    position: 'absolute',
+    width: CHEST_IMAGE_SIZE,
+    height: CHEST_IMAGE_SIZE,
+    alignSelf: 'center',
+    top: '50%',
+    marginTop: -CHEST_IMAGE_SIZE / 2,
+    zIndex: 5,
+  },
+  /** Wraps chest + shockwave; beam is rendered in `beamStage` */
+  chestBeamStack: {
+    position: 'relative',
+    width: CHEST_IMAGE_SIZE,
+    height: CHEST_IMAGE_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    zIndex: 25,
+  },
   beam: {
     position: 'absolute',
-    bottom: 40,
+    bottom: BEAM_BOTTOM_OFFSET,
+    left: BEAM_LEFT_IN_STACK,
     width: BEAM_CONE_W,
     height: BEAM_CONE_H,
-    alignSelf: 'center',
     zIndex: 5,
   },
   shockwave: {
@@ -722,6 +865,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 2,
     borderColor: '#fff',
+    left: CHEST_IMAGE_SIZE / 2 - 20,
+    top: CHEST_IMAGE_SIZE / 2 - 20,
+    zIndex: 15,
   },
   superFlash: {
     position: 'absolute',
@@ -731,16 +877,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     zIndex: 50,
   },
-  // Chest – centered in modal
+  // Chest – sits above beam inside chestBeamStack
   chestContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 30,
-    marginTop: -20,
   },
   chestImage: {
-    width: 280,
-    height: 280,
+    width: CHEST_IMAGE_SIZE,
+    height: CHEST_IMAGE_SIZE,
     shadowColor: '#00e5ff',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.4,

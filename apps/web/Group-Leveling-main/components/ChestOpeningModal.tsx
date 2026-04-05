@@ -11,13 +11,20 @@ interface ChestOpeningModalProps {
 export default function ChestOpeningModal({ isOpen, chestType, onAnimationComplete }: ChestOpeningModalProps) {
   const [phase, setPhase] = useState<'idle' | 'shaking' | 'exploding'>('idle');
 
-  // Map your specific file names to the types
-  const chestImage = {
+  const chestImagesClosed: Record<typeof chestType, string> = {
     small: '/icons/smallchestmodal.png',
     silver: '/icons/silverchestmodal.png',
     medium: '/icons/mediumchestmodal.png',
-    large: '/icons/largechestmodal.png'
-  }[chestType];
+    large: '/icons/largechestmodal.png',
+  };
+  const chestImagesOpen: Record<typeof chestType, string> = {
+    small: '/icons/smallchestmodalopen.png',
+    silver: '/icons/silverchestmodalopen.png',
+    medium: '/icons/mediumchestmodalopen.png',
+    large: '/icons/largechestmodalopen.png',
+  };
+  const chestImage =
+    phase === 'exploding' ? chestImagesOpen[chestType] : chestImagesClosed[chestType];
 
   useEffect(() => {
     if (isOpen) {

@@ -16,10 +16,24 @@ export interface AdminAuthResult {
   }
 }
 
+/** Requires `profiles.is_admin === true` for the given auth user id (service role). */
+export async function profileIsAdmin(authUserId: string): Promise<boolean> {
+  if (!supabaseAdmin) return false
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('is_admin')
+    .eq('id', authUserId)
+    .maybeSingle()
+  if (error) {
+    console.error('[admin-auth] profileIsAdmin:', error.message)
+    return false
+  }
+  return data?.is_admin === true
+}
+
 /**
- * Verifies that the current user is authenticated AND is an admin.
- * This checks both Supabase Auth AND the is_admin field in public.users.
- * 
+ * Verifies that the current user is authenticated AND has `profiles.is_admin`.
+ *
  * Use this in all admin API routes to properly secure them.
  */
 export async function verifyAdminAuth(request?: Request | NextRequest): Promise<AdminAuthResult> {
@@ -36,11 +50,17 @@ export async function verifyAdminAuth(request?: Request | NextRequest): Promise<
     const authHeader = request.headers.get('Authorization')
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1]
-      // Use supabaseAdmin to verify the token (it can verify JWTs)
       const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
-      
+
       if (!error && user) {
-        console.log('✅ Admin verified via Authorization Header:', user.email)
+        const isAdmin = await profileIsAdmin(user.id)
+        if (!isAdmin) {
+          return {
+            authorized: false,
+            error: 'Forbidden — admin privileges required',
+            status: 403
+          }
+        }
         return {
           authorized: true,
           user: {
@@ -147,8 +167,16 @@ export async function verifyAdminAuth(request?: Request | NextRequest): Promise<
     }
   }
 
-  // If authenticated via Supabase Auth, grant admin access
-  console.log('✅ Admin verified via Supabase Auth:', authUser.email)
+  const isAdmin = await profileIsAdmin(authUser.id)
+  if (!isAdmin) {
+    return {
+      authorized: false,
+      error: 'Forbidden — admin privileges required',
+      status: 403
+    }
+  }
+
+  console.log('✅ Admin verified (profiles.is_admin):', authUser.email)
   return {
     authorized: true,
     user: {
