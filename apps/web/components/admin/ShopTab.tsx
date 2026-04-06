@@ -51,6 +51,17 @@ export default function ShopTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [genderFilter, setGenderFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  /** 'all' | 'unrestricted' | Assassin | Fighter | ... */
+  const [classFilter, setClassFilter] = useState<string>('all');
+
+  const classReqOptions = [
+    'Assassin',
+    'Fighter',
+    'Mage',
+    'Tanker',
+    'Ranger',
+    'Healer'
+  ] as const;
 
   const filteredItems = shopItems
     .filter(item => {
@@ -71,6 +82,17 @@ export default function ShopTab({
           : [rawGender.toLowerCase()];
         
         if (!genders.includes(genderFilter) && !genders.includes('unisex')) return false;
+      }
+
+      // Apply class requirement filter (matches AddShopItemForm class_req options)
+      if (classFilter !== 'all') {
+        const req = item.class_req;
+        const isUnrestricted = req == null || req === '' || String(req).toLowerCase() === 'all';
+        if (classFilter === 'unrestricted') {
+          if (!isUnrestricted) return false;
+        } else if (String(req || '') !== classFilter) {
+          return false;
+        }
       }
 
       // Apply status filter
@@ -272,6 +294,49 @@ export default function ShopTab({
 
         <div className="w-px h-10 bg-gray-800 self-end mb-1 hidden md:block" />
 
+        <div className="flex flex-col gap-2 flex-1 min-w-0">
+          <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 ml-1">Class</span>
+          <div className="flex flex-wrap gap-1">
+            {[
+              {
+                value: 'all',
+                label: 'All',
+                count: shopItems.length
+              },
+              {
+                value: 'unrestricted',
+                label: 'All classes',
+                count: shopItems.filter(
+                  (item) =>
+                    item.class_req == null ||
+                    item.class_req === '' ||
+                    String(item.class_req).toLowerCase() === 'all'
+                ).length
+              },
+              ...classReqOptions.map((cls) => ({
+                value: cls,
+                label: cls,
+                count: shopItems.filter((item) => item.class_req === cls).length
+              }))
+            ].map(({ value, label, count }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setClassFilter(value)}
+                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
+                  classFilter === value
+                    ? 'bg-violet-600 text-white shadow-[0_0_10px_rgba(124,58,237,0.35)]'
+                    : 'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white'
+                }`}
+              >
+                {label} ({count})
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="w-px h-10 bg-gray-800 self-end mb-1 hidden lg:block" />
+
         <div className="flex flex-col gap-2">
           <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 ml-1">Status Filter</span>
           <div className="flex gap-1">
@@ -418,6 +483,14 @@ export default function ShopTab({
                     <div className="flex justify-between items-center text-gray-400 bg-gray-800/50 p-1 rounded">
                       <span className="font-bold">Gender</span>
                       <span className="text-pink-400">{Array.isArray(item.gender) ? item.gender.join('/') : (item.gender || 'unisex')}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-400 bg-gray-800/50 p-1 rounded">
+                      <span className="font-bold">Class</span>
+                      <span className="text-violet-300 font-black">
+                        {!item.class_req || String(item.class_req).toLowerCase() === 'all'
+                          ? 'All classes'
+                          : String(item.class_req)}
+                      </span>
                     </div>
                     {item.bonus_type && (
                       <div className="flex justify-between items-center text-gray-400 bg-gray-800/50 p-1 rounded border border-green-900/30">
