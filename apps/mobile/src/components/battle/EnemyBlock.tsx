@@ -8,13 +8,12 @@ import { COLORS } from './battleTheme';
 import { useBattleStore } from '@/store/useBattleStore';
 import { BattleDeathDisintegrate } from './BattleDeathDisintegrate';
 
-/** Layout reference; icon + spritesheet enemies share the same rendered sprite size. */
+/** Layout reference; used as min slot size and for icon_url-only enemies. */
 const ENEMY_REFERENCE = 290;
 const ENEMY_ICON_SIZE = Math.round(ENEMY_REFERENCE * 0.82);
 /**
- * BattleEnemyAvatar applies a 0.8 internal scale to its sprites, so the
- * effective rendered size is ENEMY_SPRITE_SIZE * 0.8. ENEMY_IMAGE_SIZE matches
- * that effective size so icon_url and metadata enemies appear the same height.
+ * Metadata-driven enemies use `pixelSizeMode="oneToOne"` (source pixels = layout points).
+ * icon_url-only enemies use ENEMY_IMAGE_SIZE with contain fit.
  */
 const ENEMY_SPRITE_SIZE = ENEMY_ICON_SIZE;
 const ENEMY_IMAGE_SIZE = Math.round(ENEMY_ICON_SIZE * 0.8);
@@ -90,7 +89,7 @@ export const EnemyBlock = React.memo(function EnemyBlock({
       <View style={styles.enemySection}>
         <View style={styles.enemyHeader}>
           <Text style={styles.enemyName}>{enemy?.name || 'MIMIC'}</Text>
-          <Text style={styles.enemyLevel}>Lv. {enemy?.level || 45}</Text>
+          <Text style={styles.enemyLevel}>Lv. {enemy?.level ?? 1}</Text>
         </View>
         <EnemyHPBar
           hpPercentage={Math.max(0, (visualEnemyHp / (enemy?.maxHP || 1)) * 100)}
@@ -127,6 +126,7 @@ export const EnemyBlock = React.memo(function EnemyBlock({
               <BattleEnemyAvatar
                 petDetails={enemy}
                 size={ENEMY_SPRITE_SIZE}
+                pixelSizeMode="oneToOne"
                 action={action}
                 onEnterComplete={onEnterComplete}
               />
@@ -192,18 +192,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    width: ENEMY_FIGURE_BOX,
+    minWidth: ENEMY_FIGURE_BOX,
     minHeight: ENEMY_FIGURE_BOX,
   },
   enemyCaptureOnly: {
-    width: ENEMY_FIGURE_BOX,
-    height: ENEMY_FIGURE_BOX,
     alignItems: 'center',
     justifyContent: 'center',
   },
   enemyFigure: {
-    width: ENEMY_FIGURE_BOX,
-    height: ENEMY_FIGURE_BOX,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',

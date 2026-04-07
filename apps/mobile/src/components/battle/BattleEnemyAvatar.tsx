@@ -1,7 +1,14 @@
-import React, { useMemo } from 'react';
-import { View, ViewStyle } from 'react-native';
-import { getPetSpriteSource, getPetSpriteConfig } from '@/utils/pet-sprites';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Image, View, ViewStyle } from 'react-native';
+import {
+  getPetSpriteConfig,
+  getPetSpriteSource,
+  getSpriteFrameDimensionsFromMetadata,
+} from '@/utils/pet-sprites';
 import { BattleEnemySprite } from './BattleEnemySprite';
+
+/** Multiplier on source pixel size for `oneToOne` battle sprites (layout points per source pixel). */
+const ONE_TO_ONE_DISPLAY_SCALE = 0.4;
 
 function toStringOrNull(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -9,10 +16,17 @@ function toStringOrNull(value: unknown): string | null {
   return s ? s : null;
 }
 
+export type PixelSizeMode = 'normalized' | 'oneToOne';
+
 export interface BattleEnemyAvatarProps {
   petDetails?: any;
   size?: number;
   style?: ViewStyle;
+  /**
+   * `oneToOne`: each source pixel maps to `ONE_TO_ONE_DISPLAY_SCALE` layout points.
+   * `normalized`: legacy behavior — sprite is scaled to `size` with 0.8 factor.
+   */
+  pixelSizeMode?: PixelSizeMode;
   /** Battle enemy uses idle + enter only; `walk` is treated as idle. */
   action?: 'idle' | 'walk' | 'enter';
   onEnterComplete?: () => void;
@@ -26,6 +40,7 @@ export function BattleEnemyAvatar({
   petDetails,
   size = 64,
   style,
+  pixelSizeMode = 'oneToOne',
   action = 'idle',
   onEnterComplete,
 }: BattleEnemyAvatarProps) {
@@ -40,7 +55,6 @@ export function BattleEnemyAvatar({
     const spriteSheetUrl =
       toStringOrNull(visuals?.spritesheet?.url) ?? toStringOrNull(visuals?.spritesheet_url);
 
-    // Match OptimizedPetAvatar with spritesheetType === 'monster'
     if (monsterUrl || spriteSheetUrl) {
       return monsterUrl ?? spriteSheetUrl!;
     }
@@ -53,6 +67,33 @@ export function BattleEnemyAvatar({
   }, [petDetails]);
 
   const spriteConfig = useMemo(() => getPetSpriteConfig(petDetails), [petDetails]);
+  const metaFrameDims = useMemo(
+    () => getSpriteFrameDimensionsFromMetadata(petDetails),
+    [petDetails]
+  );
+
+  const [intrinsicFrame, setIntrinsicFrame] = useState<{ w: number; h: number } | null>(null);
+  const [intrinsicFailed, setIntrinsicFailed] = useState(false);
+
+  useEffect(() => {
+    setIntrinsicFrame(null);
+    setIntrinsicFailed(false);
+  }, [imageUrl]);
+
+  useEffect(() => {
+    if (pixelSizeMode !== 'oneToOne') return;
+    if (!imageUrl) return;
+    if (spriteConfig || metaFrameDims) return;
+
+    Image.getSize(
+      imageUrl,
+      (w, h) => {
+        if (w > 0 && h > 0) setIntrinsicFrame({ w, h });
+        else setIntrinsicFailed(true);
+      },
+      () => setIntrinsicFailed(true)
+    );
+  }, [pixelSizeMode, imageUrl, spriteConfig, metaFrameDims]);
 
   const { totalFrames, durationMs, frameWidth, frameHeight, idleIndex } = useMemo(() => {
     if (spriteConfig) {
@@ -70,6 +111,27 @@ export function BattleEnemyAvatar({
       };
     }
 
+    if (pixelSizeMode === 'oneToOne') {
+      if (metaFrameDims) {
+        return {
+          totalFrames: 1,
+          durationMs: 1000,
+          frameWidth: metaFrameDims.frameWidth,
+          frameHeight: metaFrameDims.frameHeight,
+          idleIndex: 0,
+        };
+      }
+      if (intrinsicFrame) {
+        return {
+          totalFrames: 1,
+          durationMs: 1000,
+          frameWidth: intrinsicFrame.w,
+          frameHeight: intrinsicFrame.h,
+          idleIndex: 0,
+        };
+      }
+    }
+
     return {
       totalFrames: 1,
       durationMs: 1000,
@@ -77,15 +139,36 @@ export function BattleEnemyAvatar({
       frameHeight: safeSize,
       idleIndex: 0,
     };
-  }, [spriteConfig, safeSize]);
+  }, [spriteConfig, pixelSizeMode, metaFrameDims, intrinsicFrame, safeSize]);
+
+  const isOneToOneLoading =
+    pixelSizeMode === 'oneToOne' &&
+    !spriteConfig &&
+    !metaFrameDims &&
+    !intrinsicFrame &&
+    !intrinsicFailed &&
+    !!imageUrl;
+
+  const useNormalizedFallback =
+    pixelSizeMode === 'normalized' ||
+    (pixelSizeMode === 'oneToOne' &&
+      !spriteConfig &&
+      !metaFrameDims &&
+      !intrinsicFrame &&
+      (intrinsicFailed || !imageUrl));
 
   const maxDim = Math.max(frameWidth, frameHeight);
-  const scale = (safeSize * 0.8) / maxDim;
+  const scale = useNormalizedFallback
+    ? (safeSize * 0.8) / maxDim
+    : ONE_TO_ONE_DISPLAY_SCALE;
+
+  const boxW = useNormalizedFallback ? safeSize : Math.round(frameWidth * scale);
+  const boxH = useNormalizedFallback ? safeSize : Math.round(frameHeight * scale);
 
   const wrapperStyle = [
     {
-      width: safeSize,
-      height: safeSize,
+      width: boxW,
+      height: boxH,
       borderRadius: 0,
       alignItems: 'center' as const,
       justifyContent: 'center' as const,
@@ -100,6 +183,28 @@ export function BattleEnemyAvatar({
     return <View style={[wrapperStyle, { backgroundColor: 'rgba(148, 163, 184, 0.12)' }]} />;
   }
 
+  if (isOneToOneLoading) {
+    const placeholder = Math.max(1, Math.round(safeSize * ONE_TO_ONE_DISPLAY_SCALE));
+    return (
+      <View
+        style={[
+          {
+            width: placeholder,
+            height: placeholder,
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+          style,
+        ]}
+      />
+    );
+  }
+
+  const spriteW = Math.round(frameWidth * scale);
+  const spriteH = Math.round(frameHeight * scale);
+  const leftOffset = useNormalizedFallback ? (safeSize - spriteW) / 2 + safeSize * 0.05 : 0;
+  const topOffset = useNormalizedFallback ? (safeSize - spriteH) / 2 : 0;
+
   return (
     <View style={wrapperStyle}>
       <BattleEnemySprite
@@ -111,11 +216,12 @@ export function BattleEnemyAvatar({
         frameWidth={frameWidth}
         frameHeight={frameHeight}
         scale={scale}
+        pixelPerfect={pixelSizeMode === 'oneToOne' && !useNormalizedFallback}
         onEnterComplete={onEnterComplete}
         style={{
           position: 'absolute',
-          left: (safeSize - Math.round(frameWidth * scale)) / 2 + safeSize * 0.05,
-          top: (safeSize - Math.round(frameHeight * scale)) / 2,
+          left: leftOffset,
+          top: topOffset,
         }}
       />
     </View>

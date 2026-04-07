@@ -106,3 +106,42 @@ export function getPetSpriteConfig(petDetails: any): PetSpriteConfig | null {
     frameHeight: Math.max(1, Math.floor(frameHeight)),
   };
 }
+
+/**
+ * Frame width/height for rendering, including single-frame static sprites
+ * (getPetSpriteConfig returns null when frame_count ≤ 1).
+ * Used for 1:1 pixel-accurate battle sprites.
+ */
+export function getSpriteFrameDimensionsFromMetadata(
+  petDetails: any
+): { frameWidth: number; frameHeight: number } | null {
+  const cfg = getPetSpriteConfig(petDetails);
+  if (cfg) {
+    return { frameWidth: cfg.frameWidth, frameHeight: cfg.frameHeight };
+  }
+
+  const metadata = petDetails?.metadata;
+  const visualsSheet = metadata?.visuals?.spritesheet;
+  if (visualsSheet && typeof visualsSheet === 'object') {
+    const w = toNumber((visualsSheet as any).frame_width);
+    const h = toNumber((visualsSheet as any).frame_height);
+    if (w != null && h != null && w > 0 && h > 0) {
+      return { frameWidth: Math.floor(w), frameHeight: Math.floor(h) };
+    }
+  }
+
+  if (metadata && typeof metadata === 'object') {
+    const animCfg = (metadata as any).animation_config;
+    if (animCfg && typeof animCfg === 'object') {
+      const w =
+        toNumber((animCfg as any).frame_width) ?? toNumber((animCfg as any).frameWidth);
+      const h =
+        toNumber((animCfg as any).frame_height) ?? toNumber((animCfg as any).frameHeight);
+      if (w != null && h != null && w > 0 && h > 0) {
+        return { frameWidth: Math.floor(w), frameHeight: Math.floor(h) };
+      }
+    }
+  }
+
+  return null;
+}

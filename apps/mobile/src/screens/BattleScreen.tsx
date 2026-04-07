@@ -1,5 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { View, Animated, SafeAreaView, StatusBar, StyleSheet, InteractionManager } from 'react-native';
+import {
+  View,
+  Animated,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  InteractionManager,
+  Dimensions,
+  Alert,
+  type ImageSourcePropType,
+} from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -15,7 +26,13 @@ import BossWarningOverlay from '@/components/BossWarningOverlay';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTransition } from '@/context/TransitionContext';
 import { supabase } from '@/lib/supabase';
-import { getCaptureItemCount, findOneCaptureCosmetic, isCaptureItem } from '@/utils/captureItem';
+import {
+  getCaptureItemCount,
+  findOneCaptureCosmetic,
+  isCaptureItem,
+  getCaptureToolEffect,
+  rollCaptureSuccess,
+} from '@/utils/captureItem';
 import type { UserCosmetic } from '@/types/user';
 import { COLORS, BATTLE_INVENTORY_SLOTS, BATTLE_TAP_TO_CONFIRM_KEY, MELEE_IMPACT_ENTRY_DELAY_MS } from '@/components/battle/battleTheme';
 import { DEATH_DISINTEGRATION_MS } from '@/components/battle/battleDeathOutro';
@@ -32,6 +49,8 @@ import { VictoryScreen } from '@/components/battle/VictoryScreen';
 import { DefeatModal } from '@/components/modals/DefeatModal';
 import { BattleSettingsModal } from '@/components/battle/BattleSettingsModal';
 import { BattleInventoryModal } from '@/components/battle/BattleInventoryModal';
+import { CaptureNetSwingOverlay } from '@/components/battle/CaptureNetSwingOverlay';
+import { useBattleStore } from '@/store/useBattleStore';
 import { BattleEffectsLayer } from '@/components/battle/vfx/BattleEffectsLayer';
 import { DamageNumberLayer } from '@/components/battle/vfx/DamageNumberLayer';
 import { ImpactEffects } from '@/components/battle/ImpactEffects';
@@ -45,6 +64,8 @@ export default function BattleScreen() {
   const route = useRoute<any>();
   const { encounterId, raidId, isBoss, mapId } = route.params || {};
   const { user, setUser } = useAuth();
+  const userRef = useRef(user);
+  userRef.current = user;
   const { isTransitioning } = useTransition();
   const { isMuted, setMuted, stopBackgroundMusic, playTrack } = useAudio();
 
@@ -147,6 +168,12 @@ export default function BattleScreen() {
   const [petCaptureError, setPetCaptureError] = useState<string | null>(null);
   /** True when the player used a capture item during battle (item already consumed; victory screen is for naming only). */
   const [capturedDuringBattle, setCapturedDuringBattle] = useState(false);
+  const pendingCaptureRef = useRef<UserCosmetic | null>(null);
+  const captureTargetRef = useRef({ x: 200, y: 260 });
+  const [netSwingVisible, setNetSwingVisible] = useState(false);
+  const [netSwingSource, setNetSwingSource] = useState<ImageSourcePropType>(
+    () => require('../../assets/exclamation.png'),
+  );
   /** Stable id for one victory reward apply (Strict Mode / remount safe). */
   const [victoryRewardApplyKey, setVictoryRewardApplyKey] = useState<string | null>(null);
 
@@ -380,50 +407,93 @@ export default function BattleScreen() {
   const handlePetEnterComplete = useCallback(() => setPetAction('idle'), []);
   const handleBossWarningComplete = useCallback(() => setShowWarning(false), []);
 
-  /** Use an item from battle inventory. Capture items: consume one and end battle with victory (then show naming screen). */
-  const handleUseBattleItem = useCallback(
-    async (cosmetic: UserCosmetic) => {
-      if (!user || !enemy) return;
-      if (isCaptureItem(cosmetic.shop_items) && enemy?.metadata?.catchable) {
-        const toConsume = user.cosmetics?.find((c) => c.id === cosmetic.id);
+  /** After net swing animation: RNG capture, consume net, victory or continue fight. */
+  const handleNetSwingComplete = useCallback(() => {
+    setNetSwingVisible(false);
+    const cosmetic = pendingCaptureRef.current;
+    pendingCaptureRef.current = null;
+    const u = userRef.current;
+    if (!cosmetic || !u?.id) return;
+    const foe = useBattleStore.getState().enemy;
+    if (!foe?.metadata?.catchable) return;
+    const hp = typeof foe.hp === 'number' ? foe.hp : 0;
+    const maxHp = Math.max(1, typeof foe.maxHP === 'number' ? foe.maxHP : 1);
+    const bonus = getCaptureToolEffect(cosmetic.shop_items)?.capture_bonus ?? 0;
+    const success = rollCaptureSuccess(hp, maxHp, foe.metadata as Record<string, unknown>, bonus);
+
+    void (async () => {
+      try {
+        const prev = userRef.current;
+        if (!prev?.cosmetics) return;
+        const toConsume = prev.cosmetics.find((c: UserCosmetic) => c.id === cosmetic.id);
         if (!toConsume) return;
-        try {
-          const q = toConsume.quantity ?? 1;
-          if (q > 1) {
-            const { error } = await supabase
-              .from('user_cosmetics')
-              .update({ quantity: q - 1 })
-              .eq('id', toConsume.id);
-            if (error) throw error;
-            setUser({
-              ...user,
-              cosmetics: (user.cosmetics || []).map((c) =>
-                c.id === toConsume.id ? { ...c, quantity: q - 1 } : c
-              ),
-            });
-          } else {
-            const { error } = await supabase
-              .from('user_cosmetics')
-              .delete()
-              .eq('id', toConsume.id);
-            if (error) throw error;
-            setUser({
-              ...user,
-              cosmetics: (user.cosmetics || []).filter((c) => c.id !== toConsume.id),
-            });
-          }
+        const q = toConsume.quantity ?? 1;
+        if (q > 1) {
+          const { error } = await supabase
+            .from('user_cosmetics')
+            .update({ quantity: q - 1 })
+            .eq('id', toConsume.id);
+          if (error) throw error;
+          setUser({
+            ...prev,
+            cosmetics: prev.cosmetics.map((c: UserCosmetic) =>
+              c.id === toConsume.id ? { ...c, quantity: q - 1 } : c,
+            ),
+          });
+        } else {
+          const { error } = await supabase.from('user_cosmetics').delete().eq('id', toConsume.id);
+          if (error) throw error;
+          setUser({
+            ...prev,
+            cosmetics: prev.cosmetics.filter((c: UserCosmetic) => c.id !== toConsume.id),
+          });
+        }
+        if (success) {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           setCapturedDuringBattle(true);
-          setInventoryModalVisible(false);
           setCurrentPhase(PHASE.DEATH_OUTRO_ENEMY);
           setTimeout(() => setCurrentPhase(PHASE.VICTORY), DEATH_DISINTEGRATION_MS);
-        } catch (e) {
-          console.error('Failed to use capture item:', e);
+        } else {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          Alert.alert(
+            'Capture failed',
+            'The net slipped — lower HP improves your odds next time.',
+          );
         }
+      } catch (e) {
+        console.error('Failed to use capture item:', e);
+        Alert.alert('Error', 'Could not use capture item.');
+      }
+    })();
+  }, [setUser, setCurrentPhase]);
+
+  /** Use an item from battle inventory. Capture: net swing → HP-based RNG → consume net. */
+  const handleUseBattleItem = useCallback(
+    (cosmetic: UserCosmetic) => {
+      if (!user || !enemy) return;
+      if (isCaptureItem(cosmetic.shop_items) && enemy?.metadata?.catchable) {
+        if (!isPlayerTurnPhase) {
+          Alert.alert('Not your turn', 'Use the capture net on your turn.');
+          return;
+        }
+        if ((enemy.hp ?? 0) <= 0) {
+          Alert.alert('Too late', 'This enemy is already defeated.');
+          return;
+        }
+        const { width: W, height: H } = Dimensions.get('window');
+        pendingCaptureRef.current = cosmetic;
+        captureTargetRef.current = {
+          x: enemyFigureCenter?.x ?? W * 0.62,
+          y: enemyFigureCenter?.y ?? H * 0.26,
+        };
+        const url = cosmetic.shop_items?.image_url;
+        setNetSwingSource(url ? { uri: url } : require('../../assets/exclamation.png'));
+        setInventoryModalVisible(false);
+        setNetSwingVisible(true);
         return;
       }
-      // Other consumables could be handled here (e.g. heal) in the future
     },
-    [user, enemy, setUser, setCurrentPhase]
+    [user, enemy, isPlayerTurnPhase, enemyFigureCenter],
   );
 
   if (loading) {
@@ -476,8 +546,8 @@ export default function BattleScreen() {
     }));
     
     const rewards = [
-      { id: 'gold', quantity: coinsGained, imageUri: 'https://img.icons8.com/color/96/gold-bars.png', rarityColor: '#fbbf24' },
-      { id: 'exp', quantity: expGained, imageUri: 'https://img.icons8.com/color/96/experience-skill.png', rarityColor: '#3b82f6' }
+      { id: 'gold', quantity: coinsGained, source: require('../../assets/coinicon.png'), rarityColor: '#fbbf24' },
+      { id: 'exp', quantity: expGained, source: require('../../assets/expcrystal.png'), rarityColor: '#3b82f6' },
     ];
 
     return (
@@ -499,6 +569,8 @@ export default function BattleScreen() {
         rewardApplyKey={victoryRewardApplyKey ?? undefined}
         encounterId={encounterId}
         battleLootSourceId={getBattleLootSourceId(enemy, !!isBoss)}
+        shopItems={allShopItems}
+        capturedDuringBattle={capturedDuringBattle}
       />
     );
   }
@@ -722,6 +794,15 @@ export default function BattleScreen() {
         items={battleInventoryItems}
         onUseItem={handleUseBattleItem}
         enemyCatchable={!!enemy?.metadata?.catchable}
+        playerTurn={isPlayerTurnPhase}
+      />
+
+      <CaptureNetSwingOverlay
+        visible={netSwingVisible}
+        targetX={captureTargetRef.current.x}
+        targetY={captureTargetRef.current.y}
+        netSource={netSwingSource}
+        onSwingComplete={handleNetSwingComplete}
       />
 
       {/* Boss Warning Overlay */}

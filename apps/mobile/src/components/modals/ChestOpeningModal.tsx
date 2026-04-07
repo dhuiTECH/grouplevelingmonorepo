@@ -114,7 +114,6 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
 
   const { setUser } = useAuth();
   const [lootResult, setLootResult] = useState<ClaimLootResult | null>(null);
-  const [lootError, setLootError] = useState(false);
 
   // Phase as shared value so worklets can read it (React state not available on UI thread)
   const phaseShared = useSharedValue(0); // 0=idle, 1=opening, 2=opened
@@ -168,7 +167,6 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
       phaseShared.value = 0;
       setBeamLayerVisible(false);
       setLootResult(null);
-      setLootError(false);
       if (beamUnmountTimerRef.current) {
         clearTimeout(beamUnmountTimerRef.current);
         beamUnmountTimerRef.current = null;
@@ -247,7 +245,6 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
 
   const attemptChestClaim = useCallback(async () => {
     if (!claimIdempotencyKey) return;
-    setLootError(false);
     try {
       const result = await claimLoot('chest', chestType, claimIdempotencyKey);
       setLootResult(result);
@@ -264,7 +261,7 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
         );
       }
     } catch {
-      setLootError(true);
+      /* claim failed — placeholder loot still shows */
     }
   }, [claimIdempotencyKey, chestType, setUser]);
 
@@ -674,20 +671,8 @@ export const ChestOpeningModal: React.FC<ChestOpeningModalProps> = ({
                     )}
                 </View>
 
-                {/* Retry banner for offline / dead zone failures */}
-                {lootError && phase === 'opened' && (
-                  <View style={styles.claimButtonWrap}>
-                    <Pressable
-                      style={({ pressed }) => [styles.claimButton, pressed && styles.claimButtonPressed, { backgroundColor: '#ef4444' }]}
-                      onPress={attemptChestClaim}
-                    >
-                      <Text style={styles.claimButtonText}>RETRY CLAIM</Text>
-                    </Pressable>
-                  </View>
-                )}
-
-                {/* CLAIM BUTTON - only when loot is shown and no error */}
-                {phase === 'opened' && !lootError && (
+                {/* CLAIM BUTTON - when loot is shown */}
+                {phase === 'opened' && (
                   <View style={styles.claimButtonWrap}>
                     <Pressable
                       style={({ pressed }) => [styles.claimButton, pressed && styles.claimButtonPressed]}

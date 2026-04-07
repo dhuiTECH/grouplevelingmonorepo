@@ -12,9 +12,18 @@ interface BattleInventoryModalProps {
   items: UserCosmetic[];
   onUseItem?: (cosmetic: UserCosmetic) => void;
   enemyCatchable?: boolean;
+  /** Capture items only work on the hunter’s turn. */
+  playerTurn?: boolean;
 }
 
-export function BattleInventoryModal({ visible, onClose, items, onUseItem, enemyCatchable }: BattleInventoryModalProps) {
+export function BattleInventoryModal({
+  visible,
+  onClose,
+  items,
+  onUseItem,
+  enemyCatchable,
+  playerTurn = true,
+}: BattleInventoryModalProps) {
   const handleItemPress = (cosmetic: UserCosmetic) => {
     if (isCaptureItem(cosmetic.shop_items) && enemyCatchable && onUseItem) {
       onUseItem(cosmetic);
@@ -38,7 +47,9 @@ export function BattleInventoryModal({ visible, onClose, items, onUseItem, enemy
           </View>
           <Text style={styles.subtitle}>
             {enemyCatchable
-              ? 'Use a capture item to catch this enemy, or close to keep fighting.'
+              ? playerTurn
+                ? 'Tap a capture net — lower enemy HP improves catch odds. Close to keep fighting.'
+                : 'Wait for your turn to use capture items.'
               : 'Consumables & other items'}
           </Text>
           {items.length === 0 ? (
@@ -54,8 +65,16 @@ export function BattleInventoryModal({ visible, onClose, items, onUseItem, enemy
                 const item = cosmetic.shop_items;
                 if (!item) return null;
                 const qty = cosmetic.quantity ?? 1;
+                const isNet = isCaptureItem(item);
+                const canTapNet = isNet && enemyCatchable && playerTurn && onUseItem;
                 return (
-                  <View key={cosmetic.id} style={styles.card}>
+                  <TouchableOpacity
+                    key={cosmetic.id}
+                    activeOpacity={canTapNet ? 0.85 : 1}
+                    disabled={!canTapNet}
+                    onPress={() => handleItemPress(cosmetic)}
+                    style={[styles.card, canTapNet && styles.cardUseable]}
+                  >
                     <View style={styles.cardImageWrap}>
                       <ShopItemMedia
                         item={item}
@@ -66,12 +85,15 @@ export function BattleInventoryModal({ visible, onClose, items, onUseItem, enemy
                     <Text style={styles.cardName} numberOfLines={2}>
                       {item.name}
                     </Text>
+                    {isNet && enemyCatchable && playerTurn ? (
+                      <Text style={styles.useLabel}>TAP TO USE</Text>
+                    ) : null}
                     {qty > 1 && (
                       <View style={styles.qtyBadge}>
                         <Text style={styles.qtyText}>×{qty}</Text>
                       </View>
                     )}
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </ScrollView>

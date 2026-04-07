@@ -1,5 +1,8 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { View, TouchableOpacity, TextInput, StyleSheet, Platform, useWindowDimensions, Text, Image, Pressable } from 'react-native';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { View, TouchableOpacity, TextInput, StyleSheet, Platform, Text, Image, type ImageSourcePropType } from 'react-native';
+import coinIcon from '@assets/coinicon.png';
+import expCrystal from '@assets/expcrystal.png';
+import gemIcon from '@assets/gemicon.png';
 import Svg, {
   Path,
   Rect,
@@ -13,7 +16,7 @@ import Svg, {
   Polyline,
   Pattern,
 } from 'react-native-svg';
-import { MotiView, AnimatePresence } from 'moti';
+import { MotiView } from 'moti';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BattleAssetWarmer } from '@/components/BattleAssetWarmer';
@@ -26,6 +29,7 @@ import {
   SYSTEM_WINDOW_TO,
   SYSTEM_WINDOW_TRANSITION,
 } from '@/utils/systemWindowMotion';
+import exclamationIcon from '@assets/exclamation.png';
 
 // --- Types ---
 interface VictoryPlayerStats {
@@ -53,7 +57,7 @@ interface VictoryPartyMember {
 interface VictoryReward {
   id: string;
   quantity: number;
-  imageUri: string;
+  source: ImageSourcePropType;
   rarityColor: string;
 }
 
@@ -78,6 +82,19 @@ export interface VictoryScreenProps {
   encounterId?: string;
   /** Resolved battle tier key, e.g. battle_tier_3 — primary source for claim_loot('battle', ...). */
   battleLootSourceId?: string;
+  /** Resolve shop_item_id → image for `lootResult.items` (same as admin shop_items). */
+  shopItems?: { id: string; image_url?: string | null; name?: string; rarity?: string }[];
+  /** Capture net was already used and consumed during the fight — only naming + DB save remain. */
+  capturedDuringBattle?: boolean;
+}
+
+function borderColorForShopRarity(rarity?: string): string {
+  const r = (rarity || '').toLowerCase();
+  if (r === 'legendary' || r === 'monarch') return '#fbbf24';
+  if (r === 'epic') return '#a855f7';
+  if (r === 'rare') return '#38bdf8';
+  if (r === 'uncommon') return '#4ade80';
+  return '#22d3ee';
 }
 
 const appliedVictoryRewardKeys = new Set<string>();
@@ -142,22 +159,21 @@ export function VictoryScreen({
   rewardApplyKey,
   encounterId,
   battleLootSourceId,
+  shopItems,
+  capturedDuringBattle = false,
 }: VictoryScreenProps) {
-  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
   const { user, setUser } = useAuth();
 
   const isCatchable = !!enemy?.metadata?.catchable;
   const shouldShowCapture =
     isCatchable && petCaptureState !== 'done' && petCaptureState !== 'skipped';
 
-  const [lootClaimError, setLootClaimError] = useState(false);
   const [lootResult, setLootResult] = useState<ClaimLootResult | null>(null);
 
   const attemptClaimLoot = useCallback(async () => {
     if (shouldShowCapture || !rewardApplyKey || !user?.id) return;
-    if (appliedVictoryRewardKeys.has(rewardApplyKey) && !lootClaimError) return;
+    if (appliedVictoryRewardKeys.has(rewardApplyKey)) return;
 
-    setLootClaimError(false);
     try {
       const sourceId = battleLootSourceId ?? encounterId ?? 'default';
       const result = await claimLoot('battle', sourceId, rewardApplyKey);
@@ -175,75 +191,151 @@ export function VictoryScreen({
               }
             : prev,
         );
-        setLootClaimError(false);
-      } else {
-        setLootClaimError(true);
       }
     } catch {
-      setLootClaimError(true);
+      /* claim failed — optimistic rewards from props still show */
     }
-  }, [shouldShowCapture, rewardApplyKey, user?.id, encounterId, battleLootSourceId, setUser, lootClaimError]);
+  }, [shouldShowCapture, rewardApplyKey, user?.id, encounterId, battleLootSourceId, setUser]);
 
   useEffect(() => {
     void attemptClaimLoot();
   }, [attemptClaimLoot]);
 
-  // --- Pet Capture View ---
+  const rewardsList: VictoryReward[] = useMemo(() => {
+    if (!lootResult?.ok) return rewards || [];
+    const currency: VictoryReward[] = [
+      ...(lootResult.coins_delta
+        ? [{ id: 'gold', quantity: lootResult.coins_delta, source: coinIcon, rarityColor: '#fbbf24' }]
+        : []),
+      ...(lootResult.exp_delta
+        ? [{ id: 'exp', quantity: lootResult.exp_delta, source: expCrystal, rarityColor: '#3b82f6' }]
+        : []),
+      ...(lootResult.gems_delta
+        ? [{ id: 'gems', quantity: lootResult.gems_delta, source: gemIcon, rarityColor: '#a855f7' }]
+        : []),
+    ];
+    const grants = lootResult.items ?? [];
+    const itemRewards: VictoryReward[] = grants.map((g, i) => {
+      const shop = shopItems?.find((s) => s.id === g.shop_item_id);
+      const src = shop?.image_url ? { uri: shop.image_url } : exclamationIcon;
+      return {
+        id: `loot-item-${g.shop_item_id}-${i}`,
+        quantity: g.quantity,
+        source: src,
+        rarityColor: borderColorForShopRarity(shop?.rarity),
+      };
+    });
+    return [...currency, ...itemRewards];
+  }, [lootResult, rewards, shopItems]);
+
+  // --- Pet Capture View (same system window chrome as main victory) ---
   if (shouldShowCapture) {
+    const captureBody = capturedDuringBattle
+      ? 'Combat capture complete — your net was already spent during this fight. Enter a codename to finalize registry.'
+      : 'Victory secured. Confirming will consume one capture item from your inventory and bind this entity to your party.';
+    const primaryCta =
+      petCaptureState === 'saving'
+        ? 'REGISTERING…'
+        : capturedDuringBattle
+          ? 'REGISTER'
+          : 'USE ITEM & REGISTER';
+
     return (
-      <SafeAreaView style={[styles.container, { justifyContent: 'center', paddingHorizontal: 24 }]} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <BattleAssetWarmer party={party} enemy={enemy} spriteUrls={spriteUrls} />
-        <MotiView
-          from={{ ...SYSTEM_WINDOW_FROM, translateY: 0 }}
-          animate={{ ...SYSTEM_WINDOW_TO, translateY: 0 }}
-          transition={SYSTEM_WINDOW_TRANSITION}
-          style={[styles.petCaptureCard, { transformOrigin: 'center' }]}
-        >
-          <Text style={styles.cinematicText}>VICTORY</Text>
-          <Text style={styles.petCaptureTitle}>New Companion Detected</Text>
-          <Text style={styles.petCaptureSubtitle}>
-            You have subdued a rare entity. Use 1 Basic Capture Net to add it to your party.
-          </Text>
-          <View style={styles.petCaptureAvatarWrapper}>
-            {enemy?.metadata ? (
-              <OptimizedPetAvatar petDetails={enemy} size={120} square hideBackground forceLegacy={true} />
-            ) : (
-              <Text style={{ fontSize: 56 }}>🐾</Text>
-            )}
-          </View>
-          <Text style={styles.petCaptureLabel}>PET NAME</Text>
-          <TextInput
-            value={petNickname}
-            onChangeText={setPetNickname}
-            placeholder="Enter codename"
-            placeholderTextColor="#6b7280"
-            style={styles.petCaptureInput}
-            autoCapitalize="words"
-            autoCorrect={false}
-            maxLength={20}
-          />
-          {petCaptureError ? (
-            <Text style={styles.petCaptureError}>{petCaptureError}</Text>
-          ) : null}
-          <View style={styles.petCaptureActions}>
-            <TouchableOpacity
-              onPress={onSkipCapture}
-              style={[styles.exitBtn, styles.petCaptureSecondaryBtn]}
-              disabled={petCaptureState === 'saving'}
-            >
-              <Text style={styles.petCaptureSecondaryText}>SKIP</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={onConfirmCapture}
-              style={[styles.exitBtn, styles.petCapturePrimaryBtn]}
-              disabled={petCaptureState === 'saving'}
-            >
-              <Text style={styles.exitBtnText}>
-                {petCaptureState === 'saving' ? 'SAVING...' : 'CAPTURE PET'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </MotiView>
+        <View style={styles.ambientGlow} />
+        <View style={styles.centeredContent}>
+          <MotiView
+            from={SYSTEM_WINDOW_FROM}
+            animate={SYSTEM_WINDOW_TO}
+            transition={SYSTEM_WINDOW_TRANSITION}
+            style={[styles.petCaptureSystemWindow, { transformOrigin: 'center' }]}
+          >
+            <Scanlines />
+            <MechanicalBorder position="top" />
+            <MechanicalBorder position="bottom" />
+            <CornerBracket position="tl" />
+            <CornerBracket position="tr" />
+            <CornerBracket position="bl" />
+            <CornerBracket position="br" />
+
+            <View style={styles.petCaptureContentPadding}>
+              <View style={styles.headerBlock}>
+                <View style={styles.headerRow}>
+                  <View style={styles.iconSquareFrame}>
+                    <View style={styles.iconCircle}>
+                      <Text style={styles.exclamationText}>+</Text>
+                    </View>
+                  </View>
+                  <View style={styles.titleTextFrame}>
+                    <Text style={styles.victoryTitle}>COMPANION REGISTRY</Text>
+                  </View>
+                </View>
+                <View style={styles.headerBottomLine}>
+                  <LinearGradient
+                    colors={['transparent', '#00d2ff', 'transparent']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.captureProtocolBlock}>
+                <Text style={styles.credentialsText}>SYSTEM CREDENTIALS</Text>
+                <Text style={styles.captureBodyText}>{captureBody}</Text>
+              </View>
+
+              <View style={styles.sectionDivider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.sectionTitle}>TARGET SIGNATURE</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <View style={styles.petCaptureAvatarFrame}>
+                {enemy?.metadata ? (
+                  <OptimizedPetAvatar petDetails={enemy} size={112} square hideBackground forceLegacy={true} />
+                ) : (
+                  <Text style={{ fontSize: 48 }}>🐾</Text>
+                )}
+              </View>
+
+              <Text style={styles.petCaptureLabelSystem}>CODENAME</Text>
+              <TextInput
+                value={petNickname}
+                onChangeText={setPetNickname}
+                placeholder="Enter designation"
+                placeholderTextColor="rgba(0, 210, 255, 0.35)"
+                style={styles.petCaptureInputSystem}
+                autoCapitalize="words"
+                autoCorrect={false}
+                maxLength={20}
+              />
+              {petCaptureError ? (
+                <Text style={styles.petCaptureError}>{petCaptureError}</Text>
+              ) : null}
+
+              <View style={styles.petCaptureActions}>
+                <TouchableOpacity
+                  onPress={onSkipCapture}
+                  style={styles.captureRowButtonOutline}
+                  disabled={petCaptureState === 'saving'}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.captureOutlineButtonText}>SKIP</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={onConfirmCapture}
+                  style={[styles.captureRowButtonPrimary, petCaptureState === 'saving' && { opacity: 0.85 }]}
+                  disabled={petCaptureState === 'saving'}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.confirmButtonText}>{primaryCta}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </MotiView>
+        </View>
       </SafeAreaView>
     );
   }
@@ -259,16 +351,18 @@ export function VictoryScreen({
   };
 
   const partyList = victoryParty || [];
-  const rewardsList: VictoryReward[] = lootResult?.ok
-    ? [
-        ...(lootResult.coins_delta ? [{ id: 'gold', quantity: lootResult.coins_delta, imageUri: 'https://img.icons8.com/color/96/gold-bars.png', rarityColor: '#fbbf24' }] : []),
-        ...(lootResult.exp_delta ? [{ id: 'exp', quantity: lootResult.exp_delta, imageUri: 'https://img.icons8.com/color/96/experience-skill.png', rarityColor: '#3b82f6' }] : []),
-        ...(lootResult.gems_delta ? [{ id: 'gems', quantity: lootResult.gems_delta, imageUri: 'https://img.icons8.com/color/96/diamond.png', rarityColor: '#a855f7' }] : []),
-      ]
-    : (rewards || []);
-  
-  const totalExp = playerStats.currentExp + playerStats.expGained;
-  const expPercent = Math.min(1, totalExp / (playerStats.maxExp || 100));
+
+  /** BattleScreen estimates EXP from encounter metadata; claim_loot is authoritative — keep gauge + "+X" in sync with rewards. */
+  const serverLootOk = lootResult?.ok === true;
+  const displayExpGained =
+    serverLootOk && typeof lootResult.exp_delta === "number"
+      ? lootResult.exp_delta
+      : playerStats.expGained;
+  const displayTotalExp =
+    serverLootOk && typeof lootResult.exp_total === "number"
+      ? lootResult.exp_total
+      : playerStats.currentExp + playerStats.expGained;
+  const expPercent = Math.min(1, displayTotalExp / (playerStats.maxExp || 100));
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -331,7 +425,7 @@ export function VictoryScreen({
             <View style={styles.expSection}>
               <View style={styles.expInfo}>
                 <Text style={styles.expLabel}>EXPERIENCE</Text>
-                <Text style={styles.expGain}>+{playerStats.expGained}</Text>
+                <Text style={styles.expGain}>+{displayExpGained}</Text>
               </View>
               <View style={styles.expTrack}>
                 <View style={[styles.expFill, { width: `${expPercent * 100}%` }]}>
@@ -344,7 +438,7 @@ export function VictoryScreen({
                 </View>
                 <View style={styles.expTextContainer}>
                   <Text style={styles.expValueText}>
-                    {totalExp.toLocaleString()} / {(playerStats.maxExp || 0).toLocaleString()}
+                    {displayTotalExp.toLocaleString()} / {(playerStats.maxExp || 0).toLocaleString()}
                   </Text>
                 </View>
               </View>
@@ -404,27 +498,16 @@ export function VictoryScreen({
               </View>
               
               <View style={styles.rewardsRow}>
-                {rewardsList.slice(0, 4).map((reward) => (
+                {rewardsList.map((reward) => (
                   <View key={reward.id} style={styles.rewardContainer}>
                     <View style={[styles.rewardBox, { borderColor: reward.rarityColor || '#00d2ff' }]}>
-                      <Image source={{ uri: reward.imageUri }} style={styles.rewardImage} />
+                      <Image source={reward.source} style={styles.rewardImage} />
                     </View>
                     <Text style={styles.rewardQty}>x{reward.quantity}</Text>
                   </View>
                 ))}
               </View>
             </View>
-
-            {/* Retry banner — shown when claim_loot fails (offline / dead zone) */}
-            {lootClaimError && (
-              <TouchableOpacity
-                style={[styles.confirmButton, { backgroundColor: '#ef4444', marginBottom: 8 }]}
-                onPress={attemptClaimLoot}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.confirmButtonText}>RETRY CLAIM</Text>
-              </TouchableOpacity>
-            )}
 
             {/* Footer Button */}
             <TouchableOpacity style={styles.confirmButton} onPress={onReturnToMap} activeOpacity={0.8}>
@@ -792,8 +875,10 @@ const styles = StyleSheet.create({
   },
   rewardsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'center',
     gap: 24,
+    rowGap: 16,
   },
   rewardContainer: {
     alignItems: 'center',
@@ -841,98 +926,120 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
     textTransform: 'uppercase',
   },
-  cinematicText: {
-    fontSize: 64,
-    fontStyle: 'italic',
-    fontWeight: '900',
-    color: 'white',
-    textTransform: 'uppercase',
-    textShadowColor: '#22d3ee',
-    textShadowRadius: 20,
-  },
-  petCaptureCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.98)',
-    borderRadius: 20,
+  /** Same chrome as `slWindow` but sized for the companion form (no 95% height). */
+  petCaptureSystemWindow: {
+    width: '100%',
+    maxWidth: 360,
+    minHeight: 400,
+    maxHeight: 620,
+    backgroundColor: 'rgba(4, 12, 28, 0.98)',
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.4)',
+    borderColor: 'rgba(0, 210, 255, 0.5)',
+    borderRadius: 2,
     overflow: 'hidden',
-    padding: 24,
+    shadowColor: '#00d2ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  petCaptureContentPadding: {
+    flex: 1,
+    paddingHorizontal: 22,
+    paddingVertical: 18,
+    paddingBottom: 22,
+  },
+  captureProtocolBlock: {
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.6,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-  },
-  petCaptureTitle: {
-    color: '#facc15',
-    fontSize: 16,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 2,
     marginTop: 4,
-  },
-  petCaptureSubtitle: {
-    color: '#9ca3af',
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  petCaptureAvatarWrapper: { marginTop: 18, marginBottom: 12 },
-  petCaptureLabel: {
-    color: '#6b7280',
-    fontSize: 12,
-    fontWeight: 'bold',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    alignSelf: 'flex-start',
-    marginTop: 8,
     marginBottom: 4,
   },
-  petCaptureInput: {
+  captureBodyText: {
+    color: '#aaddff',
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 10,
+    paddingHorizontal: 6,
+    letterSpacing: 0.3,
+  },
+  petCaptureAvatarFrame: {
+    marginTop: 10,
+    marginBottom: 6,
+    alignSelf: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(0, 210, 255, 0.55)',
+    backgroundColor: 'rgba(2, 12, 32, 0.92)',
+    padding: 6,
+    shadowColor: '#00d2ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+  },
+  petCaptureLabelSystem: {
+    color: 'rgba(0, 210, 255, 0.55)',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 3,
+    textTransform: 'uppercase',
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  petCaptureInputSystem: {
     width: '100%',
-    borderRadius: 8,
+    borderRadius: 2,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.8)',
+    borderColor: 'rgba(0, 210, 255, 0.45)',
     paddingHorizontal: 12,
-    paddingVertical: Platform.OS === 'ios' ? 10 : 6,
-    color: '#e5e7eb',
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-    fontSize: 18,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 8,
+    color: '#e6ffff',
+    backgroundColor: 'rgba(2, 12, 32, 0.95)',
+    fontSize: 16,
     fontWeight: '600',
   },
   petCaptureError: {
     color: '#fca5a5',
-    fontSize: 13,
-    marginTop: 6,
+    fontSize: 12,
+    marginTop: 8,
     alignSelf: 'flex-start',
   },
   petCaptureActions: {
     flexDirection: 'row',
-    marginTop: 18,
+    marginTop: 20,
     gap: 10,
     width: '100%',
   },
-  petCaptureSecondaryBtn: {
+  captureRowButtonOutline: {
     flex: 1,
+    paddingVertical: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(0, 229, 255, 0.4)',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#64748b',
   },
-  petCaptureSecondaryText: {
-    color: '#e5e7eb',
-    fontWeight: '900',
-    letterSpacing: 2,
-    fontSize: 15,
+  captureOutlineButtonText: {
+    color: '#e6ffff',
+    fontWeight: 'bold',
+    fontFamily: 'Montserrat-SemiBold',
+    letterSpacing: 3,
+    fontSize: 13,
+    textTransform: 'uppercase',
   },
-  petCapturePrimaryBtn: { flex: 1 },
-  exitBtn: {
-    marginTop: 20,
-    padding: 15,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 8,
-    borderWidth: 1,
+  captureRowButtonPrimary: {
+    flex: 1,
+    paddingVertical: 12,
+    backgroundColor: 'rgba(0, 229, 255, 0.25)',
+    borderWidth: 2,
+    borderColor: '#00e5ff',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#00e5ff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
   },
-  exitBtnText: { color: 'white', fontWeight: 'bold' },
 });

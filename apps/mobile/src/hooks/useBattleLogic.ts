@@ -109,6 +109,25 @@ const generateTurns = (count = 50, partyMembers: any[] = [], seed?: string) => {
     return turns;
 };
 
+/** Single display level from encounter_pool row (columns + metadata.level_range). */
+export function resolveEncounterDisplayLevel(encounterRow: any): number {
+  if (!encounterRow || typeof encounterRow !== "object") return 1;
+  const meta = encounterRow.metadata?.level_range;
+  const minRaw = encounterRow.level_min ?? encounterRow.min_level ?? meta?.min;
+  const maxRaw = encounterRow.level_max ?? encounterRow.max_level ?? meta?.max;
+  const min = Number(minRaw);
+  const max = Number(maxRaw);
+  const minOk = Number.isFinite(min) && min >= 1;
+  const maxOk = Number.isFinite(max) && max >= 1;
+  if (minOk && maxOk) {
+    if (min === max) return Math.round(min);
+    return Math.round((min + max) / 2);
+  }
+  if (minOk) return Math.round(min);
+  if (maxOk) return Math.round(max);
+  return 1;
+}
+
 export const useBattleLogic = ({
   encounterId,
   raidId,
@@ -559,6 +578,7 @@ export const useBattleLogic = ({
             // Fetch Raid Boss
             const { data: raidData } = await supabase.from('dungeon_raids').select('*, encounter_pool(*)').eq('id', raidId).single();
             if (raidData) {
+                const pool = raidData.encounter_pool;
                 setEnemy({
                     id: raidData.id,
                     name: raidData.encounter_pool?.name || 'Raid Boss',
@@ -567,6 +587,7 @@ export const useBattleLogic = ({
                     defDebuff: 0,
                     icon_url: raidData.encounter_pool?.icon_url,
                     metadata: raidData.encounter_pool?.metadata ?? null,
+                    level: resolveEncounterDisplayLevel(pool),
                 });
 
                 // Subscribe to Raid HP
@@ -594,6 +615,7 @@ export const useBattleLogic = ({
                     defDebuff: 0,
                     icon_url: encounterData.icon_url,
                     metadata: encounterData.metadata ?? null,
+                    level: resolveEncounterDisplayLevel(encounterData),
                 });
             }
         }

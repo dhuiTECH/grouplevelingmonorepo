@@ -27,6 +27,8 @@ export interface BattleEnemySpriteProps {
   frameWidth: number;
   frameHeight: number;
   scale: number;
+  /** When true, single-frame images use `fill` so source pixels map 1:1 to layout (no letterboxing). */
+  pixelPerfect?: boolean;
   onEnterComplete?: () => void;
   style?: ViewStyle;
 }
@@ -44,6 +46,7 @@ export function BattleEnemySprite({
   frameWidth,
   frameHeight,
   scale = 1,
+  pixelPerfect = false,
   onEnterComplete,
   style,
 }: BattleEnemySpriteProps) {
@@ -137,7 +140,7 @@ export function BattleEnemySprite({
           },
           imageAnimatedStyle,
         ]}
-        contentFit={totalFrames > 1 ? 'fill' : 'contain'}
+        contentFit={totalFrames > 1 || pixelPerfect ? 'fill' : 'contain'}
         cachePolicy="memory-disk"
         priority="high"
         transition={0}

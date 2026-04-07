@@ -51,3 +51,33 @@ export function findOneCaptureCosmetic(user: User | null): UserCosmetic | null {
   if (!user?.cosmetics?.length) return null;
   return user.cosmetics.find(c => isCaptureItem(c.shop_items)) ?? null;
 }
+
+/**
+ * Capture chance: lower enemy HP ⇒ higher chance. Uses metadata.base_catch_rate (0–1) if set,
+ * plus item capture_bonus from item_effects (treated as fraction if ≤1, else /100).
+ */
+export function computeCaptureChance(
+  enemyHp: number,
+  enemyMaxHp: number,
+  enemyMetadata: Record<string, unknown> | null | undefined,
+  captureBonusRaw: number,
+): number {
+  const maxHp = Math.max(1, enemyMaxHp);
+  const hp = Math.max(0, Math.min(enemyHp, maxHp));
+  const hpRatio = hp / maxHp;
+  const hpCurve = (1 - hpRatio) * 0.62;
+  const baseRaw = enemyMetadata?.base_catch_rate;
+  const base =
+    typeof baseRaw === "number" && Number.isFinite(baseRaw) ? Math.max(0, baseRaw) : 0.06;
+  const bonus = captureBonusRaw > 1 ? captureBonusRaw / 100 : Math.max(0, captureBonusRaw);
+  return Math.min(0.95, Math.max(0.03, base + hpCurve + bonus));
+}
+
+export function rollCaptureSuccess(
+  enemyHp: number,
+  enemyMaxHp: number,
+  enemyMetadata: Record<string, unknown> | null | undefined,
+  captureBonusRaw: number,
+): boolean {
+  return Math.random() < computeCaptureChance(enemyHp, enemyMaxHp, enemyMetadata, captureBonusRaw);
+}

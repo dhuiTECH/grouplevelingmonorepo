@@ -3,9 +3,11 @@
 import React, { useMemo, useState } from 'react';
 import { Sword, Battery, Wifi, Signal } from 'lucide-react';
 
-/** Matches `EnemyBlock` + `OptimizedPetAvatar` battle mob (size=172, inset 0.8 vs max frame dim). */
-const MOB_BATTLE_SLOT_PX = 172;
-const MOB_FRAME_INSET = 0.8;
+/**
+ * Must stay in sync with `ONE_TO_ONE_DISPLAY_SCALE` in
+ * `apps/mobile/src/components/battle/BattleEnemyAvatar.tsx` (source px → layout points).
+ */
+const ONE_TO_ONE_DISPLAY_SCALE = 0.4;
 
 interface MiniBattleSimulatorProps {
   monsterUrl: string;
@@ -44,14 +46,13 @@ export default function MiniBattleSimulator({
 }: MiniBattleSimulatorProps) {
   const fw = Math.max(1, monsterFrameWidth || 64);
   const fh = Math.max(1, monsterFrameHeight || 64);
-  const maxDim = Math.max(fw, fh);
   const frameCount = Math.max(1, monsterFrameCount || 1);
 
-  /** Same formula as mobile `OptimizedPetAvatar`: (safeSize * 0.8) / max(frameW, frameH), then admin preview multiplier. */
-  const mobSpriteScale = useMemo(() => {
-    const base = (MOB_BATTLE_SLOT_PX * MOB_FRAME_INSET) / maxDim;
-    return base * (previewScale || 1);
-  }, [maxDim, previewScale]);
+  /** Same as mobile battle: frame pixels × ONE_TO_ONE_DISPLAY_SCALE × admin preview multiplier. */
+  const mobSpriteScale = useMemo(
+    () => ONE_TO_ONE_DISPLAY_SCALE * (previewScale || 1),
+    [previewScale]
+  );
 
   const displayW = fw * mobSpriteScale;
   const displayH = fh * mobSpriteScale;
@@ -161,8 +162,10 @@ export default function MiniBattleSimulator({
         <Sword size={12} className="text-red-500" /> Mobile Battle Preview (SIDE_VIEW)
       </h3>
       <p className="text-[9px] text-gray-500 mb-4 leading-relaxed">
-        Mob size matches the app battle screen: {MOB_BATTLE_SLOT_PX}×{MOB_BATTLE_SLOT_PX} slot,{' '}
-        <span className="text-gray-400">{MOB_FRAME_INSET * 100}%</span> fit to the larger frame side (same as mobile), × preview scale below.
+        Mob size matches the mobile battle screen: each frame is drawn at{' '}
+        <span className="text-gray-400">{ONE_TO_ONE_DISPLAY_SCALE}×</span> source pixels (see{' '}
+        <code className="text-gray-400">BattleEnemyAvatar</code>), then × preview scale below. Set frame width/height to match
+        your art (or one frame of the sheet) for an accurate preview.
       </p>
       
       {/* Mobile Device Frame */}
@@ -214,7 +217,7 @@ export default function MiniBattleSimulator({
                     </div>
                 </div>
 
-                {/* Monster Side (Right) — sprite scale aligned with mobile EnemyBlock / OptimizedPetAvatar */}
+                {/* Monster Side (Right) — same scale as mobile BattleEnemyAvatar (oneToOne) */}
                 <div className="relative flex flex-col items-center gap-2 mb-32 z-10 max-w-[50%]">
                      {monsterUrl ? (
                         monsterIsSpritesheet ? (
@@ -244,23 +247,24 @@ export default function MiniBattleSimulator({
                             key={`monster-img-${spawnReplayKey}`}
                             className={`flex items-end justify-center shrink-0 transition-transform duration-300 ${isAttacking ? 'translate-x-2' : ''}`}
                             style={{
-                                width: MOB_BATTLE_SLOT_PX,
-                                height: MOB_BATTLE_SLOT_PX,
+                                width: displayW,
+                                height: displayH,
                                 transform: isAttacking ? 'translateX(10px)' : undefined,
                             }}
                         >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                                 src={monsterUrl}
-                            alt=""
-                            className="max-w-full max-h-full object-contain object-bottom"
-                            style={{
-                                width: 'auto',
-                                height: 'auto',
-                                maxWidth: MOB_BATTLE_SLOT_PX * MOB_FRAME_INSET * (previewScale || 1),
-                                maxHeight: MOB_BATTLE_SLOT_PX * MOB_FRAME_INSET * (previewScale || 1),
-                                imageRendering: 'pixelated',
-                            }}
+                                alt=""
+                                className="block"
+                                width={displayW}
+                                height={displayH}
+                                style={{
+                                  width: displayW,
+                                  height: displayH,
+                                  objectFit: 'fill',
+                                  imageRendering: 'pixelated',
+                                }}
                             />
                         </div>
                         )
