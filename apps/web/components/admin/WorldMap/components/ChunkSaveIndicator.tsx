@@ -6,8 +6,8 @@ import { Loader2, Check, AlertCircle, CloudUpload } from 'lucide-react';
 
 const RECENT_SAVED_MS = 120_000;
 const AUTO_CLEAR_SAVED_MS = 2800;
-/** Failsafe if UI never leaves saving (large maps = many sequential waves of parallel upserts). */
-const STUCK_SAVING_MS = 18 * 60 * 1000;
+/** Failsafe if UI never leaves saving (large maps = many waves; each chunk can take up to MAP_CHUNK_UPSERT_TIMEOUT_MS). */
+const STUCK_SAVING_MS = 30 * 60 * 1000;
 /** Failsafe for endless Unsaved (e.g. debounce never completing). Long painting sessions can exceed this. */
 const STUCK_PENDING_MS = 8 * 60 * 1000;
 

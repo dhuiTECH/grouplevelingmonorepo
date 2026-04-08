@@ -22,8 +22,11 @@ const CHUNK_SIZE = 16;
 const CHUNK_DEBOUNCE_MS = 650;
 /** Parallel upserts — avoids long serial queues on multi-chunk edits. */
 const CHUNK_UPSERT_CONCURRENCY = 5;
-/** Per-chunk HTTP timeout — hung requests become errors instead of spinning forever. */
-export const MAP_CHUNK_UPSERT_TIMEOUT_MS = 45_000;
+/**
+ * Per-chunk HTTP timeout. Large `tile_data` JSON (dense maps) can exceed short timeouts over slow links;
+ * 120s reduces false timeouts while still failing truly hung requests.
+ */
+export const MAP_CHUNK_UPSERT_TIMEOUT_MS = 120_000;
 
 /**
  * Rejects if `promise` does not settle within `ms`. Use for Supabase calls that can hang.
@@ -33,7 +36,7 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): 
     const id = setTimeout(() => {
       reject(
         new Error(
-          `${label} timed out after ${Math.round(ms / 1000)}s — check Network tab, VPN, or Supabase status. Try Export from the sidebar.`,
+          `${label} timed out after ${Math.round(ms / 1000)}s — large regions or slow networks need more time. Check Network, try Export, or lighten tile density in that chunk.`,
         ),
       );
     }, ms);
@@ -54,7 +57,8 @@ let globalSyncPromise: Promise<void> = Promise.resolve();
 const pendingChunks = new Set<string>();
 /** Avoid infinite re-queue loops when a chunk persistently fails (bad payload, DB, etc.). */
 const chunkSyncFailCount = new Map<string, number>();
-const MAX_CHUNK_SYNC_ATTEMPTS = 5;
+/** Retries after a failed flush — keep low to avoid long console spam (each attempt can take up to MAP_CHUNK_UPSERT_TIMEOUT_MS). */
+const MAX_CHUNK_SYNC_ATTEMPTS = 3;
 
 /** Human-readable PostgREST error for the toolbar (and console). */
 export function formatPostgrestError(err: {
