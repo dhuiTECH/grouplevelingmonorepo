@@ -179,6 +179,16 @@ export interface HistorySlice {
   pushUndo: (action: UndoEntry) => void;
 }
 
+export type ChunkSaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
+
+/** Emitted by chunk sync and consumed by the world editor save indicator. */
+export type ChunkSaveUiUpdate =
+  | { status: 'idle' }
+  | { status: 'pending'; pendingChunkCount: number }
+  | { status: 'saving' }
+  | { status: 'saved'; savedAt: number }
+  | { status: 'error'; error: string };
+
 export interface MapDataSlice {
   tiles: Tile[];
   /** `${gridX},${gridY}` → tile ids at that cell (all layers / offsets). */
@@ -188,6 +198,12 @@ export interface MapDataSlice {
   nodes: MapNode[];
   customTiles: CustomTile[];
   isLoadingTiles: boolean;
+  /** Map tile chunk persistence — shown in the editor toolbar. */
+  chunkSaveStatus: ChunkSaveStatus;
+  chunkSavePendingChunkCount: number;
+  chunkSaveError: string | null;
+  chunkSaveLastSavedAt: number | null;
+  setChunkSaveUi: (update: ChunkSaveUiUpdate) => void;
   spawnPoint: { x: number; y: number } | null;
   setTiles: (tiles: Tile[]) => void;
   setNodes: (nodes: MapNode[]) => void;

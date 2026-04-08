@@ -2,6 +2,7 @@ import React from 'react';
 import { useMapStore } from '@/lib/store/mapStore';
 import { WinluPalette } from '../WinluPalette';
 import { CoordinateDisplay } from './CoordinateDisplay';
+import { ChunkSaveIndicator } from './ChunkSaveIndicator';
 import {
   Plus,
   Minus,
@@ -68,8 +69,8 @@ export const MapToolbar = React.memo(
     const edgeDirection = useMapStore(state => state.edgeDirection);
     const setEdgeDirection = useMapStore(state => state.setEdgeDirection);
     return (
-      <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
-        <div className="flex gap-1.5 items-center pointer-events-auto max-w-[calc(100%-40px)] flex-wrap">
+      <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-start gap-3 pointer-events-none">
+        <div className="flex gap-1.5 items-center pointer-events-auto max-w-[min(100%-200px,calc(100%-40px))] flex-wrap min-w-0">
           {/* Zoom Controls */}
           <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl p-1 flex gap-0.5 shadow-2xl">
             <button
@@ -472,6 +473,8 @@ export const MapToolbar = React.memo(
             <CoordinateDisplay />
           </div>
         </div>
+
+        <ChunkSaveIndicator />
       </div>
     );
   },

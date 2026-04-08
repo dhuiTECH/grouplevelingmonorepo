@@ -1,5 +1,21 @@
 import { supabase } from '../supabase';
-import { CustomTile, MapState, Tile } from './types';
+import { CustomTile, MapState, Tile, ChunkSaveUiUpdate } from './types';
+
+let chunkSaveReporter: ((update: ChunkSaveUiUpdate) => void) | null = null;
+
+/** Wire the Zustand store (or tests) to receive save status from debounced chunk sync. */
+export function setChunkSaveReporter(fn: typeof chunkSaveReporter) {
+  chunkSaveReporter = fn;
+}
+
+/** Used by mapDataSlice.forceSyncAllChunks and internally by chunk sync. */
+export function reportChunkSaveUi(update: ChunkSaveUiUpdate) {
+  try {
+    chunkSaveReporter?.(update);
+  } catch (e) {
+    console.error('[chunkSync] chunk save reporter error:', e);
+  }
+}
 
 const CHUNK_SIZE = 16;
 /** Shorter than before so saves start sooner after edits, while still batching bursts. */
@@ -12,6 +28,27 @@ const pendingChunks = new Set<string>();
 /** Avoid infinite re-queue loops when a chunk persistently fails (bad payload, DB, etc.). */
 const chunkSyncFailCount = new Map<string, number>();
 const MAX_CHUNK_SYNC_ATTEMPTS = 5;
+
+function reportAfterFlushResult(result: {
+  permanentFailures: string[];
+  hadRequeue: boolean;
+}) {
+  if (result.permanentFailures.length > 0) {
+    reportChunkSaveUi({
+      status: 'error',
+      error: `Could not save ${result.permanentFailures.length} map region(s). Check the console or use Export.`,
+    });
+    return;
+  }
+  if (result.hadRequeue) {
+    reportChunkSaveUi({
+      status: 'pending',
+      pendingChunkCount: pendingChunks.size,
+    });
+    return;
+  }
+  reportChunkSaveUi({ status: 'saved', savedAt: Date.now() });
+}
 
 let batchTimeout: NodeJS.Timeout | null = null;
 
@@ -106,8 +143,13 @@ async function upsertChunkFromIndex(
   return true;
 }
 
-async function flushChunkList(chunkKeys: string[], get: () => MapState): Promise<void> {
-  if (chunkKeys.length === 0) return;
+async function flushChunkList(
+  chunkKeys: string[],
+  get: () => MapState,
+): Promise<{ permanentFailures: string[]; hadRequeue: boolean }> {
+  if (chunkKeys.length === 0) {
+    return { permanentFailures: [], hadRequeue: false };
+  }
 
   const state = get();
   const allTiles = state.tiles;
@@ -126,6 +168,9 @@ async function flushChunkList(chunkKeys: string[], get: () => MapState): Promise
     });
   }
 
+  const permanentFailures: string[] = [];
+  let hadRequeue = false;
+
   if (failed.length > 0) {
     let requeued = 0;
     for (const k of failed) {
@@ -134,7 +179,9 @@ async function flushChunkList(chunkKeys: string[], get: () => MapState): Promise
         chunkSyncFailCount.set(k, n);
         pendingChunks.add(k);
         requeued++;
+        hadRequeue = true;
       } else {
+        permanentFailures.push(k);
         console.error(
           `[map] Chunk ${k} failed to save after ${MAX_CHUNK_SYNC_ATTEMPTS} attempts — fix errors above or use Export in the sidebar to back up your map.`,
         );
@@ -148,6 +195,8 @@ async function flushChunkList(chunkKeys: string[], get: () => MapState): Promise
       armChunkFlush(get);
     }
   }
+
+  return { permanentFailures, hadRequeue };
 }
 
 function armChunkFlush(get: () => MapState) {
@@ -163,9 +212,19 @@ function armChunkFlush(get: () => MapState) {
     if (chunksToProcess.length === 0) return;
 
     globalSyncPromise = globalSyncPromise
-      .then(() => flushChunkList(chunksToProcess, get))
+      .then(() => {
+        reportChunkSaveUi({ status: 'saving' });
+        return flushChunkList(chunksToProcess, get);
+      })
+      .then(result => {
+        reportAfterFlushResult(result);
+      })
       .catch(err => {
         console.error('Global chunk sync sequence error:', err);
+        reportChunkSaveUi({
+          status: 'error',
+          error: err instanceof Error ? err.message : 'Map save failed unexpectedly.',
+        });
       });
   }, CHUNK_DEBOUNCE_MS);
 }
@@ -183,7 +242,19 @@ export function flushPendingChunkSyncsNow(get: () => MapState): Promise<void> {
   pendingChunks.clear();
   if (chunksToProcess.length === 0) return Promise.resolve();
 
-  globalSyncPromise = globalSyncPromise.then(() => flushChunkList(chunksToProcess, get));
+  reportChunkSaveUi({ status: 'saving' });
+  globalSyncPromise = globalSyncPromise
+    .then(() => flushChunkList(chunksToProcess, get))
+    .then(result => {
+      reportAfterFlushResult(result);
+    })
+    .catch(err => {
+      console.error('flushPendingChunkSyncsNow error:', err);
+      reportChunkSaveUi({
+        status: 'error',
+        error: err instanceof Error ? err.message : 'Map save failed before leaving the page.',
+      });
+    });
   return globalSyncPromise;
 }
 
@@ -193,6 +264,10 @@ export const queueChunkSyncs = (chunkKeys: string[], get: () => MapState) => {
     pendingChunks.add(key);
   }
   if (chunkKeys.length === 0) return;
+  reportChunkSaveUi({
+    status: 'pending',
+    pendingChunkCount: pendingChunks.size,
+  });
   armChunkFlush(get);
 };
 

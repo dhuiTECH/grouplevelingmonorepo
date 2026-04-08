@@ -2,7 +2,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useMapStore, useTickStore } from '@/lib/store/mapStore';
-import { flushPendingChunkSyncsNow } from '@/lib/store/chunkSync';
+import { flushPendingChunkSyncsNow, setChunkSaveReporter } from '@/lib/store/chunkSync';
 import { useCursorStore } from '@/lib/store/cursorStore';
 import { PixiMapCanvas } from './PixiMapCanvas';
 import { MapSidebar } from './MapSidebar';
@@ -441,6 +441,13 @@ export const WorldMapEngine = React.memo<{ shopItems?: any[] }>(({ shopItems = [
       incrementTick();
     }, 100); // 10 ticks per second
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    setChunkSaveReporter((update) => {
+      useMapStore.getState().setChunkSaveUi(update);
+    });
+    return () => setChunkSaveReporter(null);
   }, []);
 
   // Flush debounced map chunk saves when the tab goes away so paint strokes are not lost.

@@ -28,7 +28,39 @@ export const createMapDataSlice: StateCreator<
   nodes: [],
   customTiles: [],
   isLoadingTiles: false,
+  chunkSaveStatus: 'idle',
+  chunkSavePendingChunkCount: 0,
+  chunkSaveError: null,
+  chunkSaveLastSavedAt: null,
   spawnPoint: null,
+
+  setChunkSaveUi: (update) => {
+    if (update.status === 'idle') {
+      set({ chunkSaveStatus: 'idle', chunkSaveError: null });
+      return;
+    }
+    if (update.status === 'pending') {
+      set({
+        chunkSaveStatus: 'pending',
+        chunkSavePendingChunkCount: update.pendingChunkCount,
+        chunkSaveError: null,
+      });
+      return;
+    }
+    if (update.status === 'saving') {
+      set({ chunkSaveStatus: 'saving', chunkSaveError: null });
+      return;
+    }
+    if (update.status === 'saved') {
+      set({
+        chunkSaveStatus: 'saved',
+        chunkSaveLastSavedAt: update.savedAt,
+        chunkSaveError: null,
+      });
+      return;
+    }
+    set({ chunkSaveStatus: 'error', chunkSaveError: update.error });
+  },
 
   setTiles: (tiles) => set({ tiles, ...rebuildTileIndexes(tiles) }),
   setNodes: (nodes) => set({ nodes }),
@@ -169,7 +201,7 @@ export const createMapDataSlice: StateCreator<
     } catch (err) {
       console.error('Critical error in loadTilesFromSupabase:', err);
     } finally {
-      set({ isLoadingTiles: false });
+      set({ isLoadingTiles: false, chunkSaveStatus: 'idle', chunkSavePendingChunkCount: 0 });
     }
   },
 
@@ -780,6 +812,7 @@ export const createMapDataSlice: StateCreator<
   },
 
   forceSyncAllChunks: async () => {
+    get().setChunkSaveUi({ status: 'saving' });
     const allTiles = get().tiles;
     const libByUrl = buildLibByUrl(get().customTiles);
     const chunks = new Map<string, Tile[]>();
@@ -793,6 +826,7 @@ export const createMapDataSlice: StateCreator<
     });
 
     const entries = Array.from(chunks.entries());
+    let hadError = false;
     for (const [key, tiles] of entries) {
       const [cx, cy] = key.split(',').map(Number);
       const chunkTiles = tiles.map(t => serializeTileForChunkPersistence(t, libByUrl));
@@ -805,8 +839,23 @@ export const createMapDataSlice: StateCreator<
       }, { onConflict: 'chunk_x,chunk_y' });
 
       if (error) {
+        hadError = true;
         console.error(`Failed to force sync chunk [${cx}, ${cy}] ERROR DETAILS:`, JSON.stringify(error, null, 2));
       }
+    }
+
+    if (entries.length === 0) {
+      get().setChunkSaveUi({ status: 'saved', savedAt: Date.now() });
+      return;
+    }
+
+    if (hadError) {
+      get().setChunkSaveUi({
+        status: 'error',
+        error: 'One or more map regions failed to save. Check the console for details.',
+      });
+    } else {
+      get().setChunkSaveUi({ status: 'saved', savedAt: Date.now() });
     }
   },
 
