@@ -9,6 +9,8 @@ import {
   buildLibByUrl,
   serializeTileForChunkPersistence,
   formatPostgrestError,
+  withTimeout,
+  MAP_CHUNK_UPSERT_TIMEOUT_MS,
 } from '../chunkSync';
 import { rebuildTileIndexes } from '../tileIndex';
 
@@ -853,17 +855,28 @@ export const createMapDataSlice: StateCreator<
       const [cx, cy] = key.split(',').map(Number);
       const chunkTiles = tiles.map(t => serializeTileForChunkPersistence(t, libByUrl));
 
-      const { error } = await supabase.from('map_chunks').upsert({
-        chunk_x: cx,
-        chunk_y: cy,
-        tile_data: chunkTiles,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'chunk_x,chunk_y' });
+      try {
+        const { error } = await withTimeout(
+          (async () =>
+            supabase.from('map_chunks').upsert({
+              chunk_x: cx,
+              chunk_y: cy,
+              tile_data: chunkTiles,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'chunk_x,chunk_y' }))(),
+          MAP_CHUNK_UPSERT_TIMEOUT_MS,
+          `Force save map region (${cx},${cy})`,
+        );
 
-      if (error) {
+        if (error) {
+          hadError = true;
+          if (!firstErrorDetail) firstErrorDetail = formatPostgrestError(error);
+          console.error(`Failed to force sync chunk [${cx}, ${cy}] ERROR DETAILS:`, JSON.stringify(error, null, 2));
+        }
+      } catch (e) {
         hadError = true;
-        if (!firstErrorDetail) firstErrorDetail = formatPostgrestError(error);
-        console.error(`Failed to force sync chunk [${cx}, ${cy}] ERROR DETAILS:`, JSON.stringify(error, null, 2));
+        if (!firstErrorDetail) firstErrorDetail = e instanceof Error ? e.message : String(e);
+        console.error(`Failed to force sync chunk [${cx}, ${cy}]:`, e);
       }
     }
 

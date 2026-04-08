@@ -6,6 +6,10 @@ import { Loader2, Check, AlertCircle, CloudUpload } from 'lucide-react';
 
 const RECENT_SAVED_MS = 120_000;
 const AUTO_CLEAR_SAVED_MS = 2800;
+/** Failsafe if UI never leaves saving (large maps = many sequential waves of parallel upserts). */
+const STUCK_SAVING_MS = 18 * 60 * 1000;
+/** Failsafe for endless Unsaved (e.g. debounce never completing). Long painting sessions can exceed this. */
+const STUCK_PENDING_MS = 8 * 60 * 1000;
 
 /**
  * Toolbar pill for map chunk persistence: pending debounce, saving to Supabase, saved, or error.
@@ -25,6 +29,24 @@ export const ChunkSaveIndicator = React.memo(function ChunkSaveIndicator() {
     }, AUTO_CLEAR_SAVED_MS);
     return () => window.clearTimeout(t);
   }, [chunkSaveStatus, setChunkSaveUi]);
+
+  /** Endless saving / unsaved failsafe (per-request timeouts in chunkSync handle most hangs). */
+  useEffect(() => {
+    if (chunkSaveStatus !== 'saving' && chunkSaveStatus !== 'pending') return;
+    const isSaving = chunkSaveStatus === 'saving';
+    const ms = isSaving ? STUCK_SAVING_MS : STUCK_PENDING_MS;
+    const t = window.setTimeout(() => {
+      const current = useMapStore.getState().chunkSaveStatus;
+      if (current !== (isSaving ? 'saving' : 'pending')) return;
+      useMapStore.getState().setChunkSaveUi({
+        status: 'error',
+        error: isSaving
+          ? 'Save stayed in progress too long — try Export from the sidebar, check Network, then refresh if needed.'
+          : 'Unsaved for too long — stop editing for a second so uploads can run, or use Export. You can refresh if the editor feels stuck.',
+      });
+    }, ms);
+    return () => window.clearTimeout(t);
+  }, [chunkSaveStatus]);
 
   const recentSaved =
     chunkSaveStatus === 'idle' &&

@@ -22,6 +22,33 @@ const CHUNK_SIZE = 16;
 const CHUNK_DEBOUNCE_MS = 650;
 /** Parallel upserts — avoids long serial queues on multi-chunk edits. */
 const CHUNK_UPSERT_CONCURRENCY = 5;
+/** Per-chunk HTTP timeout — hung requests become errors instead of spinning forever. */
+export const MAP_CHUNK_UPSERT_TIMEOUT_MS = 45_000;
+
+/**
+ * Rejects if `promise` does not settle within `ms`. Use for Supabase calls that can hang.
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(() => {
+      reject(
+        new Error(
+          `${label} timed out after ${Math.round(ms / 1000)}s — check Network tab, VPN, or Supabase status. Try Export from the sidebar.`,
+        ),
+      );
+    }, ms);
+    promise.then(
+      (v) => {
+        clearTimeout(id);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(id);
+        reject(e);
+      },
+    );
+  });
+}
 
 let globalSyncPromise: Promise<void> = Promise.resolve();
 const pendingChunks = new Set<string>();
@@ -139,15 +166,29 @@ async function upsertChunkFromIndex(
   const list = tilesByChunk.get(chunkKey) ?? [];
   const chunkTiles = list.map(t => serializeTileForChunkPersistence(t, libByUrl));
 
-  const { error } = await supabase.from('map_chunks').upsert(
-    {
-      chunk_x: cx,
-      chunk_y: cy,
-      tile_data: chunkTiles,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'chunk_x,chunk_y' },
-  );
+  let result: { error: { message?: string; code?: string; details?: string; hint?: string } | null };
+  try {
+    result = await withTimeout(
+      (async () =>
+        supabase.from('map_chunks').upsert(
+          {
+            chunk_x: cx,
+            chunk_y: cy,
+            tile_data: chunkTiles,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'chunk_x,chunk_y' },
+        ))(),
+      MAP_CHUNK_UPSERT_TIMEOUT_MS,
+      `Save map region (${cx},${cy})`,
+    );
+  } catch (e) {
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    console.error(`[map_chunks] ${chunkKey}:`, e);
+    return { ok: false, errorMessage };
+  }
+
+  const { error } = result;
 
   if (error) {
     const errorMessage = formatPostgrestError(error);
