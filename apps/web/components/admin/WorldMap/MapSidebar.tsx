@@ -214,10 +214,15 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
         body: formData,
       });
       const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Upload failed');
+      if (!res.ok) {
+        const detail = result.details ? ` (${result.details})` : '';
+        throw new Error((result.error || 'Upload failed') + detail);
+      }
       return result.path;
     } catch (e: any) {
-      console.error('Upload failed:', e.message);
+      const msg = e?.message || 'Upload failed';
+      console.error('Upload failed:', msg);
+      alert(msg);
       return null;
     }
   };
@@ -278,7 +283,10 @@ export const MapSidebar: React.FC<MapSidebarProps> = React.memo(({ onEditNode, o
     
     // Upload files in parallel to speed up the process
     const results = await Promise.all(fileArray.map(async (file) => {
-      if (!file.type.includes('png')) return null;
+      if (!file.type.startsWith('image/')) {
+        console.warn(`Skipping non-image file: ${file.name} (${file.type || 'unknown type'})`);
+        return null;
+      }
 
       try {
         const dimensions = await getImageDimensions(file);

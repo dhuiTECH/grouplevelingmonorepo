@@ -9,6 +9,9 @@ const CHUNK_UPSERT_CONCURRENCY = 5;
 
 let globalSyncPromise: Promise<void> = Promise.resolve();
 const pendingChunks = new Set<string>();
+/** Avoid infinite re-queue loops when a chunk persistently fails (bad payload, DB, etc.). */
+const chunkSyncFailCount = new Map<string, number>();
+const MAX_CHUNK_SYNC_ATTEMPTS = 5;
 
 let batchTimeout: NodeJS.Timeout | null = null;
 
@@ -77,7 +80,7 @@ async function upsertChunkFromIndex(
   chunkKey: string,
   tilesByChunk: Map<string, Tile[]>,
   libByUrl: Map<string, CustomTile>,
-): Promise<void> {
+): Promise<boolean> {
   const [cx, cy] = chunkKey.split(',').map(Number);
   const list = tilesByChunk.get(chunkKey) ?? [];
   const chunkTiles = list.map(t => serializeTileForChunkPersistence(t, libByUrl));
@@ -97,6 +100,53 @@ async function upsertChunkFromIndex(
       `Failed to sync chunk [${cx}, ${cy}] ERROR DETAILS:`,
       JSON.stringify(error, null, 2),
     );
+    return false;
+  }
+  chunkSyncFailCount.delete(chunkKey);
+  return true;
+}
+
+async function flushChunkList(chunkKeys: string[], get: () => MapState): Promise<void> {
+  if (chunkKeys.length === 0) return;
+
+  const state = get();
+  const allTiles = state.tiles;
+  const libByUrl = buildLibByUrl(state.customTiles);
+  const tilesByChunk = groupTilesByChunk(allTiles);
+
+  const failed: string[] = [];
+
+  for (let i = 0; i < chunkKeys.length; i += CHUNK_UPSERT_CONCURRENCY) {
+    const batch = chunkKeys.slice(i, i + CHUNK_UPSERT_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(key => upsertChunkFromIndex(key, tilesByChunk, libByUrl)),
+    );
+    batch.forEach((key, idx) => {
+      if (!results[idx]) failed.push(key);
+    });
+  }
+
+  if (failed.length > 0) {
+    let requeued = 0;
+    for (const k of failed) {
+      const n = (chunkSyncFailCount.get(k) ?? 0) + 1;
+      if (n <= MAX_CHUNK_SYNC_ATTEMPTS) {
+        chunkSyncFailCount.set(k, n);
+        pendingChunks.add(k);
+        requeued++;
+      } else {
+        console.error(
+          `[map] Chunk ${k} failed to save after ${MAX_CHUNK_SYNC_ATTEMPTS} attempts — fix errors above or use Export in the sidebar to back up your map.`,
+        );
+        chunkSyncFailCount.delete(k);
+      }
+    }
+    if (requeued > 0) {
+      console.warn(
+        `[map] Re-queued ${requeued} chunk(s) after failed save — will retry after debounce`,
+      );
+      armChunkFlush(get);
+    }
   }
 }
 
@@ -113,23 +163,28 @@ function armChunkFlush(get: () => MapState) {
     if (chunksToProcess.length === 0) return;
 
     globalSyncPromise = globalSyncPromise
-      .then(async () => {
-        const state = get();
-        const allTiles = state.tiles;
-        const libByUrl = buildLibByUrl(state.customTiles);
-        const tilesByChunk = groupTilesByChunk(allTiles);
-
-        for (let i = 0; i < chunksToProcess.length; i += CHUNK_UPSERT_CONCURRENCY) {
-          const batch = chunksToProcess.slice(i, i + CHUNK_UPSERT_CONCURRENCY);
-          await Promise.all(
-            batch.map(key => upsertChunkFromIndex(key, tilesByChunk, libByUrl)),
-          );
-        }
-      })
+      .then(() => flushChunkList(chunksToProcess, get))
       .catch(err => {
         console.error('Global chunk sync sequence error:', err);
       });
   }, CHUNK_DEBOUNCE_MS);
+}
+
+/**
+ * Runs immediately: cancels the debounced timer and persists all pending dirty chunks now.
+ * Call on tab hide / before unload so short edits are not lost.
+ */
+export function flushPendingChunkSyncsNow(get: () => MapState): Promise<void> {
+  if (batchTimeout) {
+    clearTimeout(batchTimeout);
+    batchTimeout = null;
+  }
+  const chunksToProcess = Array.from(pendingChunks);
+  pendingChunks.clear();
+  if (chunksToProcess.length === 0) return Promise.resolve();
+
+  globalSyncPromise = globalSyncPromise.then(() => flushChunkList(chunksToProcess, get));
+  return globalSyncPromise;
 }
 
 /** Queue many chunks but arm the debounced flush only once (avoids N timer resets). */

@@ -51,6 +51,18 @@ if (process.env.NODE_ENV !== 'production') {
   globalForSupabase.supabaseAdmin = supabaseAdmin;
 }
 
+if (typeof window !== 'undefined') {
+  const missingUrl =
+    !process.env.NEXT_PUBLIC_SUPABASE_URL || supabaseUrl.includes('placeholder.supabase.co');
+  const missingAnon =
+    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || supabaseAnonKey === 'placeholder-key';
+  if (missingUrl || missingAnon) {
+    console.warn(
+      '[Supabase] NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY are missing or placeholder — the app cannot load or save data. Add them to .env.local and restart the dev server.',
+    );
+  }
+}
+
 // Add a runtime check that throws only when actually used
 const originalFrom = supabaseAdmin.from.bind(supabaseAdmin);
 supabaseAdmin.from = function(table: string) {
