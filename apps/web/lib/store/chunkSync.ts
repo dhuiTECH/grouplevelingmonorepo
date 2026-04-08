@@ -29,14 +29,30 @@ const pendingChunks = new Set<string>();
 const chunkSyncFailCount = new Map<string, number>();
 const MAX_CHUNK_SYNC_ATTEMPTS = 5;
 
+/** Human-readable PostgREST error for the toolbar (and console). */
+export function formatPostgrestError(err: {
+  message?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+}): string {
+  const m = err.message || 'Request failed';
+  const extras = [err.code && `code ${err.code}`, err.details, err.hint].filter(Boolean);
+  return extras.length ? `${m} (${extras.join(' · ')})` : m;
+}
+
 function reportAfterFlushResult(result: {
   permanentFailures: string[];
   hadRequeue: boolean;
+  lastErrorMessage?: string;
 }) {
   if (result.permanentFailures.length > 0) {
+    const detail = result.lastErrorMessage
+      ? ` ${result.lastErrorMessage}`
+      : '';
     reportChunkSaveUi({
       status: 'error',
-      error: `Could not save ${result.permanentFailures.length} map region(s). Check the console or use Export.`,
+      error: `Could not save ${result.permanentFailures.length} map region(s) after retries.${detail} Export from the sidebar to back up.`,
     });
     return;
   }
@@ -44,6 +60,7 @@ function reportAfterFlushResult(result: {
     reportChunkSaveUi({
       status: 'pending',
       pendingChunkCount: pendingChunks.size,
+      lastSyncError: result.lastErrorMessage ?? null,
     });
     return;
   }
@@ -117,7 +134,7 @@ async function upsertChunkFromIndex(
   chunkKey: string,
   tilesByChunk: Map<string, Tile[]>,
   libByUrl: Map<string, CustomTile>,
-): Promise<boolean> {
+): Promise<{ ok: boolean; errorMessage?: string }> {
   const [cx, cy] = chunkKey.split(',').map(Number);
   const list = tilesByChunk.get(chunkKey) ?? [];
   const chunkTiles = list.map(t => serializeTileForChunkPersistence(t, libByUrl));
@@ -133,20 +150,21 @@ async function upsertChunkFromIndex(
   );
 
   if (error) {
+    const errorMessage = formatPostgrestError(error);
     console.error(
       `Failed to sync chunk [${cx}, ${cy}] ERROR DETAILS:`,
       JSON.stringify(error, null, 2),
     );
-    return false;
+    return { ok: false, errorMessage };
   }
   chunkSyncFailCount.delete(chunkKey);
-  return true;
+  return { ok: true };
 }
 
 async function flushChunkList(
   chunkKeys: string[],
   get: () => MapState,
-): Promise<{ permanentFailures: string[]; hadRequeue: boolean }> {
+): Promise<{ permanentFailures: string[]; hadRequeue: boolean; lastErrorMessage?: string }> {
   if (chunkKeys.length === 0) {
     return { permanentFailures: [], hadRequeue: false };
   }
@@ -157,6 +175,7 @@ async function flushChunkList(
   const tilesByChunk = groupTilesByChunk(allTiles);
 
   const failed: string[] = [];
+  let lastErrorMessage: string | undefined;
 
   for (let i = 0; i < chunkKeys.length; i += CHUNK_UPSERT_CONCURRENCY) {
     const batch = chunkKeys.slice(i, i + CHUNK_UPSERT_CONCURRENCY);
@@ -164,7 +183,11 @@ async function flushChunkList(
       batch.map(key => upsertChunkFromIndex(key, tilesByChunk, libByUrl)),
     );
     batch.forEach((key, idx) => {
-      if (!results[idx]) failed.push(key);
+      const r = results[idx];
+      if (!r.ok) {
+        failed.push(key);
+        if (!lastErrorMessage && r.errorMessage) lastErrorMessage = r.errorMessage;
+      }
     });
   }
 
@@ -196,7 +219,7 @@ async function flushChunkList(
     }
   }
 
-  return { permanentFailures, hadRequeue };
+  return { permanentFailures, hadRequeue, lastErrorMessage };
 }
 
 function armChunkFlush(get: () => MapState) {
@@ -221,9 +244,10 @@ function armChunkFlush(get: () => MapState) {
       })
       .catch(err => {
         console.error('Global chunk sync sequence error:', err);
+        const msg = err instanceof Error ? err.message : String(err);
         reportChunkSaveUi({
           status: 'error',
-          error: err instanceof Error ? err.message : 'Map save failed unexpectedly.',
+          error: `Map save failed: ${msg}`,
         });
       });
   }, CHUNK_DEBOUNCE_MS);
@@ -250,9 +274,10 @@ export function flushPendingChunkSyncsNow(get: () => MapState): Promise<void> {
     })
     .catch(err => {
       console.error('flushPendingChunkSyncsNow error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
       reportChunkSaveUi({
         status: 'error',
-        error: err instanceof Error ? err.message : 'Map save failed before leaving the page.',
+        error: `Could not finish save before leaving: ${msg}`,
       });
     });
   return globalSyncPromise;

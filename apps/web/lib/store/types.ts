@@ -184,8 +184,8 @@ export type ChunkSaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 /** Emitted by chunk sync and consumed by the world editor save indicator. */
 export type ChunkSaveUiUpdate =
   | { status: 'idle' }
-  | { status: 'pending'; pendingChunkCount: number }
-  | { status: 'saving' }
+  | { status: 'pending'; pendingChunkCount: number; lastSyncError?: string | null }
+  | { status: 'saving'; lastSyncError?: string | null }
   | { status: 'saved'; savedAt: number }
   | { status: 'error'; error: string };
 
@@ -202,6 +202,8 @@ export interface MapDataSlice {
   chunkSaveStatus: ChunkSaveStatus;
   chunkSavePendingChunkCount: number;
   chunkSaveError: string | null;
+  /** Last PostgREST / network message from a failed chunk upsert (shown under Unsaved / Saving). */
+  chunkSaveLastSyncError: string | null;
   chunkSaveLastSavedAt: number | null;
   setChunkSaveUi: (update: ChunkSaveUiUpdate) => void;
   spawnPoint: { x: number; y: number } | null;

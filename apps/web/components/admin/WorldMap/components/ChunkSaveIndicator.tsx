@@ -14,6 +14,7 @@ export const ChunkSaveIndicator = React.memo(function ChunkSaveIndicator() {
   const chunkSaveStatus = useMapStore((s) => s.chunkSaveStatus);
   const pendingChunkCount = useMapStore((s) => s.chunkSavePendingChunkCount);
   const chunkSaveError = useMapStore((s) => s.chunkSaveError);
+  const chunkSaveLastSyncError = useMapStore((s) => s.chunkSaveLastSyncError);
   const chunkSaveLastSavedAt = useMapStore((s) => s.chunkSaveLastSavedAt);
   const setChunkSaveUi = useMapStore((s) => s.setChunkSaveUi);
 
@@ -37,36 +38,58 @@ export const ChunkSaveIndicator = React.memo(function ChunkSaveIndicator() {
   if (chunkSaveStatus === 'error' && chunkSaveError) {
     return (
       <div
-        className="pointer-events-auto flex max-w-[min(320px,40vw)] items-center gap-2 rounded-xl border border-red-500/40 bg-red-950/90 px-3 py-2 text-[10px] font-semibold text-red-100 shadow-2xl backdrop-blur-md"
+        className="pointer-events-auto max-w-[min(440px,92vw)] rounded-xl border border-red-500/40 bg-red-950/90 px-3 py-2 text-[10px] font-semibold text-red-100 shadow-2xl backdrop-blur-md"
         title={chunkSaveError}
       >
-        <AlertCircle size={14} className="shrink-0 text-red-400" />
-        <span className="leading-tight line-clamp-2">{chunkSaveError}</span>
+        <div className="flex gap-2">
+          <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-400" />
+          <span className="leading-snug break-words">{chunkSaveError}</span>
+        </div>
       </div>
     );
   }
 
   if (chunkSaveStatus === 'saving') {
     return (
-      <div className="pointer-events-auto flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-slate-900/95 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-cyan-200 shadow-2xl backdrop-blur-md">
-        <Loader2 size={14} className="animate-spin text-cyan-400" />
-        Saving map…
+      <div className="pointer-events-auto max-w-[min(440px,92vw)] rounded-xl border border-cyan-500/30 bg-slate-900/95 px-3 py-2 shadow-2xl backdrop-blur-md">
+        <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-cyan-200">
+          <Loader2 size={14} className="shrink-0 animate-spin text-cyan-400" />
+          Saving map…
+        </div>
+        {chunkSaveLastSyncError ? (
+          <p
+            className="mt-1.5 border-t border-cyan-500/20 pt-1.5 text-[9px] font-normal normal-case leading-snug tracking-normal text-rose-200/95 break-words"
+            title={chunkSaveLastSyncError}
+          >
+            {chunkSaveLastSyncError}
+          </p>
+        ) : null}
       </div>
     );
   }
 
   if (chunkSaveStatus === 'pending') {
     return (
-      <div
-        className="pointer-events-auto flex items-center gap-2 rounded-xl border border-amber-500/35 bg-slate-900/95 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-amber-100 shadow-2xl backdrop-blur-md"
-        title="Changes are batched; they upload shortly after you stop editing."
-      >
-        <CloudUpload size={14} className="text-amber-400" />
-        Unsaved
-        {pendingChunkCount > 0 ? (
-          <span className="rounded bg-amber-900/50 px-1.5 py-0.5 text-[9px] text-amber-200">
-            {pendingChunkCount} region{pendingChunkCount === 1 ? '' : 's'}
-          </span>
+      <div className="pointer-events-auto max-w-[min(440px,92vw)] rounded-xl border border-amber-500/35 bg-slate-900/95 px-3 py-2 shadow-2xl backdrop-blur-md">
+        <div
+          className="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-amber-100"
+          title="Changes are batched; they upload shortly after you stop editing."
+        >
+          <CloudUpload size={14} className="shrink-0 text-amber-400" />
+          Unsaved
+          {pendingChunkCount > 0 ? (
+            <span className="rounded bg-amber-900/50 px-1.5 py-0.5 text-[9px] text-amber-200">
+              {pendingChunkCount} region{pendingChunkCount === 1 ? '' : 's'}
+            </span>
+          ) : null}
+        </div>
+        {chunkSaveLastSyncError ? (
+          <p
+            className="mt-1.5 border-t border-amber-500/25 pt-1.5 text-[9px] font-normal normal-case leading-snug tracking-normal text-rose-200/95 break-words"
+            title={chunkSaveLastSyncError}
+          >
+            Last error: {chunkSaveLastSyncError}
+          </p>
         ) : null}
       </div>
     );
