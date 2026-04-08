@@ -23,10 +23,16 @@ const CHUNK_DEBOUNCE_MS = 650;
 /** Parallel upserts — avoids long serial queues on multi-chunk edits. */
 const CHUNK_UPSERT_CONCURRENCY = 5;
 /**
- * Per-chunk HTTP timeout. Large `tile_data` JSON (dense maps) can exceed short timeouts over slow links;
- * 120s reduces false timeouts while still failing truly hung requests.
+ * Per-chunk HTTP timeout passed to AbortSignal.timeout() on the Supabase call.
+ * This actually cancels the underlying fetch (unlike wrapping with Promise.race).
  */
-export const MAP_CHUNK_UPSERT_TIMEOUT_MS = 120_000;
+export const MAP_CHUNK_UPSERT_TIMEOUT_MS = 30_000;
+
+/**
+ * Maximum time to wait for a previous flush to complete before starting the next one.
+ * Prevents one stuck flush from blocking all subsequent saves.
+ */
+const GLOBAL_SYNC_WAIT_TIMEOUT_MS = 35_000;
 
 /**
  * Rejects if `promise` does not settle within `ms`. Use for Supabase calls that can hang.
@@ -36,7 +42,7 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): 
     const id = setTimeout(() => {
       reject(
         new Error(
-          `${label} timed out after ${Math.round(ms / 1000)}s — large regions or slow networks need more time. Check Network, try Export, or lighten tile density in that chunk.`,
+          `${label} timed out after ${Math.round(ms / 1000)}s — check your network connection and try again.`,
         ),
       );
     }, ms);
@@ -57,7 +63,7 @@ let globalSyncPromise: Promise<void> = Promise.resolve();
 const pendingChunks = new Set<string>();
 /** Avoid infinite re-queue loops when a chunk persistently fails (bad payload, DB, etc.). */
 const chunkSyncFailCount = new Map<string, number>();
-/** Retries after a failed flush — keep low to avoid long console spam (each attempt can take up to MAP_CHUNK_UPSERT_TIMEOUT_MS). */
+/** Retries after a failed flush — keep low to avoid long console spam. */
 const MAX_CHUNK_SYNC_ATTEMPTS = 3;
 
 /** Human-readable PostgREST error for the toolbar (and console). */
@@ -161,6 +167,28 @@ function groupTilesByChunk(allTiles: Tile[]): Map<string, Tile[]> {
   return m;
 }
 
+/**
+ * Proactively refresh the Supabase session if it's near expiry.
+ * PostgREST calls with an expired JWT can hang silently until timeout
+ * (even with RLS disabled, the realtime/auth layer can misbehave).
+ */
+async function ensureFreshSession(): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const expiresAtMs = session.expires_at ? session.expires_at * 1000 : 0;
+    const needsRefresh = !expiresAtMs || expiresAtMs < Date.now() + 60_000;
+    if (needsRefresh && session.refresh_token) {
+      const { error } = await supabase.auth.refreshSession();
+      if (error) {
+        console.warn('[chunkSync] Session refresh failed:', error.message);
+      }
+    }
+  } catch (e) {
+    console.warn('[chunkSync] ensureFreshSession error:', e);
+  }
+}
+
 async function upsertChunkFromIndex(
   chunkKey: string,
   tilesByChunk: Map<string, Tile[]>,
@@ -172,22 +200,26 @@ async function upsertChunkFromIndex(
 
   let result: { error: { message?: string; code?: string; details?: string; hint?: string } | null };
   try {
-    result = await withTimeout(
-      (async () =>
-        supabase.from('map_chunks').upsert(
-          {
-            chunk_x: cx,
-            chunk_y: cy,
-            tile_data: chunkTiles,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'chunk_x,chunk_y' },
-        ))(),
-      MAP_CHUNK_UPSERT_TIMEOUT_MS,
-      `Save map region (${cx},${cy})`,
-    );
+    result = await supabase
+      .from('map_chunks')
+      .upsert(
+        {
+          chunk_x: cx,
+          chunk_y: cy,
+          tile_data: chunkTiles,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'chunk_x,chunk_y' },
+      )
+      .abortSignal(AbortSignal.timeout(MAP_CHUNK_UPSERT_TIMEOUT_MS));
   } catch (e) {
-    const errorMessage = e instanceof Error ? e.message : String(e);
+    const isTimeout =
+      e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    const errorMessage = isTimeout
+      ? `Save map region (${cx},${cy}) timed out after ${Math.round(MAP_CHUNK_UPSERT_TIMEOUT_MS / 1000)}s — check your network connection and try again.`
+      : e instanceof Error
+        ? e.message
+        : String(e);
     console.error(`[map_chunks] ${chunkKey}:`, e);
     return { ok: false, errorMessage };
   }
@@ -213,6 +245,8 @@ async function flushChunkList(
   if (chunkKeys.length === 0) {
     return { permanentFailures: [], hadRequeue: false };
   }
+
+  await ensureFreshSession();
 
   const state = get();
   const allTiles = state.tiles;
@@ -267,6 +301,26 @@ async function flushChunkList(
   return { permanentFailures, hadRequeue, lastErrorMessage };
 }
 
+/**
+ * Wait for the previous global sync to finish, but give up after a timeout
+ * so a single stuck flush can't block all future saves indefinitely.
+ */
+async function waitForPreviousSync(): Promise<void> {
+  try {
+    await Promise.race([
+      globalSyncPromise,
+      new Promise<void>((_, reject) =>
+        setTimeout(
+          () => reject(new Error('Previous save took too long — starting new save anyway.')),
+          GLOBAL_SYNC_WAIT_TIMEOUT_MS,
+        ),
+      ),
+    ]);
+  } catch (e) {
+    console.warn('[chunkSync]', e instanceof Error ? e.message : e);
+  }
+}
+
 function armChunkFlush(get: () => MapState) {
   if (batchTimeout) {
     clearTimeout(batchTimeout);
@@ -279,22 +333,21 @@ function armChunkFlush(get: () => MapState) {
 
     if (chunksToProcess.length === 0) return;
 
-    globalSyncPromise = globalSyncPromise
-      .then(() => {
-        reportChunkSaveUi({ status: 'saving' });
-        return flushChunkList(chunksToProcess, get);
-      })
-      .then(result => {
-        reportAfterFlushResult(result);
-      })
-      .catch(err => {
-        console.error('Global chunk sync sequence error:', err);
-        const msg = err instanceof Error ? err.message : String(err);
-        reportChunkSaveUi({
-          status: 'error',
-          error: `Map save failed: ${msg}`,
-        });
+    const doFlush = async () => {
+      await waitForPreviousSync();
+      reportChunkSaveUi({ status: 'saving' });
+      const result = await flushChunkList(chunksToProcess, get);
+      reportAfterFlushResult(result);
+    };
+
+    globalSyncPromise = doFlush().catch(err => {
+      console.error('Global chunk sync sequence error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      reportChunkSaveUi({
+        status: 'error',
+        error: `Map save failed: ${msg}`,
       });
+    });
   }, CHUNK_DEBOUNCE_MS);
 }
 
@@ -312,19 +365,21 @@ export function flushPendingChunkSyncsNow(get: () => MapState): Promise<void> {
   if (chunksToProcess.length === 0) return Promise.resolve();
 
   reportChunkSaveUi({ status: 'saving' });
-  globalSyncPromise = globalSyncPromise
-    .then(() => flushChunkList(chunksToProcess, get))
-    .then(result => {
-      reportAfterFlushResult(result);
-    })
-    .catch(err => {
-      console.error('flushPendingChunkSyncsNow error:', err);
-      const msg = err instanceof Error ? err.message : String(err);
-      reportChunkSaveUi({
-        status: 'error',
-        error: `Could not finish save before leaving: ${msg}`,
-      });
+
+  const doFlush = async () => {
+    await waitForPreviousSync();
+    const result = await flushChunkList(chunksToProcess, get);
+    reportAfterFlushResult(result);
+  };
+
+  globalSyncPromise = doFlush().catch(err => {
+    console.error('flushPendingChunkSyncsNow error:', err);
+    const msg = err instanceof Error ? err.message : String(err);
+    reportChunkSaveUi({
+      status: 'error',
+      error: `Could not finish save before leaving: ${msg}`,
     });
+  });
   return globalSyncPromise;
 }
 
@@ -332,6 +387,7 @@ export function flushPendingChunkSyncsNow(get: () => MapState): Promise<void> {
 export const queueChunkSyncs = (chunkKeys: string[], get: () => MapState) => {
   for (const key of chunkKeys) {
     pendingChunks.add(key);
+    chunkSyncFailCount.delete(key);
   }
   if (chunkKeys.length === 0) return;
   reportChunkSaveUi({

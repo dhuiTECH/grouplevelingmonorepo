@@ -9,7 +9,6 @@ import {
   buildLibByUrl,
   serializeTileForChunkPersistence,
   formatPostgrestError,
-  withTimeout,
   MAP_CHUNK_UPSERT_TIMEOUT_MS,
 } from '../chunkSync';
 import { rebuildTileIndexes } from '../tileIndex';
@@ -234,28 +233,37 @@ export const createMapDataSlice: StateCreator<
       nodes: [...state.nodes, { ...node, id: newId }] 
     }));
     
-    // Fire and forget persistence
-    supabase.from('world_map_nodes').insert({
-      id: newId,
-      // Keep legacy (x, y) in-sync with new global_x/global_y so we don't hit the unique(x,y) constraint.
-      global_x: node.x,
-      global_y: node.y,
-      x: node.x,
-      y: node.y,
-      type: node.type,
-      name: node.name,
-      icon_url: node.iconUrl,
-      interaction_type: node.type === 'spawn' ? 'CITY' : node.type === 'enemy' ? 'BATTLE' : 'DIALOGUE',
-      interaction_data: node.properties || {}
-    }).then(({ error }) => {
-      if (error) {
-        console.error('Failed to persist world_map_node on insert ERROR DETAILS:', JSON.stringify(error, null, 2));
+    Promise.resolve(
+      supabase.from('world_map_nodes').insert({
+        id: newId,
+        global_x: node.x,
+        global_y: node.y,
+        x: node.x,
+        y: node.y,
+        type: node.type,
+        name: node.name,
+        icon_url: node.iconUrl,
+        interaction_type: node.type === 'spawn' ? 'CITY' : node.type === 'enemy' ? 'BATTLE' : 'DIALOGUE',
+        interaction_data: node.properties || {}
+      })
+        .abortSignal(AbortSignal.timeout(15_000))
+    )
+      .then(({ error }) => {
+        if (error) {
+          console.error('Failed to persist world_map_node on insert ERROR DETAILS:', JSON.stringify(error, null, 2));
+          get().setChunkSaveUi({
+            status: 'error',
+            error: `Map node could not be saved: ${formatPostgrestError(error)}`,
+          });
+        }
+      })
+      .catch((e: unknown) => {
+        console.error('world_map_node insert aborted/timed out:', e);
         get().setChunkSaveUi({
           status: 'error',
-          error: `Map node could not be saved: ${formatPostgrestError(error)}`,
+          error: 'Map node save timed out — check your connection.',
         });
-      }
-    });
+      });
     
     return newId;
   },
@@ -270,18 +278,20 @@ export const createMapDataSlice: StateCreator<
     const updatedNode = get().nodes.find((n) => n.id === id);
     if (!updatedNode) return;
 
-    // Fire and forget persistence
-    supabase
-      .from('world_map_nodes')
-      .update({
-        global_x: updatedNode.x,
-        global_y: updatedNode.y,
-        name: updatedNode.name,
-        type: updatedNode.type,
-        icon_url: updatedNode.iconUrl,
-        interaction_data: updatedNode.properties || {},
-      })
-      .eq('id', id)
+    Promise.resolve(
+      supabase
+        .from('world_map_nodes')
+        .update({
+          global_x: updatedNode.x,
+          global_y: updatedNode.y,
+          name: updatedNode.name,
+          type: updatedNode.type,
+          icon_url: updatedNode.iconUrl,
+          interaction_data: updatedNode.properties || {},
+        })
+        .eq('id', id)
+        .abortSignal(AbortSignal.timeout(15_000))
+    )
       .then(({ error }) => {
         if (error) {
           console.error('Failed to persist world_map_node on update ERROR DETAILS:', JSON.stringify(error, null, 2));
@@ -290,6 +300,13 @@ export const createMapDataSlice: StateCreator<
             error: `Map node could not be saved: ${formatPostgrestError(error)}`,
           });
         }
+      })
+      .catch((e: unknown) => {
+        console.error('world_map_node update aborted/timed out:', e);
+        get().setChunkSaveUi({
+          status: 'error',
+          error: 'Map node save timed out — check your connection.',
+        });
       });
   },
 
@@ -302,7 +319,8 @@ export const createMapDataSlice: StateCreator<
       selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId
     }));
 
-    const { error } = await supabase.from('world_map_nodes').delete().eq('id', id);
+    const { error } = await supabase.from('world_map_nodes').delete().eq('id', id)
+      .abortSignal(AbortSignal.timeout(15_000));
     if (error) {
       console.error('Failed to delete world_map_node ERROR DETAILS:', JSON.stringify(error, null, 2));
       get().setChunkSaveUi({
@@ -868,17 +886,15 @@ export const createMapDataSlice: StateCreator<
       const chunkTiles = tiles.map(t => serializeTileForChunkPersistence(t, libByUrl));
 
       try {
-        const { error } = await withTimeout(
-          (async () =>
-            supabase.from('map_chunks').upsert({
-              chunk_x: cx,
-              chunk_y: cy,
-              tile_data: chunkTiles,
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'chunk_x,chunk_y' }))(),
-          MAP_CHUNK_UPSERT_TIMEOUT_MS,
-          `Force save map region (${cx},${cy})`,
-        );
+        const { error } = await supabase
+          .from('map_chunks')
+          .upsert({
+            chunk_x: cx,
+            chunk_y: cy,
+            tile_data: chunkTiles,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'chunk_x,chunk_y' })
+          .abortSignal(AbortSignal.timeout(MAP_CHUNK_UPSERT_TIMEOUT_MS));
 
         if (error) {
           hadError = true;
@@ -887,7 +903,12 @@ export const createMapDataSlice: StateCreator<
         }
       } catch (e) {
         hadError = true;
-        if (!firstErrorDetail) firstErrorDetail = e instanceof Error ? e.message : String(e);
+        const isTimeout =
+          e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError');
+        const msg = isTimeout
+          ? `Force save map region (${cx},${cy}) timed out — check your connection.`
+          : e instanceof Error ? e.message : String(e);
+        if (!firstErrorDetail) firstErrorDetail = msg;
         console.error(`Failed to force sync chunk [${cx}, ${cy}]:`, e);
       }
     }

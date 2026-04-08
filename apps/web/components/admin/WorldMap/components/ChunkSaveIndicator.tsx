@@ -6,10 +6,10 @@ import { Loader2, Check, AlertCircle, CloudUpload } from 'lucide-react';
 
 const RECENT_SAVED_MS = 120_000;
 const AUTO_CLEAR_SAVED_MS = 2800;
-/** Failsafe if UI never leaves saving (large maps = many waves; each chunk can take up to MAP_CHUNK_UPSERT_TIMEOUT_MS). */
-const STUCK_SAVING_MS = 30 * 60 * 1000;
-/** Failsafe for endless Unsaved (e.g. debounce never completing). Long painting sessions can exceed this. */
-const STUCK_PENDING_MS = 8 * 60 * 1000;
+/** Failsafe if UI never leaves saving (per-chunk timeout is 30s, 3 retries, so 3-4 min is generous). */
+const STUCK_SAVING_MS = 4 * 60 * 1000;
+/** Failsafe for endless Unsaved (e.g. debounce never completing). */
+const STUCK_PENDING_MS = 3 * 60 * 1000;
 
 /**
  * Toolbar pill for map chunk persistence: pending debounce, saving to Supabase, saved, or error.
