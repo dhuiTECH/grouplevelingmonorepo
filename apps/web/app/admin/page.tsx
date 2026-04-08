@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { User, Clock, Trophy, LogOut, Plus, Sword, Users, Settings, Edit, Edit2, Trash2, Coins, Loader2, Sparkles, Map, CheckCircle, XCircle, Zap, Check, Search, X, PawPrint, Music2, ScrollText, Globe, Newspaper, Package } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
+import { adminAuthorizedFetch } from '@/lib/admin-authorized-fetch';
 import type { Session } from '@supabase/supabase-js';
 import { PendingUser, Dungeon } from '@/components/admin/types';
 import AdminNavItem from '@/components/admin/AdminNavItem';
@@ -491,22 +492,10 @@ export default function AdminDashboard() {
   const loadShopItems = async () => {
     try {
       console.log('🛒 Client: Calling /api/admin/shop');
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
-      // Get session token
-      const { data: { session } } = await supabase.auth.getSession();
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-      }
-
-      const response = await fetch('/api/admin/shop', {
-        headers,
-        signal: controller.signal
+      const response = await adminAuthorizedFetch('/api/admin/shop', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
       });
-      
-      clearTimeout(timeoutId);
       console.log('🛒 Client: Response status:', response.status);
 
       if (!response.ok) {
@@ -524,10 +513,11 @@ export default function AdminDashboard() {
         setShopItems([]);
       }
     } catch (error: any) {
-      if (error.name === 'AbortError') {
+      if (error?.name === 'AbortError') {
         console.error('⏱️ Shop items API call timed out');
+        alert('Loading shop items timed out — check your connection and try again.');
       } else {
-      console.error('Failed to load shop items:', error);
+        console.error('Failed to load shop items:', error);
       }
       setShopItems([]);
     }
@@ -762,20 +752,13 @@ export default function AdminDashboard() {
   };
 
   const handleAddShopItem = async (itemData: any) => {
+    console.log('ADMIN SENDING TO API (ADD):', itemData);
+
     try {
-      console.log('ADMIN SENDING TO API (ADD):', itemData);
-
-      // Get session token
-      const { data: { session } } = await supabase.auth.getSession();
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-      }
-
-      const response = await fetch('/api/admin/shop', {
+      const response = await adminAuthorizedFetch('/api/admin/shop', {
         method: 'POST',
-        headers,
-        body: JSON.stringify(itemData)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(itemData),
       });
 
       if (!response.ok) {
@@ -788,8 +771,7 @@ export default function AdminDashboard() {
         }
         const message = errorData.details || errorData.error || `Request failed (${response.status})`;
         console.error('API Error:', response.status, errorData);
-        alert(`Failed to create shop item: ${message}`);
-        return;
+        throw new Error(`Failed to create shop item: ${message}`);
       }
 
       const data = await response.json();
@@ -799,58 +781,82 @@ export default function AdminDashboard() {
         loadShopItems();
       } else {
         console.error('No shopItem in response:', data);
+        throw new Error('Server did not return a shop item — try again.');
       }
     } catch (error: any) {
       console.error('Failed to add shop item:', error);
+      if (error?.name === 'AbortError') {
+        throw new Error('Request timed out — check your connection and try again.');
+      }
+      throw error instanceof Error ? error : new Error(String(error));
     }
   };
 
   const handleToggleShopItem = async (itemId: string, isActive: boolean) => {
     try {
-      // Get session token
-      const { data: { session } } = await supabase.auth.getSession();
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-      }
-
-      const response = await fetch('/api/admin/shop', {
+      const response = await adminAuthorizedFetch('/api/admin/shop', {
         method: 'PATCH',
-        headers,
-        body: JSON.stringify({ id: itemId, is_active: !isActive })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: itemId, is_active: !isActive }),
       });
 
       if (response.ok) {
         loadShopItems();
       } else {
+        const text = await response.text().catch(() => '');
+        let msg = `Request failed (${response.status})`;
+        try {
+          const j = text ? JSON.parse(text) : {};
+          msg = j.details || j.error || msg;
+        } catch {
+          if (text) msg = text;
+        }
+        console.error('Failed to toggle shop item:', msg);
+        alert(`Could not update shop item: ${msg}`);
       }
     } catch (error) {
       console.error('Failed to toggle shop item:', error);
+      const msg =
+        error instanceof Error && error.name === 'AbortError'
+          ? 'Request timed out — check your connection.'
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      alert(`Could not update shop item: ${msg}`);
     }
   };
 
   const handleToggleFeatured = async (itemId: string, isFeatured: boolean) => {
     try {
-      // Get session token
-      const { data: { session } } = await supabase.auth.getSession();
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-      }
-
-      const response = await fetch('/api/admin/shop', {
+      const response = await adminAuthorizedFetch('/api/admin/shop', {
         method: 'PATCH',
-        headers,
-        body: JSON.stringify({ id: itemId, is_featured: !isFeatured })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: itemId, is_featured: !isFeatured }),
       });
 
       if (response.ok) {
         loadShopItems();
       } else {
-        console.error('Failed to toggle featured status');
+        const text = await response.text().catch(() => '');
+        let msg = `Request failed (${response.status})`;
+        try {
+          const j = text ? JSON.parse(text) : {};
+          msg = j.details || j.error || msg;
+        } catch {
+          if (text) msg = text;
+        }
+        console.error('Failed to toggle featured status:', msg);
+        alert(`Could not update featured status: ${msg}`);
       }
     } catch (error) {
       console.error('Failed to toggle featured status:', error);
+      const msg =
+        error instanceof Error && error.name === 'AbortError'
+          ? 'Request timed out — check your connection.'
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      alert(`Could not update featured status: ${msg}`);
     }
   };
 
@@ -875,46 +881,47 @@ export default function AdminDashboard() {
     console.log('🔄 Updating shop item:', editingShopItem.id, 'with data:', itemData);
 
     try {
-      // Get session token
-      const { data: { session } } = await supabase.auth.getSession();
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-      }
-
-      const response = await fetch('/api/admin/shop', {
+      const response = await adminAuthorizedFetch('/api/admin/shop', {
         method: 'PATCH',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: editingShopItem.id,
-          ...itemData
-        })
+          ...itemData,
+        }),
       });
 
-      const responseData = await response.json();
+      const responseData = await response.json().catch(() => ({}));
       console.log('📡 API Response:', response.status, responseData);
 
-      if (response.ok) {
-        console.log('✅ Shop item updated successfully');
-        // Immediately update the local state with the updated item
-        if (responseData.shopItem) {
-          setShopItems(prev => prev.map(item =>
-            item.id === responseData.shopItem.id ? responseData.shopItem : item
-          ));
-        }
-        // Also refresh the full list to ensure consistency
-        loadShopItems();
-        setShowAddShopItem(false);
-        setEditingShopItem(null);
-      } else {
+      if (!response.ok) {
         console.error('❌ Failed to update shop item:', responseData);
-        const msg = typeof responseData.details === 'string' ? responseData.details : (typeof responseData.error === 'string' ? responseData.error : (responseData.error?.message ?? JSON.stringify(responseData.error ?? 'Unknown error')));
-        alert('Failed to update shop item: ' + msg);
+        const msg =
+          typeof responseData.details === 'string'
+            ? responseData.details
+            : typeof responseData.error === 'string'
+              ? responseData.error
+              : responseData.error?.message ??
+                JSON.stringify(responseData.error ?? 'Unknown error');
+        throw new Error(`Failed to update shop item: ${msg}`);
       }
+
+      console.log('✅ Shop item updated successfully');
+      if (responseData.shopItem) {
+        setShopItems((prev) =>
+          prev.map((item) =>
+            item.id === responseData.shopItem.id ? responseData.shopItem : item,
+          ),
+        );
+      }
+      loadShopItems();
+      setShowAddShopItem(false);
+      setEditingShopItem(null);
     } catch (error) {
       console.error('💥 Failed to update shop item:', error);
-      const msg = error instanceof Error ? error.message : String(error);
-      alert('Failed to update shop item: ' + msg);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timed out — check your connection and try again.');
+      }
+      throw error instanceof Error ? error : new Error(String(error));
     }
   };
 
@@ -923,24 +930,34 @@ export default function AdminDashboard() {
     console.log('Deleting shop item:', itemId);
 
     try {
-      // Get session token
-      const { data: { session } } = await supabase.auth.getSession();
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-      }
-
-      const response = await fetch(`/api/admin/shop?id=${itemId}`, {
+      const response = await adminAuthorizedFetch(`/api/admin/shop?id=${itemId}`, {
         method: 'DELETE',
-        headers
+        headers: { 'Content-Type': 'application/json' },
       });
 
       if (response.ok) {
         loadShopItems();
       } else {
+        const text = await response.text().catch(() => '');
+        let msg = `Request failed (${response.status})`;
+        try {
+          const j = text ? JSON.parse(text) : {};
+          msg = j.details || j.error || msg;
+        } catch {
+          if (text) msg = text;
+        }
+        console.error('Failed to delete shop item:', msg);
+        alert(`Could not delete shop item: ${msg}`);
       }
     } catch (error) {
       console.error('Failed to delete shop item:', error);
+      const msg =
+        error instanceof Error && error.name === 'AbortError'
+          ? 'Request timed out — check your connection.'
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      alert(`Could not delete shop item: ${msg}`);
     }
   };
 

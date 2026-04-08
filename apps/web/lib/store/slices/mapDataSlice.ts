@@ -250,6 +250,10 @@ export const createMapDataSlice: StateCreator<
     }).then(({ error }) => {
       if (error) {
         console.error('Failed to persist world_map_node on insert ERROR DETAILS:', JSON.stringify(error, null, 2));
+        get().setChunkSaveUi({
+          status: 'error',
+          error: `Map node could not be saved: ${formatPostgrestError(error)}`,
+        });
       }
     });
     
@@ -281,6 +285,10 @@ export const createMapDataSlice: StateCreator<
       .then(({ error }) => {
         if (error) {
           console.error('Failed to persist world_map_node on update ERROR DETAILS:', JSON.stringify(error, null, 2));
+          get().setChunkSaveUi({
+            status: 'error',
+            error: `Map node could not be saved: ${formatPostgrestError(error)}`,
+          });
         }
       });
   },
@@ -297,6 +305,10 @@ export const createMapDataSlice: StateCreator<
     const { error } = await supabase.from('world_map_nodes').delete().eq('id', id);
     if (error) {
       console.error('Failed to delete world_map_node ERROR DETAILS:', JSON.stringify(error, null, 2));
+      get().setChunkSaveUi({
+        status: 'error',
+        error: `Could not delete map node: ${formatPostgrestError(error)}`,
+      });
       return;
     }
 

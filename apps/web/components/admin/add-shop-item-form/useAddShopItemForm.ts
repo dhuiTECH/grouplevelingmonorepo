@@ -558,15 +558,21 @@ export function useAddShopItemForm({
         const uploadData = await uploadResponse.json();
         itemData.image_url = uploadData.path || uploadData.url || uploadData.publicUrl || '';
         if (!itemData.image_url) {
-          setUploading(false);
           alert('Upload succeeded but no image URL was returned. Please try again.');
           return;
         }
       } catch (err) {
         console.error('Upload error:', err);
-        setUploading(false);
-        alert(err instanceof Error ? err.message : 'Upload failed');
+        const msg =
+          err instanceof Error && err.name === 'AbortError'
+            ? 'Image upload timed out — check your connection or use a smaller file.'
+            : err instanceof Error
+              ? err.message
+              : 'Upload failed';
+        alert(msg);
         return;
+      } finally {
+        setUploading(false);
       }
     }
 
@@ -585,15 +591,21 @@ export function useAddShopItemForm({
         const baseData = await baseRes.json();
         itemData.image_base_url = baseData.path || baseData.url || baseData.publicUrl || '';
         if (!itemData.image_base_url) {
-          setUploading(false);
           alert('Base layer upload succeeded but no URL was returned. Please try again.');
           return;
         }
       } catch (err) {
         console.error('Base layer upload error:', err);
-        setUploading(false);
-        alert(err instanceof Error ? err.message : 'Failed to upload base layer');
+        const msg =
+          err instanceof Error && err.name === 'AbortError'
+            ? 'Base layer upload timed out — check your connection or use a smaller file.'
+            : err instanceof Error
+              ? err.message
+              : 'Failed to upload base layer';
+        alert(msg);
         return;
+      } finally {
+        setUploading(false);
       }
     }
 
@@ -613,14 +625,22 @@ export function useAddShopItemForm({
         itemData.thumbnail_url = data.path || data.url || data.publicUrl || '';
       } catch (err) {
         console.error('Thumbnail upload error:', err);
-        setUploading(false);
+        const msg =
+          err instanceof Error && err.name === 'AbortError'
+            ? 'Thumbnail upload timed out — check your connection or use a smaller file.'
+            : err instanceof Error
+              ? err.message
+              : 'Failed to upload thumbnail';
+        alert(msg);
         return;
+      } finally {
+        setUploading(false);
       }
     }
 
-    setUploading(false);
     if (!itemData.name.trim() || !itemData.slot) return;
 
+    let saveSucceeded = false;
     setIsSaving(true);
     setSaveStatus('saving');
     try {
@@ -629,6 +649,7 @@ export function useAddShopItemForm({
       } else {
         await onAdd(itemData);
       }
+      saveSucceeded = true;
       setSaveStatus('success');
       setTimeout(() => {
         setIsSaving(false);
@@ -636,9 +657,18 @@ export function useAddShopItemForm({
         onCancel();
       }, 1500);
     } catch (err) {
-      setIsSaving(false);
       setSaveStatus('idle');
-      throw err;
+      const msg =
+        err instanceof Error && err.name === 'AbortError'
+          ? 'Save timed out — check your connection and try again.'
+          : err instanceof Error
+            ? err.message
+            : 'Save failed';
+      alert(msg);
+    } finally {
+      if (!saveSucceeded) {
+        setIsSaving(false);
+      }
     }
   };
 
