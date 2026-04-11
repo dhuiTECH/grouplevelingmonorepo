@@ -22,6 +22,7 @@ export function useAddShopItemForm({
 }: AddShopItemFormProps) {
   const mountedRef = useRef(true);
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -30,6 +31,10 @@ export function useAddShopItemForm({
       if (successTimerRef.current) {
         clearTimeout(successTimerRef.current);
         successTimerRef.current = null;
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
     };
   }, []);
@@ -654,15 +659,20 @@ export function useAddShopItemForm({
     if (!itemData.name.trim() || !itemData.slot) return;
     if (isSaving || uploading) return;
 
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    const ac = new AbortController();
+    abortControllerRef.current = ac;
+
     setIsSaving(true);
     setSaveStatus('saving');
     try {
+      if (ac.signal.aborted) return;
       if (editingItem?.id) {
         await onEdit(itemData);
       } else {
         await onAdd(itemData);
       }
-      if (!mountedRef.current) return;
+      if (ac.signal.aborted || !mountedRef.current) return;
       setSaveStatus('success');
       setIsSaving(false);
       if (successTimerRef.current) clearTimeout(successTimerRef.current);
@@ -673,7 +683,7 @@ export function useAddShopItemForm({
         onCancel();
       }, 400);
     } catch (err) {
-      if (!mountedRef.current) return;
+      if (ac.signal.aborted || !mountedRef.current) return;
       setSaveStatus('idle');
       setIsSaving(false);
       const msg =
