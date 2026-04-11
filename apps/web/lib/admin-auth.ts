@@ -118,36 +118,13 @@ export async function verifyAdminAuth(request?: Request | NextRequest): Promise<
     return undefined
   }
   
-  // Debug: Log available cookies
-  const allCookies = cookieStore.getAll()
-  const cookieNames = allCookies.map(c => c.name)
-  const supabaseCookies = cookieNames.filter(name => 
-    name.includes('supabase') || name.includes('sb-') || name.includes('auth')
-  )
-  
-  console.log('🍪 All cookies:', cookieNames.join(', '))
-  console.log('🔐 Supabase cookies found:', supabaseCookies.join(', '))
-  
-  if (request) {
-    const cookieHeader = request.headers.get('cookie')
-    console.log('📦 Cookie header present:', !!cookieHeader)
-    if (cookieHeader) {
-      const headerCookies = cookieHeader.split(';').map(c => c.trim().split('=')[0])
-      console.log('📦 Header cookie names:', headerCookies.join(', '))
-    }
-  }
-
   const supabaseServer = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         get(name: string) {
-          const value = getCookie(name)
-          if (value && (name.includes('auth') || name.includes('supabase') || name.includes('sb-'))) {
-            console.log(`🔍 Reading cookie ${name}:`, value.substring(0, 20) + '...')
-          }
-          return value
+          return getCookie(name)
         },
         set() {},
         remove() {}
@@ -176,7 +153,6 @@ export async function verifyAdminAuth(request?: Request | NextRequest): Promise<
     }
   }
 
-  console.log('✅ Admin verified (profiles.is_admin):', authUser.email)
   return {
     authorized: true,
     user: {

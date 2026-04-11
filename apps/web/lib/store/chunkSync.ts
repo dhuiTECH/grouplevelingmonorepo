@@ -182,9 +182,21 @@ async function ensureFreshSession(): Promise<void> {
       const { error } = await supabase.auth.refreshSession();
       if (error) {
         console.warn('[chunkSync] Session refresh failed:', error.message);
+        const { data: { session: recheck } } = await supabase.auth.getSession();
+        const recheckExpiry = recheck?.expires_at ? recheck.expires_at * 1000 : 0;
+        if (!recheck || recheckExpiry < Date.now()) {
+          reportChunkSaveUi({
+            status: 'error',
+            error: 'Session expired — please refresh the page and log in again to save map changes.',
+          });
+          throw new Error('Session expired and could not be refreshed');
+        }
       }
     }
   } catch (e) {
+    if (e instanceof Error && e.message === 'Session expired and could not be refreshed') {
+      throw e;
+    }
     console.warn('[chunkSync] ensureFreshSession error:', e);
   }
 }

@@ -640,7 +640,6 @@ export function useAddShopItemForm({
 
     if (!itemData.name.trim() || !itemData.slot) return;
 
-    let saveSucceeded = false;
     setIsSaving(true);
     setSaveStatus('saving');
     try {
@@ -649,26 +648,20 @@ export function useAddShopItemForm({
       } else {
         await onAdd(itemData);
       }
-      saveSucceeded = true;
       setSaveStatus('success');
+      setIsSaving(false);
       setTimeout(() => {
-        setIsSaving(false);
         setSaveStatus('idle');
         onCancel();
-      }, 1500);
+      }, 400);
     } catch (err) {
       setSaveStatus('idle');
+      setIsSaving(false);
       const msg =
-        err instanceof Error && err.name === 'AbortError'
-          ? 'Save timed out — check your connection and try again.'
-          : err instanceof Error
-            ? err.message
-            : 'Save failed';
+        err instanceof Error
+          ? err.message
+          : 'Save failed';
       alert(msg);
-    } finally {
-      if (!saveSucceeded) {
-        setIsSaving(false);
-      }
     }
   };
 

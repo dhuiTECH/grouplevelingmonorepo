@@ -913,7 +913,6 @@ export default function AdminDashboard() {
           ),
         );
       }
-      loadShopItems();
       setShowAddShopItem(false);
       setEditingShopItem(null);
     } catch (error) {
