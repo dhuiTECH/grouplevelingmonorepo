@@ -20,6 +20,19 @@ export function useAddShopItemForm({
   baseBodyShopItems = [],
   shopItems = [],
 }: AddShopItemFormProps) {
+  const mountedRef = useRef(true);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (successTimerRef.current) {
+        clearTimeout(successTimerRef.current);
+        successTimerRef.current = null;
+      }
+    };
+  }, []);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -639,6 +652,7 @@ export function useAddShopItemForm({
     }
 
     if (!itemData.name.trim() || !itemData.slot) return;
+    if (isSaving || uploading) return;
 
     setIsSaving(true);
     setSaveStatus('saving');
@@ -648,13 +662,18 @@ export function useAddShopItemForm({
       } else {
         await onAdd(itemData);
       }
+      if (!mountedRef.current) return;
       setSaveStatus('success');
       setIsSaving(false);
-      setTimeout(() => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+      successTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current) return;
+        successTimerRef.current = null;
         setSaveStatus('idle');
         onCancel();
       }, 400);
     } catch (err) {
+      if (!mountedRef.current) return;
       setSaveStatus('idle');
       setIsSaving(false);
       const msg =
