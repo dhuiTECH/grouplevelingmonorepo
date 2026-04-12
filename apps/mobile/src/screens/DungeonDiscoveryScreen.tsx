@@ -21,6 +21,7 @@ import { supabase } from '@/lib/supabase';
 import { InviteFriendsModal } from '@/components/modals/InviteFriendsModal';
 import { useBackgroundRunRecorder } from '@/hooks/useBackgroundRunRecorder';
 import { uploadRun } from '@/lib/runUpload';
+import { formatSupabaseErrorMessage } from '@/lib/supabaseErrors';
 import { useAudio } from '@/contexts/AudioContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGameData } from '@/hooks/useGameData';
@@ -168,8 +169,13 @@ export default function DungeonDiscoveryScreen() {
     isRecording: isTracking,
     distance,
     duration,
+    elapsedSeconds,
+    isPaused,
+    pauseReason,
     startRecording: startRun,
     stopRecording: stopRun,
+    pauseRecording,
+    resumeRecording,
   } = useBackgroundRunRecorder();
 
   const [runDungeon, setRunDungeon] = useState<DungeonRunPayload | null>(null);
@@ -574,7 +580,7 @@ export default function DungeonDiscoveryScreen() {
       });
     } catch (e) {
       console.error('[DungeonDiscovery] upload failed', e);
-      alert(e instanceof Error ? e.message : 'Failed to upload run');
+      alert(formatSupabaseErrorMessage(e) || 'Failed to upload run');
     } finally {
       setUploading(false);
     }
@@ -704,31 +710,40 @@ export default function DungeonDiscoveryScreen() {
               <Text style={styles.runDungeonName}>{(runDungeon.name || 'Gate').toUpperCase()}</Text>
               <Text style={styles.runObjective}>
                 {isTracking
-                  ? 'RECORDING — END WHEN FINISHED'
+                  ? isPaused
+                    ? pauseReason === 'manual'
+                      ? 'PAUSED — TAP RESUME'
+                      : 'AUTO-PAUSED — STANDING STILL'
+                    : 'RECORDING — END WHEN FINISHED'
                   : Platform.OS === 'web'
                     ? 'Recording needs the mobile app'
                     : gpsError
                       ? 'GPS COULD NOT START'
                       : 'CONNECTING GPS — STAY ON THIS SCREEN'}
               </Text>
-              <View style={styles.statsRow}>
-                <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>DISTANCE</Text>
-                  <Text style={styles.statValue}>
-                    {distance.toFixed(0)}
-                    <Text style={styles.statUnit}>m</Text>
-                  </Text>
+              <View style={styles.runStatsBlock}>
+                <View style={styles.statsRow}>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statLabel}>DISTANCE</Text>
+                    <Text style={styles.statValue}>
+                      {distance.toFixed(0)}
+                      <Text style={styles.statUnit}>m</Text>
+                    </Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statBox}>
+                    <Text style={styles.statLabel}>PACE</Text>
+                    <Text style={styles.statValue}>{paceStr}</Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statBox}>
+                    <Text style={styles.statLabel}>MOVING</Text>
+                    <Text style={styles.statValue}>{formatTime(duration)}</Text>
+                  </View>
                 </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>PACE</Text>
-                  <Text style={styles.statValue}>{paceStr}</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>TIME</Text>
-                  <Text style={styles.statValue}>{formatTime(duration)}</Text>
-                </View>
+                {isTracking && elapsedSeconds > duration + 5 ? (
+                  <Text style={styles.runElapsedHint}>Elapsed {formatTime(elapsedSeconds)}</Text>
+                ) : null}
               </View>
               {!isTracking ? (
                 gpsError ? (
@@ -747,17 +762,28 @@ export default function DungeonDiscoveryScreen() {
                   </View>
                 )
               ) : (
-                <TouchableOpacity
-                  style={[styles.runEndBtn, uploading && styles.runEndBtnDisabled]}
-                  disabled={uploading}
-                  onPress={onEndRun}
-                >
-                  {uploading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.runEndText}>END RUN & UPLOAD</Text>
-                  )}
-                </TouchableOpacity>
+                <View style={styles.runActionsCol}>
+                  <TouchableOpacity
+                    style={[styles.runPauseBtn, isPaused && styles.runPauseBtnActive]}
+                    disabled={uploading}
+                    onPress={() => void (isPaused ? resumeRecording() : pauseRecording())}
+                    activeOpacity={0.88}
+                    accessibilityLabel={isPaused ? 'Resume recording' : 'Pause recording'}
+                  >
+                    <Text style={styles.runPauseBtnText}>{isPaused ? 'RESUME' : 'PAUSE'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.runEndBtn, uploading && styles.runEndBtnDisabled]}
+                    disabled={uploading}
+                    onPress={onEndRun}
+                  >
+                    {uploading ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.runEndText}>END RUN & UPLOAD</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               )}
             </LinearGradient>
           ) : null}
@@ -1018,12 +1044,47 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  runStatsBlock: {
+    width: '100%',
+    marginBottom: 16,
+    alignItems: 'center',
+  },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
     justifyContent: 'space-around',
-    marginBottom: 16,
+  },
+  runElapsedHint: {
+    color: '#64748b',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  runActionsCol: {
+    width: '100%',
+    gap: 10,
+  },
+  runPauseBtn: {
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    paddingVertical: 14,
+    borderRadius: 10,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.45)',
+  },
+  runPauseBtnActive: {
+    backgroundColor: 'rgba(34, 211, 238, 0.22)',
+    borderColor: 'rgba(34, 211, 238, 0.65)',
+  },
+  runPauseBtnText: {
+    color: '#22d3ee',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
   statBox: {
     alignItems: 'center',

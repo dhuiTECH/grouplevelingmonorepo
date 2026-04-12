@@ -6,7 +6,8 @@ import {
   SafeAreaView, 
   Platform,
   ActivityIndicator,
-  Text
+  Text,
+  TouchableOpacity,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,6 +20,7 @@ import { useGameData } from '@/hooks/useGameData';
 import { useTutorial } from '@/context/TutorialContext';
 import { api } from '@/api/shop';
 import EnhancedShopView from '@/components/EnhancedShopView';
+import { BlacksmithUI } from '@/components/crafting/BlacksmithUI';
 import { ShopItem } from '@/types/user';
 
 export const ShopScreen: React.FC<{ route: any }> = ({ route }) => {
@@ -37,6 +39,7 @@ export const ShopScreen: React.FC<{ route: any }> = ({ route }) => {
 
   const [loading, setLoading] = useState(true);
   const [allItems, setAllItems] = useState<ShopItem[]>([]);
+  const [shopMode, setShopMode] = useState<'merchant' | 'blacksmith'>('merchant');
 
   const fetchItems = useCallback(async (nodeId: string | undefined) => {
     try {
@@ -147,19 +150,82 @@ export const ShopScreen: React.FC<{ route: any }> = ({ route }) => {
       
       <SafeAreaView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? insets.top : 0 }}>
         {user && (
-          <EnhancedShopView
-            user={user}
-            shopItems={allItems}
-            setUser={setUser}
-            handleBuyItem={handleBuyItem}
-            isLoading={loading}
-            tutorialMainTab={tutorialMainTab}
-          />
+          <>
+            <View style={shopModeStyles.modeRow}>
+              <TouchableOpacity
+                style={[shopModeStyles.modeBtn, shopMode === 'merchant' && shopModeStyles.modeBtnActive]}
+                onPress={() => {
+                  playHunterSound('click');
+                  setShopMode('merchant');
+                }}
+              >
+                <Text style={[shopModeStyles.modeBtnText, shopMode === 'merchant' && shopModeStyles.modeBtnTextActive]}>
+                  Merchant
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[shopModeStyles.modeBtn, shopMode === 'blacksmith' && shopModeStyles.modeBtnActive]}
+                onPress={() => {
+                  playHunterSound('click');
+                  setShopMode('blacksmith');
+                }}
+              >
+                <Text style={[shopModeStyles.modeBtnText, shopMode === 'blacksmith' && shopModeStyles.modeBtnTextActive]}>
+                  Blacksmith
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ flex: 1 }}>
+              {shopMode === 'merchant' ? (
+                <EnhancedShopView
+                  user={user}
+                  shopItems={allItems}
+                  setUser={setUser}
+                  handleBuyItem={handleBuyItem}
+                  isLoading={loading}
+                  tutorialMainTab={tutorialMainTab}
+                />
+              ) : (
+                <BlacksmithUI user={user} setUser={setUser} refreshGameData={refreshGameData} />
+              )}
+            </View>
+          </>
         )}
       </SafeAreaView>
     </View>
   );
 };
+
+const shopModeStyles = StyleSheet.create({
+  modeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 10,
+  },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#334155',
+    alignItems: 'center',
+  },
+  modeBtnActive: {
+    borderColor: '#22d3ee',
+    backgroundColor: '#0c4a6e33',
+  },
+  modeBtnText: {
+    color: '#94a3b8',
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  modeBtnTextActive: {
+    color: '#22d3ee',
+  },
+});
 
 const styles = StyleSheet.create({
   container: {

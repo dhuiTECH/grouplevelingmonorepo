@@ -39,8 +39,8 @@ const { width: WINDOW_WIDTH } = Dimensions.get('window');
 
 const CAVE_OF_SHADOWS_DEMO = {
   runData: {
-    distance: 11440,
-    duration: 63 * 60 + 33,
+    distance: 4580,
+    duration: 28 * 60 + 33,
     routeCoordinates: [] as Array<{ latitude: number; longitude: number }>,
     elevationGain: 180,
     timeToTargetSeconds: 52 * 60 + 10,

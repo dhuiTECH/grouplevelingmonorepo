@@ -19,6 +19,7 @@
     "seed-dungeons:help": "node -e \"console.log('If grid rows keep appearing: (1) Stop any running seed terminal with Ctrl+C. (2) pnpm kill  (Windows) kills ALL node — use if a stuck seeder. (3) Apply migration 20260409120000 — DB blocks new Metro Vancouver Grid inserts.')\""
   },
   "dependencies": {
+    "@google-cloud/vertexai": "^1.11.0",
     "@supabase/supabase-js": "^2.49.1",
     "axios": "^1.7.9",
     "dotenv": "^16.4.7"

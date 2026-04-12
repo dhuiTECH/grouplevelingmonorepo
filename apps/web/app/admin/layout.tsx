@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AdminToaster } from "@/components/admin/AdminToaster";
 
 export const metadata: Metadata = {
   title: "Admin",
@@ -6,5 +7,10 @@ export const metadata: Metadata = {
 };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return (
+    <>
+      {children}
+      <AdminToaster />
+    </>
+  );
 }

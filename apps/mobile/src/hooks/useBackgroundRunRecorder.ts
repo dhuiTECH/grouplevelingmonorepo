@@ -6,6 +6,14 @@ import {
   getRecordingDistanceMeters,
   resetRecordingSession,
 } from '@/lib/runRecordingDb';
+import {
+  resetRecordingPauseState,
+  clearRecordingPauseState,
+  setManualPause,
+  isManualPauseAsync,
+  isAutoPauseAsync,
+  getMovingSecondsAsync,
+} from '@/lib/runRecordingPause';
 import { getRunRecordingMode } from '@/config/runRecordingMode';
 import { applyLocationSample } from '@/lib/runRecordingLocation';
 import { LOCATION_TASK_NAME } from '@/tasks/locationTask';
@@ -14,7 +22,10 @@ const RECORDING_STARTED_AT_KEY = 'groupleveling_recording_started_at_ms';
 
 export interface BackgroundRecordingStopReport {
   distance: number;
+  /** Moving time (seconds) — excludes manual + auto-pause; used for pace and dungeon match. */
   duration: number;
+  /** Wall-clock elapsed from start to stop (includes pauses). */
+  elapsedSeconds: number;
   elevationGain: number;
   timeToTargetSeconds: null;
 }
@@ -22,7 +33,11 @@ export interface BackgroundRecordingStopReport {
 export function useBackgroundRunRecorder() {
   const [isRecording, setIsRecording] = useState(false);
   const [distance, setDistance] = useState(0);
+  /** Moving time (Strava-style), not wall clock */
   const [duration, setDuration] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const [pauseReason, setPauseReason] = useState<'manual' | 'auto' | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -53,11 +68,18 @@ export function useBackgroundRunRecorder() {
     setDistance(m);
   }, []);
 
-  const tickDuration = useCallback(async () => {
+  const tickTimesAndPause = useCallback(async () => {
     const raw = await AsyncStorage.getItem(RECORDING_STARTED_AT_KEY);
     const started = raw != null ? Number(raw) : NaN;
-    if (!Number.isFinite(started)) return;
-    setDuration(Math.max(0, Math.floor((Date.now() - started) / 1000)));
+    if (Number.isFinite(started)) {
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - started) / 1000)));
+    }
+    const moving = await getMovingSecondsAsync();
+    setDuration(Math.floor(moving));
+    const manual = await isManualPauseAsync();
+    const auto = await isAutoPauseAsync();
+    setIsPaused(manual || auto);
+    setPauseReason(manual ? 'manual' : auto ? 'auto' : null);
   }, []);
 
   useEffect(() => {
@@ -94,6 +116,7 @@ export function useBackgroundRunRecorder() {
       }
 
       await resetRecordingSession();
+      await resetRecordingPauseState();
 
       if (mode === 'foreground') {
         stopForegroundWatch();
@@ -134,13 +157,16 @@ export function useBackgroundRunRecorder() {
       setIsRecording(true);
       setDistance(0);
       setDuration(0);
+      setElapsedSeconds(0);
+      setIsPaused(false);
+      setPauseReason(null);
 
       pollRef.current = setInterval(() => {
         void pollDistance();
-        void tickDuration();
+        void tickTimesAndPause();
       }, 1000);
       durationTimerRef.current = setInterval(() => {
-        void tickDuration();
+        void tickTimesAndPause();
       }, 1000);
 
       return true;
@@ -150,7 +176,19 @@ export function useBackgroundRunRecorder() {
     } finally {
       startInProgressRef.current = false;
     }
-  }, [pollDistance, tickDuration, stopForegroundWatch]);
+  }, [pollDistance, tickTimesAndPause, stopForegroundWatch]);
+
+  const pauseRecording = useCallback(async () => {
+    await setManualPause(true);
+    setIsPaused(true);
+    setPauseReason('manual');
+    void tickTimesAndPause();
+  }, [tickTimesAndPause]);
+
+  const resumeRecording = useCallback(async () => {
+    await setManualPause(false);
+    void tickTimesAndPause();
+  }, [tickTimesAndPause]);
 
   const stopRecording = useCallback(async (): Promise<BackgroundRecordingStopReport> => {
     clearTimers();
@@ -161,7 +199,9 @@ export function useBackgroundRunRecorder() {
 
     const started = startedRaw != null ? Number(startedRaw) : NaN;
     const wallDuration =
-      Number.isFinite(started) ? Math.max(0, Math.floor((Date.now() - started) / 1000)) : duration;
+      Number.isFinite(started) ? Math.max(0, Math.floor((Date.now() - started) / 1000)) : 0;
+
+    const movingSeconds = Math.floor(await getMovingSecondsAsync());
 
     const mode = getRunRecordingMode();
     if (mode === 'background') {
@@ -174,22 +214,33 @@ export function useBackgroundRunRecorder() {
     const dist = await getRecordingDistanceMeters();
     recordingActiveRef.current = false;
     setIsRecording(false);
+    setIsPaused(false);
+    setPauseReason(null);
     setDistance(dist);
-    setDuration(wallDuration);
+    setDuration(movingSeconds);
+    setElapsedSeconds(wallDuration);
+
+    await clearRecordingPauseState();
 
     return {
       distance: dist,
-      duration: wallDuration,
+      duration: movingSeconds,
+      elapsedSeconds: wallDuration,
       elevationGain: 0,
       timeToTargetSeconds: null,
     };
-  }, [clearTimers, duration, stopForegroundWatch]);
+  }, [clearTimers, stopForegroundWatch]);
 
   return {
     isRecording,
     distance,
     duration,
+    elapsedSeconds,
+    isPaused,
+    pauseReason,
     startRecording,
     stopRecording,
+    pauseRecording,
+    resumeRecording,
   };
 }

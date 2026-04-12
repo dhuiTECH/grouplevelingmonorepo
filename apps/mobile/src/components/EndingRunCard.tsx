@@ -21,7 +21,10 @@ const AnimatedPolyline = Animated.createAnimatedComponent(Polyline);
 interface EndingRunCardProps {
   runData: {
     distance: number;
+    /** Moving time (seconds), excludes pauses */
     duration: number;
+    /** Wall-clock time when pauses occurred */
+    elapsedSeconds?: number;
     routeCoordinates?: Array<{ latitude: number; longitude: number }>;
     /** Google-encoded polyline (same as tracker / upload); decoded for mini-map when routeCoordinates omitted */
     encodedPolyline?: string;
@@ -96,6 +99,12 @@ export const EndingRunCard = forwardRef(({
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
   const timeStr = formatTime(runData.duration);
+  const elapsed =
+    runData.elapsedSeconds != null &&
+    Number.isFinite(runData.elapsedSeconds) &&
+    runData.elapsedSeconds > runData.duration + 5
+      ? formatTime(Math.floor(runData.elapsedSeconds))
+      : null;
 
   // Calculate Pace (min/km)
   const paceVal = runData.distance > 0 ? (runData.duration / 60) / (runData.distance / 1000) : 0;
@@ -192,7 +201,11 @@ export const EndingRunCard = forwardRef(({
             <View style={styles.statsContainer}>
               <View style={styles.dataItem}><Text style={styles.dataLabel}>DISTANCE</Text><Text style={styles.dataValue}>{distanceKm}</Text></View>
               <View style={styles.dataItem}><Text style={styles.dataLabel}>PACE</Text><Text style={styles.dataValue}>{paceStr}</Text></View>
-              <View style={styles.dataItem}><Text style={styles.dataLabel}>TIME</Text><Text style={styles.dataValue}>{timeStr}</Text></View>
+              <View style={styles.dataItem}>
+                <Text style={styles.dataLabel}>MOVING</Text>
+                <Text style={styles.dataValue}>{timeStr}</Text>
+                {elapsed ? <Text style={styles.dataElapsedHint}>Elapsed {elapsed}</Text> : null}
+              </View>
             </View>
             {runData.xpEarned != null && !Number.isNaN(Number(runData.xpEarned)) ? (
               <View style={styles.xpEarnedRow}>
@@ -227,7 +240,7 @@ export const EndingRunCard = forwardRef(({
         <View style={styles.stickerDataRow}>
           <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>DISTANCE</Text><Text style={styles.stickerDataValue}>{distanceKm}</Text></View>
           <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>PACE</Text><Text style={styles.stickerDataValue}>{paceStr}</Text></View>
-          <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>TIME</Text><Text style={styles.stickerDataValue}>{timeStr}</Text></View>
+          <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>MOVING</Text><Text style={styles.stickerDataValue}>{timeStr}</Text></View>
         </View>
         {runData.xpEarned != null && !Number.isNaN(Number(runData.xpEarned)) ? (
           <View style={styles.stickerXpRow}>
@@ -277,7 +290,7 @@ export const EndingRunCard = forwardRef(({
           <View style={styles.stickerDataRow}>
             <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>DISTANCE</Text><Text style={styles.stickerDataValue}>{distanceKm}</Text></View>
             <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>PACE</Text><Text style={styles.stickerDataValue}>{paceStr}</Text></View>
-            <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>TIME</Text><Text style={styles.stickerDataValue}>{timeStr}</Text></View>
+            <View style={styles.stickerDataItem}><Text style={styles.stickerDataLabel}>MOVING</Text><Text style={styles.stickerDataValue}>{timeStr}</Text></View>
           </View>
           {runData.xpEarned != null && !Number.isNaN(Number(runData.xpEarned)) ? (
             <View style={styles.stickerXpRow}>
@@ -448,6 +461,13 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  dataElapsedHint: {
+    color: '#64748b',
+    fontSize: 8,
+    fontWeight: '700',
+    marginTop: 2,
+    letterSpacing: 0.5,
   },
   miniMapContainer: {
     width: 60,

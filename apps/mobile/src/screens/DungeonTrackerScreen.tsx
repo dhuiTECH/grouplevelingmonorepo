@@ -13,6 +13,7 @@ import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/nativ
 import { useBackgroundRunRecorder } from '@/hooks/useBackgroundRunRecorder';
 import { uploadRun } from '@/lib/runUpload';
 import { insertFreeHuntFromRecordingSession } from '@/lib/freeHuntUpload';
+import { formatSupabaseErrorMessage } from '@/lib/supabaseErrors';
 import { readRecordingPathCoordinates } from '@/lib/readRecordingPath';
 import { resetRecordingSession } from '@/lib/runRecordingDb';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -38,8 +39,13 @@ const DungeonTrackerScreen = () => {
     isRecording: isTracking,
     distance,
     duration,
+    elapsedSeconds,
+    isPaused,
+    pauseReason,
     startRecording: startRun,
     stopRecording: stopRun,
+    pauseRecording,
+    resumeRecording,
   } = useBackgroundRunRecorder();
 
   /** One immediate start + one delayed retry; then inline error + Try again (native only). */
@@ -221,36 +227,50 @@ const DungeonTrackerScreen = () => {
            <Text style={styles.objectiveText}>
              {isFreeRun
                ? isTracking
-                 ? 'SCOUTING — YOUR PATH IS DRAWN ON THE MAP'
+                 ? isPaused
+                   ? pauseReason === 'manual'
+                     ? 'PAUSED — TAP RESUME'
+                     : 'AUTO-PAUSED — STANDING STILL (LIKE STRAVA)'
+                   : 'SCOUTING — YOUR PATH IS DRAWN ON THE MAP'
                  : gpsError
                    ? 'GPS COULD NOT START'
                    : 'RUN ANYWHERE — MANA FLOWS WHERE YOU MOVE'
                : isTracking
-                 ? 'RECORDING — END RUN WHEN FINISHED'
+                 ? isPaused
+                   ? pauseReason === 'manual'
+                     ? 'PAUSED — TAP RESUME'
+                     : 'AUTO-PAUSED — STANDING STILL'
+                   : 'RECORDING — END RUN WHEN FINISHED'
                  : gpsError
                    ? 'GPS COULD NOT START'
                    : 'OBJECTIVE: RECORD A ROUTE — WE WILL MATCH YOU TO A GLOBAL DUNGEON'}
            </Text>
            
-           <View style={styles.statsRow}>
-             <View style={styles.statBox}>
-               <Text style={styles.label}>DISTANCE</Text>
-               <Text style={styles.value}>{distance.toFixed(0)}<Text style={styles.unit}>m</Text></Text>
-             </View>
-             
-             <View style={styles.divider} />
+           <View style={styles.statsBlock}>
+             <View style={styles.statsRow}>
+               <View style={styles.statBox}>
+                 <Text style={styles.label}>DISTANCE</Text>
+                 <Text style={styles.value}>{distance.toFixed(0)}<Text style={styles.unit}>m</Text></Text>
+               </View>
 
-             <View style={styles.statBox}>
-               <Text style={styles.label}>PACE</Text>
-               <Text style={styles.value}>{paceStr}</Text>
+               <View style={styles.divider} />
+
+               <View style={styles.statBox}>
+                 <Text style={styles.label}>PACE</Text>
+                 <Text style={styles.value}>{paceStr}</Text>
+               </View>
+
+               <View style={styles.divider} />
+
+               <View style={styles.statBox}>
+                 <Text style={styles.label}>MOVING</Text>
+                 <Text style={styles.value}>{formatTime(duration)}</Text>
+               </View>
              </View>
 
-             <View style={styles.divider} />
-
-             <View style={styles.statBox}>
-               <Text style={styles.label}>TIME</Text>
-               <Text style={styles.value}>{formatTime(duration)}</Text>
-             </View>
+             {isTracking && elapsedSeconds > duration + 5 ? (
+               <Text style={styles.elapsedHint}>Elapsed {formatTime(elapsedSeconds)}</Text>
+             ) : null}
            </View>
 
            {!isTracking ? (
@@ -272,59 +292,70 @@ const DungeonTrackerScreen = () => {
                </View>
              )
            ) : (
-             <TouchableOpacity
-               style={[styles.btnStop, uploading && styles.btnDisabled]}
-               disabled={uploading}
-               onPress={async () => {
-                 if (uploading) return;
-                 setUploading(true);
-                 try {
-                   const report = await stopRun();
-                   if (isFreeRun) {
-                     const insert = await insertFreeHuntFromRecordingSession();
-                     navigation.navigate('RunComplete', {
-                       runData: {
-                         ...report,
-                         distance: insert.distanceMeters,
-                         xpEarned: insert.xpEarned,
-                         encodedPolyline: insert.encodedPolyline,
-                         recordedViaGlobalEngine: false,
-                       },
-                       mode: 'free_run',
-                     });
-                   } else {
-                     const upload = await uploadRun(report.duration);
-                     navigation.navigate('RunComplete', {
-                       runData: {
-                         ...report,
-                         encodedPolyline: upload.encodedPolyline,
-                         recordedViaGlobalEngine: true,
-                       },
-                       dungeon,
-                       matchResult: { matchedDungeonId: upload.matchedDungeonId },
-                     });
-                   }
-                 } catch (e) {
-                   console.error('[DungeonTracker] upload failed', e);
-                   alert(e instanceof Error ? e.message : 'Failed to upload run');
-                   if (isFreeRun) {
-                     try {
-                       await resetRecordingSession();
-                     } catch {
-                       /* ignore */
+             <View style={styles.runActions}>
+               <TouchableOpacity
+                 style={[styles.btnPause, isPaused && styles.btnPauseActive]}
+                 disabled={uploading}
+                 onPress={() => void (isPaused ? resumeRecording() : pauseRecording())}
+                 activeOpacity={0.88}
+                 accessibilityLabel={isPaused ? 'Resume recording' : 'Pause recording'}
+               >
+                 <Text style={styles.btnPauseText}>{isPaused ? 'RESUME' : 'PAUSE'}</Text>
+               </TouchableOpacity>
+               <TouchableOpacity
+                 style={[styles.btnStop, uploading && styles.btnDisabled]}
+                 disabled={uploading}
+                 onPress={async () => {
+                   if (uploading) return;
+                   setUploading(true);
+                   try {
+                     const report = await stopRun();
+                     if (isFreeRun) {
+                       const insert = await insertFreeHuntFromRecordingSession();
+                       navigation.navigate('RunComplete', {
+                         runData: {
+                           ...report,
+                           distance: insert.distanceMeters,
+                           xpEarned: insert.xpEarned,
+                           encodedPolyline: insert.encodedPolyline,
+                           recordedViaGlobalEngine: false,
+                         },
+                         mode: 'free_run',
+                       });
+                     } else {
+                       const upload = await uploadRun(report.duration);
+                       navigation.navigate('RunComplete', {
+                         runData: {
+                           ...report,
+                           encodedPolyline: upload.encodedPolyline,
+                           recordedViaGlobalEngine: true,
+                         },
+                         dungeon,
+                         matchResult: { matchedDungeonId: upload.matchedDungeonId },
+                       });
                      }
+                   } catch (e) {
+                     console.error('[DungeonTracker] upload failed', e);
+                     alert(formatSupabaseErrorMessage(e) || 'Failed to upload run');
+                     if (isFreeRun) {
+                       try {
+                         await resetRecordingSession();
+                       } catch {
+                         /* ignore */
+                       }
+                     }
+                   } finally {
+                     setUploading(false);
                    }
-                 } finally {
-                   setUploading(false);
-                 }
-               }}
-             >
-               {uploading ? (
-                 <ActivityIndicator color="#fff" />
-               ) : (
-                 <Text style={styles.btnText}>{isFreeRun ? 'END SCOUT RUN' : 'END RUN & UPLOAD'}</Text>
-               )}
-             </TouchableOpacity>
+                 }}
+               >
+                 {uploading ? (
+                   <ActivityIndicator color="#fff" />
+                 ) : (
+                   <Text style={styles.btnText}>{isFreeRun ? 'END SCOUT RUN' : 'END RUN & UPLOAD'}</Text>
+                 )}
+               </TouchableOpacity>
+             </View>
            )}
         </View>
       </LinearGradient>
@@ -435,12 +466,48 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     marginBottom: 30,
   },
+  statsBlock: {
+    width: '100%',
+    marginBottom: 40,
+    alignItems: 'center',
+  },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 40,
     width: '100%',
     justifyContent: 'space-around',
+  },
+  elapsedHint: {
+    color: '#64748b',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  runActions: {
+    width: '100%',
+    gap: 10,
+  },
+  btnPause: {
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.45)',
+  },
+  btnPauseActive: {
+    backgroundColor: 'rgba(34, 211, 238, 0.22)',
+    borderColor: 'rgba(34, 211, 238, 0.65)',
+  },
+  btnPauseText: {
+    color: '#22d3ee',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
   statBox: {
     alignItems: 'center',

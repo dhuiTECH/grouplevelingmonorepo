@@ -1,14 +1,22 @@
 import * as Location from 'expo-location';
 import { getDistance } from 'geolib';
 import { getRecordingDb } from '@/lib/runRecordingDb';
+import { applyPauseAndMovingTime, tickMovingTimeForFilteredSample } from '@/lib/runRecordingPause';
 
 /**
  * Single location sample: insert point + accumulate distance (same rules as the background location task).
  * Used by background TaskManager and foreground `watchPositionAsync`.
+ * When manual or auto-paused, skips path + distance (Strava-style moving time is tracked in `runRecordingPause`).
  */
 export async function applyLocationSample(loc: Location.LocationObject): Promise<void> {
   const acc = loc.coords.accuracy;
-  if (acc != null && acc > 50) return;
+  if (acc != null && acc > 50) {
+    await tickMovingTimeForFilteredSample();
+    return;
+  }
+
+  const { skipRecording } = await applyPauseAndMovingTime(loc);
+  if (skipRecording) return;
 
   const lat = loc.coords.latitude;
   const lng = loc.coords.longitude;

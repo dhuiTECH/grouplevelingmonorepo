@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { User, Clock, Trophy, LogOut, Plus, Sword, Users, Settings, Edit, Edit2, Trash2, Coins, Loader2, Sparkles, Map, CheckCircle, XCircle, Zap, Check, Search, X, PawPrint, Music2, ScrollText, Globe, Newspaper, Package } from 'lucide-react';
+import { User, Clock, Trophy, LogOut, Plus, Sword, Users, Settings, Edit, Edit2, Trash2, Coins, Loader2, Sparkles, Map, CheckCircle, XCircle, Zap, Check, Search, X, PawPrint, Music2, ScrollText, Globe, Newspaper, Package, Hammer } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { adminAuthorizedFetch } from '@/lib/admin-authorized-fetch';
@@ -25,6 +25,7 @@ import PetsTab from '@/components/admin/PetsTab';
 import MusicTab from '@/components/admin/MusicTab';
 import BlogEditorTab from '@/components/admin/BlogEditorTab';
 import LootManagerTab from '@/components/admin/LootManagerTab';
+import RecipeBuilderTab from '@/components/admin/RecipeBuilderTab';
 import dynamic from 'next/dynamic';
 
 const WorldMapEngine = dynamic(
@@ -1053,6 +1054,7 @@ export default function AdminDashboard() {
           <AdminNavItem id="dungeons" icon={Sword} label={`Dungeons (${dungeons.length})`} active={activeTab === 'dungeons'} onClick={setActiveTab} />
           <AdminNavItem id="shop" icon={Plus} label={`Shop (${shopItems.length})`} active={activeTab === 'shop'} onClick={setActiveTab} />
           <AdminNavItem id="loot" icon={Package} label="Loot" active={activeTab === 'loot'} onClick={setActiveTab} />
+          <AdminNavItem id="recipes" icon={Hammer} label="Recipes" active={activeTab === 'recipes'} onClick={setActiveTab} />
           <AdminNavItem id="gacha" icon={Sparkles} label="Gacha System" active={activeTab === 'gacha'} onClick={setActiveTab} />
           <AdminNavItem id="quests" icon={ScrollText} label="Quests" active={activeTab === 'quests'} onClick={setActiveTab} />
           <AdminNavItem id="skills" icon={Zap} label="Skills" active={activeTab === 'skills'} onClick={setActiveTab} />
@@ -1421,6 +1423,8 @@ export default function AdminDashboard() {
         )}
 
         {activeTab === 'loot' && <LootManagerTab shopItems={shopItems} />}
+
+        {activeTab === 'recipes' && <RecipeBuilderTab shopItems={shopItems} />}
 
         {activeTab === 'gacha' && (
           <section className="space-y-6">
