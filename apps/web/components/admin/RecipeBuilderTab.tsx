@@ -1,7 +1,6 @@
 'use client'
 
-import React, { useMemo, useState } from 'react'
-import { useFieldArray, useForm, type SubmitHandler } from 'react-hook-form'
+import React, { useCallback, useMemo, useState } from 'react'
 import { Hammer } from 'lucide-react'
 import { adminToast } from '@/lib/admin-toast'
 import { adminAuthorizedFetch } from '@/lib/admin-authorized-fetch'
@@ -17,15 +16,33 @@ export interface ShopItemRow {
   rarity?: string
 }
 
-interface RecipeFormValues {
-  recipeName: string
-  goldCost: number
-  ingredients: { materialItemId: string; quantity: number }[]
-  outcomes: { outputItemId: string; weight: number }[]
+interface IngredientRow {
+  id: string
+  materialItemId: string
+  quantity: number
+}
+
+interface OutcomeRow {
+  id: string
+  outputItemId: string
+  weight: number
+}
+
+function newIngredientRow(): IngredientRow {
+  return { id: crypto.randomUUID(), materialItemId: '', quantity: 1 }
+}
+
+function newOutcomeRow(): OutcomeRow {
+  return { id: crypto.randomUUID(), outputItemId: '', weight: 10 }
 }
 
 export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow[] }) {
   const [activeClass, setActiveClass] = useState<RpgClass>('Fighter')
+  const [recipeName, setRecipeName] = useState('')
+  const [goldCost, setGoldCost] = useState(0)
+  const [ingredients, setIngredients] = useState<IngredientRow[]>([newIngredientRow()])
+  const [outcomes, setOutcomes] = useState<OutcomeRow[]>([newOutcomeRow()])
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const materialOptions = useMemo(
     () => shopItems.filter((i) => i.is_stackable === true).sort((a, b) => a.name.localeCompare(b.name)),
@@ -42,36 +59,33 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [shopItems, activeClass])
 
-  const {
-    register,
-    control,
-    handleSubmit,
-    reset,
-    formState: { isSubmitting },
-  } = useForm<RecipeFormValues>({
-    defaultValues: {
-      recipeName: '',
-      goldCost: 0,
-      ingredients: [{ materialItemId: '', quantity: 1 }],
-      outcomes: [{ outputItemId: '', weight: 10 }],
-    },
-  })
+  const appendIngredient = useCallback(() => {
+    setIngredients((prev) => [...prev, newIngredientRow()])
+  }, [])
 
-  const {
-    fields: ingredientFields,
-    append: appendIngredient,
-    remove: removeIngredient,
-  } = useFieldArray({ control, name: 'ingredients' })
+  const removeIngredient = useCallback((index: number) => {
+    setIngredients((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))
+  }, [])
 
-  const {
-    fields: outcomeFields,
-    append: appendOutcome,
-    remove: removeOutcome,
-  } = useFieldArray({ control, name: 'outcomes' })
+  const appendOutcome = useCallback(() => {
+    setOutcomes((prev) => [...prev, newOutcomeRow()])
+  }, [])
 
-  const onSubmit: SubmitHandler<RecipeFormValues> = async (values) => {
-    const ing = values.ingredients.filter((r: RecipeFormValues['ingredients'][number]) => r.materialItemId)
-    const out = values.outcomes.filter((r: RecipeFormValues['outcomes'][number]) => r.outputItemId)
+  const removeOutcome = useCallback((index: number) => {
+    setOutcomes((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))
+  }, [])
+
+  const resetForm = useCallback(() => {
+    setRecipeName('')
+    setGoldCost(0)
+    setIngredients([newIngredientRow()])
+    setOutcomes([newOutcomeRow()])
+  }, [])
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const ing = ingredients.filter((r) => r.materialItemId)
+    const out = outcomes.filter((r) => r.outputItemId)
     if (ing.length < 1) {
       adminToast.error('Add at least one material with a selected item.')
       return
@@ -93,13 +107,14 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
       }
     }
 
+    setIsSubmitting(true)
     try {
       const res = await adminAuthorizedFetch('/api/admin/crafting/recipes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          recipeName: values.recipeName.trim(),
-          goldCost: values.goldCost,
+          recipeName: recipeName.trim(),
+          goldCost,
           ingredients: ing.map((r) => ({
             material_item_id: r.materialItemId,
             quantity_required: Math.max(1, Math.floor(Number(r.quantity))),
@@ -116,15 +131,12 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
         return
       }
       adminToast.success(`Recipe created (${json.recipeId?.slice?.(0, 8) ?? 'ok'}…)`)
-      reset({
-        recipeName: '',
-        goldCost: 0,
-        ingredients: [{ materialItemId: '', quantity: 1 }],
-        outcomes: [{ outputItemId: '', weight: 10 }],
-      })
-    } catch (e) {
-      console.error(e)
+      resetForm()
+    } catch (err) {
+      console.error(err)
       adminToast.error('Network error')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -155,13 +167,15 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
         items). Materials are stackable items only.
       </p>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 bg-gray-900/40 border border-gray-800 rounded-2xl p-4 md:p-6">
+      <form onSubmit={onSubmit} className="space-y-6 bg-gray-900/40 border border-gray-800 rounded-2xl p-4 md:p-6">
         <div>
           <label className="block text-xs font-bold text-gray-400 mb-1">Recipe name</label>
           <input
             className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-sm"
-            {...register('recipeName', { required: true })}
- placeholder="Demon Sword Forge"
+            value={recipeName}
+            onChange={(e) => setRecipeName(e.target.value)}
+            required
+            placeholder="Demon Sword Forge"
           />
         </div>
         <div>
@@ -170,7 +184,8 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
             type="number"
             min={0}
             className="w-full max-w-xs bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-sm"
-            {...register('goldCost', { valueAsNumber: true, min: 0 })}
+            value={Number.isNaN(goldCost) ? '' : goldCost}
+            onChange={(e) => setGoldCost(Math.max(0, Number(e.target.value) || 0))}
           />
         </div>
 
@@ -179,18 +194,26 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
             <span className="text-xs font-black uppercase tracking-wider text-gray-400">Ingredients</span>
             <button
               type="button"
-              onClick={() => appendIngredient({ materialItemId: '', quantity: 1 })}
+              onClick={appendIngredient}
               className="text-xs font-bold text-amber-400 hover:text-amber-300"
             >
               + Add material
             </button>
           </div>
           <div className="space-y-2">
-            {ingredientFields.map((field, index) => (
-              <div key={field.id} className="flex flex-wrap gap-2 items-end">
+            {ingredients.map((row, index) => (
+              <div key={row.id} className="flex flex-wrap gap-2 items-end">
                 <select
                   className="flex-1 min-w-[200px] bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-sm"
-                  {...register(`ingredients.${index}.materialItemId` as const)}
+                  value={row.materialItemId}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setIngredients((prev) => {
+                      const next = [...prev]
+                      next[index] = { ...next[index], materialItemId: v }
+                      return next
+                    })
+                  }}
                 >
                   <option value="">— Material —</option>
                   {materialOptions.map((it) => (
@@ -203,13 +226,21 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
                   type="number"
                   min={1}
                   className="w-24 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-sm"
-                  {...register(`ingredients.${index}.quantity` as const, { valueAsNumber: true, min: 1 })}
+                  value={row.quantity}
+                  onChange={(e) => {
+                    const v = Math.max(1, Math.floor(Number(e.target.value) || 1))
+                    setIngredients((prev) => {
+                      const next = [...prev]
+                      next[index] = { ...next[index], quantity: v }
+                      return next
+                    })
+                  }}
                 />
                 <button
                   type="button"
                   onClick={() => removeIngredient(index)}
                   className="text-xs text-red-400 font-bold px-2 py-2"
-                  disabled={ingredientFields.length <= 1}
+                  disabled={ingredients.length <= 1}
                 >
                   Remove
                 </button>
@@ -225,18 +256,26 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
             </span>
             <button
               type="button"
-              onClick={() => appendOutcome({ outputItemId: '', weight: 10 })}
+              onClick={appendOutcome}
               className="text-xs font-bold text-amber-400 hover:text-amber-300"
             >
               + Add outcome
             </button>
           </div>
           <div className="space-y-2">
-            {outcomeFields.map((field, index) => (
-              <div key={field.id} className="flex flex-wrap gap-2 items-end">
+            {outcomes.map((row, index) => (
+              <div key={row.id} className="flex flex-wrap gap-2 items-end">
                 <select
                   className="flex-1 min-w-[200px] bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-sm"
-                  {...register(`outcomes.${index}.outputItemId` as const)}
+                  value={row.outputItemId}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setOutcomes((prev) => {
+                      const next = [...prev]
+                      next[index] = { ...next[index], outputItemId: v }
+                      return next
+                    })
+                  }}
                 >
                   <option value="">— Output item —</option>
                   {outcomeOptions.map((it) => (
@@ -250,13 +289,21 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
                   min={1}
                   className="w-24 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-sm"
                   placeholder="weight"
-                  {...register(`outcomes.${index}.weight` as const, { valueAsNumber: true, min: 1 })}
+                  value={row.weight}
+                  onChange={(e) => {
+                    const v = Math.max(1, Math.floor(Number(e.target.value) || 1))
+                    setOutcomes((prev) => {
+                      const next = [...prev]
+                      next[index] = { ...next[index], weight: v }
+                      return next
+                    })
+                  }}
                 />
                 <button
                   type="button"
                   onClick={() => removeOutcome(index)}
                   className="text-xs text-red-400 font-bold px-2 py-2"
-                  disabled={outcomeFields.length <= 1}
+                  disabled={outcomes.length <= 1}
                 >
                   Remove
                 </button>
