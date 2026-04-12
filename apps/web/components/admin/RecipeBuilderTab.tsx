@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useCallback, useMemo, useState } from 'react'
-import { Hammer } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, Hammer, Search } from 'lucide-react'
 import { adminToast } from '@/lib/admin-toast'
 import { adminAuthorizedFetch } from '@/lib/admin-authorized-fetch'
 
@@ -34,6 +34,138 @@ function newIngredientRow(): IngredientRow {
 
 function newOutcomeRow(): OutcomeRow {
   return { id: crypto.randomUUID(), outputItemId: '', weight: 10 }
+}
+
+function normalizeSearch(s: string) {
+  return s.trim().toLowerCase()
+}
+
+interface ItemSearchPickerProps {
+  options: ShopItemRow[]
+  value: string
+  onChange: (itemId: string) => void
+  placeholder: string
+  showRarity: boolean
+}
+
+function ItemSearchPicker({ options, value, onChange, placeholder, showRarity }: ItemSearchPickerProps) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  const selected = useMemo(() => options.find((o) => o.id === value), [options, value])
+
+  const filtered = useMemo(() => {
+    const q = normalizeSearch(query)
+    if (!q) return options
+    return options.filter((o) => {
+      const hay = normalizeSearch(`${o.name} ${o.rarity ?? ''}`)
+      return hay.includes(q)
+    })
+  }, [options, query])
+
+  useEffect(() => {
+    if (!open) return
+    function onDocMouseDown(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setQuery('')
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        setQuery('')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+
+  function labelFor(item: ShopItemRow) {
+    return showRarity ? `${item.name} (${item.rarity ?? '?'})` : item.name
+  }
+
+  function pick(id: string) {
+    onChange(id)
+    setOpen(false)
+    setQuery('')
+  }
+
+  return (
+    <div ref={rootRef} className="relative flex-1 min-w-[200px]">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => {
+          setOpen((v) => {
+            const next = !v
+            if (next) setQuery('')
+            return next
+          })
+        }}
+        className="flex w-full items-center gap-2 rounded-lg border border-gray-700 bg-black/50 px-2 py-2 text-left text-sm text-gray-200 hover:border-gray-600 focus:border-amber-500/60 focus:outline-none focus:ring-1 focus:ring-amber-500/40"
+      >
+        <Search className="h-4 w-4 shrink-0 text-amber-400/90" aria-hidden />
+        <span className="min-w-0 flex-1 truncate">{selected ? labelFor(selected) : placeholder}</span>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`}
+          aria-hidden
+        />
+      </button>
+      {open ? (
+        <div className="absolute left-0 right-0 z-50 mt-1 overflow-hidden rounded-lg border border-gray-600 bg-gray-950 shadow-xl">
+          <input
+            type="search"
+            autoComplete="off"
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search…"
+            className="w-full border-b border-gray-800 bg-black/70 px-3 py-2.5 text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-amber-500/30"
+          />
+          <ul className="max-h-52 overflow-y-auto py-1" role="listbox">
+            <li>
+              <button
+                type="button"
+                role="option"
+                className="w-full px-3 py-2 text-left text-xs text-gray-500 hover:bg-gray-900 hover:text-gray-300"
+                onClick={() => pick('')}
+              >
+                {placeholder}
+              </button>
+            </li>
+            {filtered.length === 0 ? (
+              <li className="px-3 py-4 text-center text-xs text-gray-500">No matches</li>
+            ) : (
+              filtered.map((it) => (
+                <li key={it.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={it.id === value}
+                    className={`w-full px-3 py-2 text-left text-sm hover:bg-amber-500/15 ${
+                      it.id === value ? 'bg-amber-500/10 text-amber-200' : 'text-gray-200'
+                    }`}
+                    onClick={() => pick(it.id)}
+                  >
+                    {labelFor(it)}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow[] }) {
@@ -203,25 +335,19 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
           <div className="space-y-2">
             {ingredients.map((row, index) => (
               <div key={row.id} className="flex flex-wrap gap-2 items-end">
-                <select
-                  className="flex-1 min-w-[200px] bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-sm"
+                <ItemSearchPicker
+                  options={materialOptions}
                   value={row.materialItemId}
-                  onChange={(e) => {
-                    const v = e.target.value
+                  placeholder="— Material —"
+                  showRarity={false}
+                  onChange={(v) => {
                     setIngredients((prev) => {
                       const next = [...prev]
                       next[index] = { ...next[index], materialItemId: v }
                       return next
                     })
                   }}
-                >
-                  <option value="">— Material —</option>
-                  {materialOptions.map((it) => (
-                    <option key={it.id} value={it.id}>
-                      {it.name}
-                    </option>
-                  ))}
-                </select>
+                />
                 <input
                   type="number"
                   min={1}
@@ -265,25 +391,19 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
           <div className="space-y-2">
             {outcomes.map((row, index) => (
               <div key={row.id} className="flex flex-wrap gap-2 items-end">
-                <select
-                  className="flex-1 min-w-[200px] bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-sm"
+                <ItemSearchPicker
+                  options={outcomeOptions}
                   value={row.outputItemId}
-                  onChange={(e) => {
-                    const v = e.target.value
+                  placeholder="— Output item —"
+                  showRarity
+                  onChange={(v) => {
                     setOutcomes((prev) => {
                       const next = [...prev]
                       next[index] = { ...next[index], outputItemId: v }
                       return next
                     })
                   }}
-                >
-                  <option value="">— Output item —</option>
-                  {outcomeOptions.map((it) => (
-                    <option key={it.id} value={it.id}>
-                      {it.name} ({it.rarity ?? '?'})
-                    </option>
-                  ))}
-                </select>
+                />
                 <input
                   type="number"
                   min={1}
