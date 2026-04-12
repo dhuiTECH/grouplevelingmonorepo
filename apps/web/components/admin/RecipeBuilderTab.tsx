@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react'
 import { useFieldArray, useForm, type SubmitHandler } from 'react-hook-form'
 import { Hammer } from 'lucide-react'
-import { toast } from 'sonner'
+import { adminToast } from '@/lib/admin-toast'
 import { adminAuthorizedFetch } from '@/lib/admin-authorized-fetch'
 
 const RPG_CLASSES = ['Assassin', 'Fighter', 'Mage', 'Tanker', 'Ranger', 'Healer'] as const
@@ -73,22 +73,22 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
     const ing = values.ingredients.filter((r: RecipeFormValues['ingredients'][number]) => r.materialItemId)
     const out = values.outcomes.filter((r: RecipeFormValues['outcomes'][number]) => r.outputItemId)
     if (ing.length < 1) {
-      toast.error('Add at least one material with a selected item.')
+      adminToast.error('Add at least one material with a selected item.')
       return
     }
     if (out.length < 1) {
-      toast.error('Add at least one outcome with a selected item.')
+      adminToast.error('Add at least one outcome with a selected item.')
       return
     }
     const outIds = new Set(out.map((r) => r.outputItemId))
     if (outIds.size !== out.length) {
-      toast.error('Each outcome must use a distinct shop item.')
+      adminToast.error('Each outcome must use a distinct shop item.')
       return
     }
     const matIds = new Set(ing.map((r) => r.materialItemId))
     for (const oid of outIds) {
       if (matIds.has(oid)) {
-        toast.error('An outcome item cannot be the same as a material in this recipe.')
+        adminToast.error('An outcome item cannot be the same as a material in this recipe.')
         return
       }
     }
@@ -112,10 +112,10 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
-        toast.error(typeof json.error === 'string' ? json.error : 'Save failed')
+        adminToast.error(typeof json.error === 'string' ? json.error : 'Save failed')
         return
       }
-      toast.success(`Recipe created (${json.recipeId?.slice?.(0, 8) ?? 'ok'}…)`)
+      adminToast.success(`Recipe created (${json.recipeId?.slice?.(0, 8) ?? 'ok'}…)`)
       reset({
         recipeName: '',
         goldCost: 0,
@@ -124,7 +124,7 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
       })
     } catch (e) {
       console.error(e)
-      toast.error('Network error')
+      adminToast.error('Network error')
     }
   }
 
