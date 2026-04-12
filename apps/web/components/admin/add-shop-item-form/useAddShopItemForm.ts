@@ -20,6 +20,24 @@ export function useAddShopItemForm({
   baseBodyShopItems = [],
   shopItems = [],
 }: AddShopItemFormProps) {
+  const mountedRef = useRef(true);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (successTimerRef.current) {
+        clearTimeout(successTimerRef.current);
+        successTimerRef.current = null;
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, []);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -639,36 +657,40 @@ export function useAddShopItemForm({
     }
 
     if (!itemData.name.trim() || !itemData.slot) return;
+    if (isSaving || uploading) return;
 
-    let saveSucceeded = false;
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    const ac = new AbortController();
+    abortControllerRef.current = ac;
+
     setIsSaving(true);
     setSaveStatus('saving');
     try {
+      if (ac.signal.aborted) return;
       if (editingItem?.id) {
         await onEdit(itemData);
       } else {
         await onAdd(itemData);
       }
-      saveSucceeded = true;
+      if (ac.signal.aborted || !mountedRef.current) return;
       setSaveStatus('success');
-      setTimeout(() => {
-        setIsSaving(false);
+      setIsSaving(false);
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+      successTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current) return;
+        successTimerRef.current = null;
         setSaveStatus('idle');
         onCancel();
-      }, 1500);
+      }, 400);
     } catch (err) {
+      if (ac.signal.aborted || !mountedRef.current) return;
       setSaveStatus('idle');
+      setIsSaving(false);
       const msg =
-        err instanceof Error && err.name === 'AbortError'
-          ? 'Save timed out — check your connection and try again.'
-          : err instanceof Error
-            ? err.message
-            : 'Save failed';
+        err instanceof Error
+          ? err.message
+          : 'Save failed';
       alert(msg);
-    } finally {
-      if (!saveSucceeded) {
-        setIsSaving(false);
-      }
     }
   };
 

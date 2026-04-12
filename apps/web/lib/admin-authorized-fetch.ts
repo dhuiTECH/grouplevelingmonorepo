@@ -140,6 +140,11 @@ export async function adminAuthorizedFetch(
     }
 
     return response;
+  } catch (err) {
+    if (err instanceof DOMException && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s — check your connection and try again.`);
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }
