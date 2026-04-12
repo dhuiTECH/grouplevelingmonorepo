@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { verifyAdminAuth } from '@/lib/admin-auth'
+import { ITEM_CATEGORIES } from '@/lib/item-category'
+
+const ITEM_CATEGORY_SET = new Set<string>(ITEM_CATEGORIES)
+
+function normalizeItemCategory(raw: unknown, slot: string): string {
+  if (typeof raw === 'string' && ITEM_CATEGORY_SET.has(raw)) return raw
+  if (slot === 'consumable') return 'consumable'
+  if (slot === 'other' || slot === 'misc') return 'misc'
+  return 'cosmetic'
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -56,6 +66,10 @@ export async function PATCH(request: NextRequest) {
       animation_config: updates.animation_config || undefined,
       is_animated: typeof updates.is_animated === 'boolean' ? updates.is_animated : undefined,
       is_stackable: typeof updates.is_stackable === 'boolean' ? updates.is_stackable : undefined,
+      item_category:
+        typeof updates.item_category === 'string' && ITEM_CATEGORY_SET.has(updates.item_category)
+          ? updates.item_category
+          : undefined,
       item_effects: updates.item_effects !== undefined ? updates.item_effects : undefined,
       is_gacha_exclusive: typeof updates.is_gacha_exclusive === 'boolean' ? updates.is_gacha_exclusive : undefined,
       collection_name: updates.collection_name !== undefined ? updates.collection_name : undefined,
@@ -177,7 +191,8 @@ export async function POST(request: NextRequest) {
       weapon_type,
       eraser_mask_targets,
       eraser_mask_url,
-      eraser_mask_url_female
+      eraser_mask_url_female,
+      item_category,
     } = body
 
     // Validate required fields
@@ -216,6 +231,7 @@ export async function POST(request: NextRequest) {
 
     const insertData = {
       name: name.trim(),
+      item_category: normalizeItemCategory(item_category, String(slot)),
       description: description?.trim() || null,
       image_url: imageUrl,
       image_base_url: typeof image_base_url === 'string' && image_base_url.trim() ? image_base_url.trim() : null,

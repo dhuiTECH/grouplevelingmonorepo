@@ -36,6 +36,8 @@ export function ShopItemFormMeta(props: ShopItemFormFieldsProps) {
     setClassReqOpen,
     isStackable,
     setIsStackable,
+    itemCategory,
+    setItemCategory,
     isSellable,
     setIsSellable,
     isGlobal,
@@ -146,6 +148,30 @@ export function ShopItemFormMeta(props: ShopItemFormFieldsProps) {
               <label htmlFor="is-stackable" className="text-sm font-bold text-gray-200 cursor-pointer">Is Stackable? (e.g., Potions, Currency)</label>
               <div className="text-xs text-gray-400 ml-auto">{isStackable ? 'Stackable' : 'Unique'}</div>
             </div>
+
+            {(['consumable', 'other', 'misc'] as const).includes(
+              formData.slot as 'consumable' | 'other' | 'misc',
+            ) ? (
+              <div>
+                <label className="block text-xs font-black uppercase text-gray-300 mb-1">
+                  Inventory category
+                </label>
+                <select
+                  value={itemCategory}
+                  onChange={(e) => setItemCategory(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                >
+                  <option value="consumable">Consumable (potions, usable in battle when applicable)</option>
+                  <option value="crafting_material">Crafting material (recipe ingredients)</option>
+                  <option value="quest">Quest item</option>
+                  <option value="misc">Misc</option>
+                </select>
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Mats tab in the app lists crafting_material; Use tab lists consumables; Quest / Misc split the old
+                  &quot;Other&quot; bucket.
+                </p>
+              </div>
+            ) : null}
 
             <div className="flex items-center gap-3 p-3 bg-gray-800/30 rounded-lg border border-gray-600/50">
               <input type="checkbox" id="is-sellable" checked={isSellable} onChange={(e) => setIsSellable(e.target.checked)} disabled={['base_body', 'face_eyes', 'face_mouth', 'hair'].includes(formData.slot)} className="w-4 h-4 text-cyan-600 bg-gray-700 border-gray-600 rounded focus:ring-cyan-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed" />

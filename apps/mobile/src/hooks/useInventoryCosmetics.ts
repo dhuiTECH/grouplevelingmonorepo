@@ -17,6 +17,7 @@ import {
   normalizeEquipmentSlot,
 } from '@/screens/inventory/inventoryCosmeticUtils';
 import type { InventoryFilter } from '@/screens/inventory/inventoryTypes';
+import { effectiveItemCategory } from '@/utils/itemCategory';
 
 interface UseInventoryCosmeticsParams {
   user: User | null;
@@ -396,7 +397,9 @@ export function useInventoryCosmetics({
             return item?.slot === 'weapon';
           case 'armor':
             return item?.slot === 'body';
-          case 'accessories':
+          case 'accessories': {
+            const cat = effectiveItemCategory(item);
+            if (['consumable', 'crafting_material', 'quest', 'misc'].includes(cat)) return false;
             return (
               (![
                 'weapon',
@@ -415,12 +418,19 @@ export function useInventoryCosmetics({
                 !item?.item_effects) ||
               ['face', 'eyes'].includes(item?.slot || '')
             );
+          }
           case 'magics':
             return item?.slot === 'magic effects';
           case 'pets':
             return item?.slot === 'pet';
-          case 'other':
-            return ['other', 'misc', 'consumable'].includes(item?.slot || '');
+          case 'consumables':
+            return effectiveItemCategory(item) === 'consumable';
+          case 'crafting':
+            return effectiveItemCategory(item) === 'crafting_material';
+          case 'quest_items':
+            return effectiveItemCategory(item) === 'quest';
+          case 'misc_items':
+            return effectiveItemCategory(item) === 'misc';
           default:
             return true;
         }

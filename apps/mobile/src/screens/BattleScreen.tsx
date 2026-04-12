@@ -34,7 +34,8 @@ import {
   rollCaptureSuccess,
 } from '@/utils/captureItem';
 import type { UserCosmetic } from '@/types/user';
-import { COLORS, BATTLE_INVENTORY_SLOTS, BATTLE_TAP_TO_CONFIRM_KEY, MELEE_IMPACT_ENTRY_DELAY_MS } from '@/components/battle/battleTheme';
+import { COLORS, BATTLE_TAP_TO_CONFIRM_KEY, MELEE_IMPACT_ENTRY_DELAY_MS } from '@/components/battle/battleTheme';
+import { effectiveItemCategory } from '@/utils/itemCategory';
 import { DEATH_DISINTEGRATION_MS } from '@/components/battle/battleDeathOutro';
 import { battleScreenStyles as styles } from '@/components/battle/battleScreenStyles';
 import { BattleFieldHud } from '@/components/battle/BattleFieldHud';
@@ -318,8 +319,11 @@ export default function BattleScreen() {
   const battleInventoryItems = useMemo(() => {
     if (!user?.cosmetics?.length) return [];
     return user.cosmetics.filter((c: UserCosmetic) => {
-      const slot = (c.shop_items?.slot || '').toLowerCase();
-      return (BATTLE_INVENTORY_SLOTS as readonly string[]).includes(slot) || isCaptureItem(c.shop_items);
+      if (isCaptureItem(c.shop_items)) return true;
+      const item = c.shop_items;
+      if (!item) return false;
+      const cat = effectiveItemCategory(item);
+      return cat === 'consumable' || cat === 'misc';
     });
   }, [user?.cosmetics]);
 

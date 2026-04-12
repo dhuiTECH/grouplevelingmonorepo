@@ -8,7 +8,10 @@ export type InventoryFilter =
   | 'accessories'
   | 'magics'
   | 'pets'
-  | 'other';
+  | 'consumables'
+  | 'crafting'
+  | 'quest_items'
+  | 'misc_items';
 
 export interface SelectedInventoryItem {
   item: ShopItem;

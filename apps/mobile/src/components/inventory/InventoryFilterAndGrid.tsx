@@ -7,16 +7,20 @@ import { ShopItemMedia } from '@/components/ShopItemMedia';
 import { PetList } from '@/components/PetList';
 import type { InventoryFilter } from '@/screens/inventory/inventoryTypes';
 import { inventoryGridStyles as styles } from '@/components/inventory/InventoryGrid.styles';
+import { effectiveItemCategory } from '@/utils/itemCategory';
 
 const FILTER_TABS: { id: InventoryFilter; label: string; icon: string }[] = [
-  { id: 'all', label: 'All', icon: '📦' },
-  { id: 'equipped', label: 'Equipped', icon: '✨' },
-  { id: 'weapons', label: 'Weapons', icon: '⚔️' },
-  { id: 'armor', label: 'Armor', icon: '🛡️' },
-  { id: 'accessories', label: 'Accessories', icon: '💍' },
-  { id: 'magics', label: 'Magics', icon: '🔮' },
-  { id: 'pets', label: 'Pets', icon: '🐾' },
-  { id: 'other', label: 'Other', icon: '🎒' },
+  { id: 'all', label: 'All', icon: '\u{1F4E6}' },
+  { id: 'equipped', label: 'Equipped', icon: '\u2728' },
+  { id: 'weapons', label: 'Weapons', icon: '\u2694\uFE0F' },
+  { id: 'armor', label: 'Armor', icon: '\u{1F6E1}\uFE0F' },
+  { id: 'accessories', label: 'Accessories', icon: '\u{1F48D}' },
+  { id: 'magics', label: 'Magics', icon: '\u{1F52E}' },
+  { id: 'pets', label: 'Pets', icon: '\u{1F43E}' },
+  { id: 'consumables', label: 'Use', icon: '\u{1F48A}' },
+  { id: 'crafting', label: 'Mats', icon: '\u{1F528}' },
+  { id: 'quest_items', label: 'Quest', icon: '\u{1F4DC}' },
+  { id: 'misc_items', label: 'Misc', icon: '\u{1F392}' },
 ];
 
 interface InventoryFilterAndGridProps {
@@ -157,7 +161,7 @@ export function InventoryFilterAndGrid({
                 <TouchableOpacity
                   onPress={(e) => {
                     e.stopPropagation();
-                    if (item.slot === 'consumable') {
+                    if (effectiveItemCategory(item) === 'consumable') {
                       onUseItem(cosmeticItem.id);
                     } else {
                       onEquipCosmetic(cosmeticItem.id, !isEquipped);
@@ -166,14 +170,14 @@ export function InventoryFilterAndGrid({
                   style={[
                     styles.equipUnequipButton,
                     isEquipped ? styles.unequipButton : styles.equipButton,
-                    item.slot === 'consumable' && {
+                    effectiveItemCategory(item) === 'consumable' && {
                       borderColor: '#22c55e',
                       backgroundColor: 'rgba(34, 197, 94, 0.2)',
                     },
                   ]}
                 >
                   <Text style={styles.equipUnequipButtonText}>
-                    {item.slot === 'consumable' ? 'USE' : isEquipped ? 'UNEQUIP' : 'EQUIP'}
+                    {effectiveItemCategory(item) === 'consumable' ? 'USE' : isEquipped ? 'UNEQUIP' : 'EQUIP'}
                   </Text>
                 </TouchableOpacity>
               </TouchableOpacity>

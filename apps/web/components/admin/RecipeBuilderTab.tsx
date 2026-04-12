@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Hammer, Search } from 'lucide-react'
 import { adminToast } from '@/lib/admin-toast'
 import { adminAuthorizedFetch } from '@/lib/admin-authorized-fetch'
+import { effectiveItemCategory } from '@/lib/item-category'
 
 const RPG_CLASSES = ['Assassin', 'Fighter', 'Mage', 'Tanker', 'Ranger', 'Healer'] as const
 type RpgClass = (typeof RPG_CLASSES)[number]
@@ -13,6 +14,7 @@ export interface ShopItemRow {
   name: string
   class_req?: string | null
   is_stackable?: boolean | null
+  item_category?: string | null
   rarity?: string
 }
 
@@ -177,7 +179,10 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const materialOptions = useMemo(
-    () => shopItems.filter((i) => i.is_stackable === true).sort((a, b) => a.name.localeCompare(b.name)),
+    () =>
+      shopItems
+        .filter((i) => effectiveItemCategory(i) === 'crafting_material')
+        .sort((a, b) => a.name.localeCompare(b.name)),
     [shopItems],
   )
 
@@ -296,7 +301,9 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
       </div>
       <p className="text-xs text-gray-500">
         Class tabs filter <span className="text-gray-300">outcome</span> item dropdowns (includes &quot;All&quot;
-        items). Materials are stackable items only.
+        items). <span className="text-gray-300">Materials</span> only lists shop rows with inventory category{' '}
+        <span className="text-amber-200/90">crafting_material</span> (set in Shop item form for consumable / other /
+        misc slots).
       </p>
 
       <form onSubmit={onSubmit} className="space-y-6 bg-gray-900/40 border border-gray-800 rounded-2xl p-4 md:p-6">

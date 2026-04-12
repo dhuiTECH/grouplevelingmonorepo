@@ -3,6 +3,18 @@
 import React, { useState, useEffect, useRef } from "react";
 import { adminAuthorizedUpload } from "@/lib/admin-authorized-fetch";
 import type { AddShopItemFormProps, ShopItemFormFieldsProps } from "./types";
+import { ITEM_CATEGORIES } from "@/lib/item-category";
+
+const INVENTORY_SLOTS_FOR_CATEGORY = ["consumable", "other", "misc"] as const;
+
+function inferItemCategoryFromEditorItem(item: any): string {
+  const c = item?.item_category;
+  if (typeof c === "string" && (ITEM_CATEGORIES as readonly string[]).includes(c)) return c;
+  const s = item?.slot;
+  if (s === "consumable") return "consumable";
+  if (s === "other" || s === "misc") return "misc";
+  return "cosmetic";
+}
 import type { ShopItemPreviewStageProps } from "./ShopItemPreviewStage";
 import {
   SKIN_TINT_SLOTS,
@@ -151,6 +163,7 @@ export function useAddShopItemForm({
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success'>('idle');
   const [isStackable, setIsStackable] = useState(false);
+  const [itemCategory, setItemCategory] = useState<string>("cosmetic");
   const [itemEffectsJson, setItemEffectsJson] = useState('');
   const [isGachaExclusive, setIsGachaExclusive] = useState(false);
   const [collectionName, setCollectionName] = useState('Standard');
@@ -273,6 +286,7 @@ export function useAddShopItemForm({
       });
       // setScale(editingItem.scale || 1.0); // Now handled in positioning state
       setIsStackable(editingItem.is_stackable || false);
+      setItemCategory(inferItemCategoryFromEditorItem(editingItem));
       const ie = editingItem.item_effects;
       if (!ie || (typeof ie === 'object' && Object.keys(ie).length === 0)) {
         setEffectType('none');
@@ -364,6 +378,7 @@ export function useAddShopItemForm({
       });
       // setScale(1.0); // Now handled in positioning state
       setIsStackable(false);
+      setItemCategory("cosmetic");
       setEffectType('none');
       setEffectHealAmount(50);
       setEffectBuffStat('str');
@@ -388,6 +403,16 @@ export function useAddShopItemForm({
       setSelectedBaseLayerFile(null);
     }
   }, [editingItem]);
+
+  useEffect(() => {
+    if (formData.slot === "consumable") {
+      setItemCategory((p) => (p === "cosmetic" || p === "misc" ? "consumable" : p));
+    } else if (formData.slot === "other" || formData.slot === "misc") {
+      setItemCategory((p) => (p === "cosmetic" ? "misc" : p));
+    } else if (!(INVENTORY_SLOTS_FOR_CATEGORY as readonly string[]).includes(formData.slot)) {
+      setItemCategory("cosmetic");
+    }
+  }, [formData.slot]);
 
   useEffect(() => {
     return () => {
@@ -529,6 +554,11 @@ export function useAddShopItemForm({
       class_req: safeFormData.no_restrictions ? null : safeFormData.class_req,
       no_restrictions: safeFormData.no_restrictions,
       is_stackable: isStackable,
+      item_category: INVENTORY_SLOTS_FOR_CATEGORY.includes(
+        formData.slot as (typeof INVENTORY_SLOTS_FOR_CATEGORY)[number],
+      )
+        ? itemCategory
+        : "cosmetic",
       item_effects: finalItemEffects,
       is_global: isGlobal,
       is_gacha_exclusive: isGachaExclusive,
@@ -830,6 +860,8 @@ export function useAddShopItemForm({
     setClassReqOpen,
     isStackable,
     setIsStackable,
+    itemCategory,
+    setItemCategory,
     isSellable,
     setIsSellable,
     isGlobal,

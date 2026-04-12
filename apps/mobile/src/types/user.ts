@@ -38,6 +38,8 @@ export interface ShopItem {
   gender?: string | string[]; // e.g., 'unisex', 'male', 'female', ['male', 'female']
   no_restrictions?: boolean;
   is_stackable?: boolean;
+  /** cosmetic | consumable | crafting_material | quest | misc — see DB check constraint */
+  item_category?: string | null;
   item_effects?: { type: string; value: number } | { type: string; value: number }[];
   collection_id?: string;
   is_global?: boolean;

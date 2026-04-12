@@ -60,6 +60,8 @@ export interface ShopItemFormFieldsProps {
   setClassReqOpen: (v: boolean) => void;
   isStackable: boolean;
   setIsStackable: (v: boolean) => void;
+  itemCategory: string;
+  setItemCategory: (v: string) => void;
   isSellable: boolean;
   setIsSellable: (v: boolean) => void;
   isGlobal: boolean;
