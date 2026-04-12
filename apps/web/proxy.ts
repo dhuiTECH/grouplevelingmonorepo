@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const res = NextResponse.next()
 
-  // Simple pass-through middleware for API routes
+  // Simple pass-through proxy for API routes
   // Authentication is handled in individual API routes
   return res
 }
 
-// Ensure the middleware runs on your API routes
+// Ensure the proxy runs on your API routes
 export const config = {
   matcher: ['/api/:path*'],
 }
