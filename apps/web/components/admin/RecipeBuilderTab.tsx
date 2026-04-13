@@ -1,13 +1,18 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Hammer, Search } from 'lucide-react'
+import { ChevronDown, Hammer, Layers, Search } from 'lucide-react'
 import { adminToast } from '@/lib/admin-toast'
 import { adminAuthorizedFetch } from '@/lib/admin-authorized-fetch'
 import { effectiveItemCategory } from '@/lib/item-category'
 
 const RPG_CLASSES = ['Assassin', 'Fighter', 'Mage', 'Tanker', 'Ranger', 'Healer'] as const
 type RpgClass = (typeof RPG_CLASSES)[number]
+type BuilderMode = 'forge' | 'refine'
+
+function isRpgClass(s: string | null | undefined): s is RpgClass {
+  return !!s && (RPG_CLASSES as readonly string[]).includes(s)
+}
 
 interface AdminRecipeIngredientRow {
   id: string
@@ -209,12 +214,24 @@ function ItemSearchPicker({ options, value, onChange, placeholder, showRarity }:
   )
 }
 
+const REFINE_OUTCOME_WEIGHT = 100
+
 export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow[] }) {
+  const [builderMode, setBuilderMode] = useState<BuilderMode>('forge')
+  const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null)
+
   const [activeClass, setActiveClass] = useState<RpgClass>('Fighter')
+
   const [recipeName, setRecipeName] = useState('')
   const [goldCost, setGoldCost] = useState(0)
   const [ingredients, setIngredients] = useState<IngredientRow[]>([newIngredientRow()])
   const [outcomes, setOutcomes] = useState<OutcomeRow[]>([newOutcomeRow()])
+
+  const [refineRecipeName, setRefineRecipeName] = useState('')
+  const [refineGoldCost, setRefineGoldCost] = useState(0)
+  const [refineIngredients, setRefineIngredients] = useState<IngredientRow[]>([newIngredientRow(), newIngredientRow()])
+  const [refineOutputItemId, setRefineOutputItemId] = useState('')
+
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [savedRecipes, setSavedRecipes] = useState<AdminRecipeRow[]>([])
   const [recipesLoading, setRecipesLoading] = useState(true)
@@ -224,6 +241,18 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
     for (const it of shopItems) m.set(it.id, it)
     return m
   }, [shopItems])
+
+  const inferClassFromRecipe = useCallback(
+    (recipe: AdminRecipeRow): RpgClass => {
+      for (const o of recipe.recipe_outcomes ?? []) {
+        const item = shopById.get(o.output_item_id)
+        const cr = item?.class_req
+        if (isRpgClass(cr)) return cr
+      }
+      return 'Fighter'
+    },
+    [shopById],
+  )
 
   const loadSavedRecipes = useCallback(async () => {
     setRecipesLoading(true)
@@ -266,6 +295,109 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [shopItems, activeClass])
 
+  const resetForgeForm = useCallback(() => {
+    setRecipeName('')
+    setGoldCost(0)
+    setIngredients([newIngredientRow()])
+    setOutcomes([newOutcomeRow()])
+    setEditingRecipeId(null)
+  }, [])
+
+  const resetRefineForm = useCallback(() => {
+    setRefineRecipeName('')
+    setRefineGoldCost(0)
+    setRefineIngredients([newIngredientRow(), newIngredientRow()])
+    setRefineOutputItemId('')
+    setEditingRecipeId(null)
+  }, [])
+
+  const switchBuilderMode = useCallback(
+    (mode: BuilderMode) => {
+      if (mode === builderMode) return
+      setEditingRecipeId(null)
+      if (mode === 'forge') {
+        resetRefineForm()
+      } else {
+        resetForgeForm()
+      }
+      setBuilderMode(mode)
+    },
+    [builderMode, resetForgeForm, resetRefineForm],
+  )
+
+  const loadRecipeIntoForge = useCallback(
+    (recipe: AdminRecipeRow) => {
+      setBuilderMode('forge')
+      setEditingRecipeId(recipe.id)
+      setActiveClass(inferClassFromRecipe(recipe))
+      setRecipeName(recipe.recipe_name)
+      setGoldCost(recipe.gold_cost)
+      const ings = recipe.recipe_ingredients ?? []
+      setIngredients(
+        ings.length
+          ? ings.map((r) => ({
+              id: crypto.randomUUID(),
+              materialItemId: r.material_item_id,
+              quantity: r.quantity_required,
+            }))
+          : [newIngredientRow()],
+      )
+      const outs = recipe.recipe_outcomes ?? []
+      setOutcomes(
+        outs.length
+          ? outs.map((r) => ({
+              id: crypto.randomUUID(),
+              outputItemId: r.output_item_id,
+              weight: r.weight,
+            }))
+          : [newOutcomeRow()],
+      )
+    },
+    [inferClassFromRecipe],
+  )
+
+  const loadRecipeIntoRefine = useCallback(
+    (recipe: AdminRecipeRow) => {
+      const outs = recipe.recipe_outcomes ?? []
+      if (outs.length !== 1) return false
+      setBuilderMode('refine')
+      setEditingRecipeId(recipe.id)
+      setActiveClass(inferClassFromRecipe(recipe))
+      setRefineRecipeName(recipe.recipe_name)
+      setRefineGoldCost(recipe.gold_cost)
+      const ings = recipe.recipe_ingredients ?? []
+      setRefineIngredients(
+        ings.length
+          ? ings.map((r) => ({
+              id: crypto.randomUUID(),
+              materialItemId: r.material_item_id,
+              quantity: r.quantity_required,
+            }))
+          : [newIngredientRow(), newIngredientRow()],
+      )
+      setRefineOutputItemId(outs[0].output_item_id)
+      return true
+    },
+    [inferClassFromRecipe],
+  )
+
+  const handleRecipeClick = useCallback(
+    (recipe: AdminRecipeRow) => {
+      const outs = recipe.recipe_outcomes ?? []
+      if (builderMode === 'refine') {
+        if (outs.length === 1) {
+          loadRecipeIntoRefine(recipe)
+          return
+        }
+        adminToast.success('This recipe has multiple RNG outcomes — opened in Forge.')
+        loadRecipeIntoForge(recipe)
+        return
+      }
+      loadRecipeIntoForge(recipe)
+    },
+    [builderMode, loadRecipeIntoForge, loadRecipeIntoRefine],
+  )
+
   const appendIngredient = useCallback(() => {
     setIngredients((prev) => [...prev, newIngredientRow()])
   }, [])
@@ -282,31 +414,36 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
     setOutcomes((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))
   }, [])
 
-  const resetForm = useCallback(() => {
-    setRecipeName('')
-    setGoldCost(0)
-    setIngredients([newIngredientRow()])
-    setOutcomes([newOutcomeRow()])
+  const appendRefineIngredient = useCallback(() => {
+    setRefineIngredients((prev) => [...prev, newIngredientRow()])
   }, [])
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const ing = ingredients.filter((r) => r.materialItemId)
-    const out = outcomes.filter((r) => r.outputItemId)
-    if (ing.length < 1) {
+  const removeRefineIngredient = useCallback((index: number) => {
+    setRefineIngredients((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))
+  }, [])
+
+  async function persistRecipe(
+    name: string,
+    gold: number,
+    ing: { materialItemId: string; quantity: number }[],
+    out: { outputItemId: string; weight: number }[],
+  ) {
+    const filteredIng = ing.filter((r) => r.materialItemId)
+    const filteredOut = out.filter((r) => r.outputItemId)
+    if (filteredIng.length < 1) {
       adminToast.error('Add at least one material with a selected item.')
       return
     }
-    if (out.length < 1) {
+    if (filteredOut.length < 1) {
       adminToast.error('Add at least one outcome with a selected item.')
       return
     }
-    const outIds = new Set(out.map((r) => r.outputItemId))
-    if (outIds.size !== out.length) {
+    const outIds = new Set(filteredOut.map((r) => r.outputItemId))
+    if (outIds.size !== filteredOut.length) {
       adminToast.error('Each outcome must use a distinct shop item.')
       return
     }
-    const matIds = new Set(ing.map((r) => r.materialItemId))
+    const matIds = new Set(filteredIng.map((r) => r.materialItemId))
     for (const oid of outIds) {
       if (matIds.has(oid)) {
         adminToast.error('An outcome item cannot be the same as a material in this recipe.')
@@ -314,31 +451,35 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
       }
     }
 
+    const body = {
+      recipeName: name.trim(),
+      goldCost: gold,
+      ingredients: filteredIng.map((r) => ({
+        material_item_id: r.materialItemId,
+        quantity_required: Math.max(1, Math.floor(Number(r.quantity))),
+      })),
+      outcomes: filteredOut.map((r) => ({
+        output_item_id: r.outputItemId,
+        weight: Math.max(1, Math.floor(Number(r.weight))),
+      })),
+    }
+
     setIsSubmitting(true)
     try {
+      const isUpdate = !!editingRecipeId
       const res = await adminAuthorizedFetch('/api/admin/crafting/recipes', {
-        method: 'POST',
+        method: isUpdate ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipeName: recipeName.trim(),
-          goldCost,
-          ingredients: ing.map((r) => ({
-            material_item_id: r.materialItemId,
-            quantity_required: Math.max(1, Math.floor(Number(r.quantity))),
-          })),
-          outcomes: out.map((r) => ({
-            output_item_id: r.outputItemId,
-            weight: Math.max(1, Math.floor(Number(r.weight))),
-          })),
-        }),
+        body: JSON.stringify(isUpdate ? { id: editingRecipeId, ...body } : body),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
         adminToast.error(typeof json.error === 'string' ? json.error : 'Save failed')
         return
       }
-      adminToast.success(`Recipe created (${json.recipeId?.slice?.(0, 8) ?? 'ok'}…)`)
-      resetForm()
+      adminToast.success(isUpdate ? 'Recipe updated.' : `Recipe created (${json.recipeId?.slice?.(0, 8) ?? 'ok'}…)`)
+      if (builderMode === 'forge') resetForgeForm()
+      else resetRefineForm()
       void loadSavedRecipes()
     } catch (err) {
       console.error(err)
@@ -348,11 +489,62 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
     }
   }
 
+  async function onSubmitForge(e: React.FormEvent) {
+    e.preventDefault()
+    await persistRecipe(
+      recipeName,
+      goldCost,
+      ingredients,
+      outcomes.map((r) => ({ outputItemId: r.outputItemId, weight: r.weight })),
+    )
+  }
+
+  async function onSubmitRefine(e: React.FormEvent) {
+    e.preventDefault()
+    await persistRecipe(refineRecipeName, refineGoldCost, refineIngredients, [
+      { outputItemId: refineOutputItemId, weight: REFINE_OUTCOME_WEIGHT },
+    ])
+  }
+
   return (
     <section className="space-y-6">
       <h2 className="text-lg font-black uppercase tracking-widest text-amber-400 flex items-center gap-2">
-        <Hammer size={22} /> Recipe Builder (RNG outcomes)
+        <Hammer size={22} /> Recipe Builder
       </h2>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => switchBuilderMode('forge')}
+          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider border ${
+            builderMode === 'forge'
+              ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+              : 'bg-gray-900/60 border-gray-700 text-gray-400 hover:border-gray-500'
+          }`}
+        >
+          <Hammer className="h-4 w-4" aria-hidden />
+          Forge (RNG)
+        </button>
+        <button
+          type="button"
+          onClick={() => switchBuilderMode('refine')}
+          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider border ${
+            builderMode === 'refine'
+              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+              : 'bg-gray-900/60 border-gray-700 text-gray-400 hover:border-gray-500'
+          }`}
+        >
+          <Layers className="h-4 w-4" aria-hidden />
+          Refine (combine)
+        </button>
+      </div>
+      <p className="text-xs text-gray-500">
+        <span className="text-gray-300">Forge</span> supports weighted RNG outcomes.{' '}
+        <span className="text-gray-300">Refine</span> is materials in → one guaranteed output (stored as a single
+        outcome). Class tabs filter <span className="text-gray-300">output</span> pickers (includes &quot;All&quot;
+        items). <span className="text-gray-300">Materials</span> use shop rows with category{' '}
+        <span className="text-amber-200/90">crafting_material</span>.
+      </p>
 
       <div className="flex flex-wrap gap-2">
         {RPG_CLASSES.map((cls) => (
@@ -370,20 +562,15 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
           </button>
         ))}
       </div>
-      <p className="text-xs text-gray-500">
-        Class tabs filter <span className="text-gray-300">outcome</span> item dropdowns (includes &quot;All&quot;
-        items). <span className="text-gray-300">Materials</span> only lists shop rows with inventory category{' '}
-        <span className="text-amber-200/90">crafting_material</span> (set in Shop item form for consumable / other /
-        misc slots).
-      </p>
 
       <div className="rounded-2xl border border-gray-800 bg-gray-950/40 p-4 md:p-5">
         <h3 className="text-xs font-black uppercase tracking-wider text-gray-400 mb-1">
           Saved recipes by class (in-game forge)
         </h3>
         <p className="text-[10px] text-gray-600 mb-3">
-          A recipe is listed under a class if at least one outcome item has class <span className="text-gray-400">All</span>{' '}
-          (or blank) or that exact class — same logic as the mobile forge class tabs.
+          Click a recipe to load it into the form below. A recipe is listed under a class if at least one outcome item
+          has class <span className="text-gray-400">All</span> (or blank) or that exact class — same logic as the
+          mobile forge class tabs.
         </p>
         {recipesLoading ? (
           <p className="text-xs text-gray-500">Loading recipes…</p>
@@ -395,21 +582,29 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
                 <div key={cls} className="rounded-xl border border-gray-800/80 bg-black/30 px-3 py-2.5">
                   <div className="flex items-baseline justify-between gap-2 mb-2">
                     <span className="text-xs font-bold text-amber-400">{cls}</span>
-                    <span className="text-[10px] text-gray-600">{list.length} recipe{list.length === 1 ? '' : 's'}</span>
+                    <span className="text-[10px] text-gray-600">
+                      {list.length} recipe{list.length === 1 ? '' : 's'}
+                    </span>
                   </div>
-                  <ul className="max-h-36 space-y-1 overflow-y-auto text-xs text-gray-300">
+                  <ul className="max-h-36 space-y-0.5 overflow-y-auto text-xs text-gray-300">
                     {list.length === 0 ? (
                       <li className="text-gray-600">—</li>
                     ) : (
                       list.map((r) => (
-                        <li key={r.id} className="truncate border-b border-gray-800/60 pb-1 last:border-0">
-                          <span className="text-gray-200">{r.recipe_name}</span>
-                          <span className="text-gray-600"> · {r.gold_cost}g</span>
-                          {!r.is_active ? (
-                            <span className="ml-1 rounded bg-red-950/80 px-1 text-[9px] font-bold text-red-300">
-                              inactive
-                            </span>
-                          ) : null}
+                        <li key={r.id}>
+                          <button
+                            type="button"
+                            onClick={() => handleRecipeClick(r)}
+                            className="w-full truncate rounded-md px-1.5 py-1 text-left transition-colors hover:bg-amber-500/10 hover:text-amber-100 focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+                          >
+                            <span className="text-gray-200">{r.recipe_name}</span>
+                            <span className="text-gray-600"> · {r.gold_cost}g</span>
+                            {!r.is_active ? (
+                              <span className="ml-1 rounded bg-red-950/80 px-1 text-[9px] font-bold text-red-300">
+                                inactive
+                              </span>
+                            ) : null}
+                          </button>
                         </li>
                       ))
                     )}
@@ -421,147 +616,280 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
         )}
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-6 bg-gray-900/40 border border-gray-800 rounded-2xl p-4 md:p-6">
-        <div>
-          <label className="block text-xs font-bold text-gray-400 mb-1">Recipe name</label>
-          <input
-            className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-sm"
-            value={recipeName}
-            onChange={(e) => setRecipeName(e.target.value)}
-            required
-            placeholder="Demon Sword Forge"
-          />
+      {editingRecipeId ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-950/20 px-4 py-2.5 text-xs text-amber-200/90">
+          <span>
+            Editing recipe <span className="font-mono text-amber-100">{editingRecipeId.slice(0, 8)}…</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (builderMode === 'forge') resetForgeForm()
+              else resetRefineForm()
+            }}
+            className="rounded-lg border border-gray-600 px-3 py-1 font-bold text-gray-300 hover:bg-gray-800"
+          >
+            Cancel edit
+          </button>
         </div>
-        <div>
-          <label className="block text-xs font-bold text-gray-400 mb-1">Gold cost (coins)</label>
-          <input
-            type="number"
-            min={0}
-            className="w-full max-w-xs bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-sm"
-            value={Number.isNaN(goldCost) ? '' : goldCost}
-            onChange={(e) => setGoldCost(Math.max(0, Number(e.target.value) || 0))}
-          />
-        </div>
+      ) : null}
 
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-black uppercase tracking-wider text-gray-400">Ingredients</span>
-            <button
-              type="button"
-              onClick={appendIngredient}
-              className="text-xs font-bold text-amber-400 hover:text-amber-300"
-            >
-              + Add material
-            </button>
+      {builderMode === 'forge' ? (
+        <form onSubmit={onSubmitForge} className="space-y-6 bg-gray-900/40 border border-gray-800 rounded-2xl p-4 md:p-6">
+          <h3 className="text-sm font-black uppercase tracking-wider text-gray-300 flex items-center gap-2">
+            <Hammer className="h-4 w-4 text-amber-400" aria-hidden />
+            Forge — weighted outcomes
+          </h3>
+          <div>
+            <label className="block text-xs font-bold text-gray-400 mb-1">Recipe name</label>
+            <input
+              className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+              value={recipeName}
+              onChange={(e) => setRecipeName(e.target.value)}
+              required
+              placeholder="Demon Sword Forge"
+            />
           </div>
-          <div className="space-y-2">
-            {ingredients.map((row, index) => (
-              <div key={row.id} className="flex flex-wrap gap-2 items-end">
-                <ItemSearchPicker
-                  options={materialOptions}
-                  value={row.materialItemId}
-                  placeholder="— Material —"
-                  showRarity={false}
-                  onChange={(v) => {
-                    setIngredients((prev) => {
-                      const next = [...prev]
-                      next[index] = { ...next[index], materialItemId: v }
-                      return next
-                    })
-                  }}
-                />
-                <input
-                  type="number"
-                  min={1}
-                  className="w-24 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-sm"
-                  value={row.quantity}
-                  onChange={(e) => {
-                    const v = Math.max(1, Math.floor(Number(e.target.value) || 1))
-                    setIngredients((prev) => {
-                      const next = [...prev]
-                      next[index] = { ...next[index], quantity: v }
-                      return next
-                    })
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => removeIngredient(index)}
-                  className="text-xs text-red-400 font-bold px-2 py-2"
-                  disabled={ingredients.length <= 1}
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
+          <div>
+            <label className="block text-xs font-bold text-gray-400 mb-1">Gold cost (coins)</label>
+            <input
+              type="number"
+              min={0}
+              className="w-full max-w-xs bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+              value={Number.isNaN(goldCost) ? '' : goldCost}
+              onChange={(e) => setGoldCost(Math.max(0, Number(e.target.value) || 0))}
+            />
           </div>
-        </div>
 
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-black uppercase tracking-wider text-gray-400">
-              Outcomes ({activeClass})
-            </span>
-            <button
-              type="button"
-              onClick={appendOutcome}
-              className="text-xs font-bold text-amber-400 hover:text-amber-300"
-            >
-              + Add outcome
-            </button>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-black uppercase tracking-wider text-gray-400">Ingredients</span>
+              <button
+                type="button"
+                onClick={appendIngredient}
+                className="text-xs font-bold text-amber-400 hover:text-amber-300"
+              >
+                + Add material
+              </button>
+            </div>
+            <div className="space-y-2">
+              {ingredients.map((row, index) => (
+                <div key={row.id} className="flex flex-wrap gap-2 items-end">
+                  <ItemSearchPicker
+                    options={materialOptions}
+                    value={row.materialItemId}
+                    placeholder="— Material —"
+                    showRarity={false}
+                    onChange={(v) => {
+                      setIngredients((prev) => {
+                        const next = [...prev]
+                        next[index] = { ...next[index], materialItemId: v }
+                        return next
+                      })
+                    }}
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-24 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-sm"
+                    value={row.quantity}
+                    onChange={(e) => {
+                      const v = Math.max(1, Math.floor(Number(e.target.value) || 1))
+                      setIngredients((prev) => {
+                        const next = [...prev]
+                        next[index] = { ...next[index], quantity: v }
+                        return next
+                      })
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeIngredient(index)}
+                    className="text-xs text-red-400 font-bold px-2 py-2"
+                    disabled={ingredients.length <= 1}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="space-y-2">
-            {outcomes.map((row, index) => (
-              <div key={row.id} className="flex flex-wrap gap-2 items-end">
-                <ItemSearchPicker
-                  options={outcomeOptions}
-                  value={row.outputItemId}
-                  placeholder="— Output item —"
-                  showRarity
-                  onChange={(v) => {
-                    setOutcomes((prev) => {
-                      const next = [...prev]
-                      next[index] = { ...next[index], outputItemId: v }
-                      return next
-                    })
-                  }}
-                />
-                <input
-                  type="number"
-                  min={1}
-                  className="w-24 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-sm"
-                  placeholder="weight"
-                  value={row.weight}
-                  onChange={(e) => {
-                    const v = Math.max(1, Math.floor(Number(e.target.value) || 1))
-                    setOutcomes((prev) => {
-                      const next = [...prev]
-                      next[index] = { ...next[index], weight: v }
-                      return next
-                    })
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => removeOutcome(index)}
-                  className="text-xs text-red-400 font-bold px-2 py-2"
-                  disabled={outcomes.length <= 1}
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="px-6 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-black text-sm"
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-black uppercase tracking-wider text-gray-400">
+                Outcomes ({activeClass})
+              </span>
+              <button
+                type="button"
+                onClick={appendOutcome}
+                className="text-xs font-bold text-amber-400 hover:text-amber-300"
+              >
+                + Add outcome
+              </button>
+            </div>
+            <div className="space-y-2">
+              {outcomes.map((row, index) => (
+                <div key={row.id} className="flex flex-wrap gap-2 items-end">
+                  <ItemSearchPicker
+                    options={outcomeOptions}
+                    value={row.outputItemId}
+                    placeholder="— Output item —"
+                    showRarity
+                    onChange={(v) => {
+                      setOutcomes((prev) => {
+                        const next = [...prev]
+                        next[index] = { ...next[index], outputItemId: v }
+                        return next
+                      })
+                    }}
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-24 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-sm"
+                    placeholder="weight"
+                    value={row.weight}
+                    onChange={(e) => {
+                      const v = Math.max(1, Math.floor(Number(e.target.value) || 1))
+                      setOutcomes((prev) => {
+                        const next = [...prev]
+                        next[index] = { ...next[index], weight: v }
+                        return next
+                      })
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeOutcome(index)}
+                    className="text-xs text-red-400 font-bold px-2 py-2"
+                    disabled={outcomes.length <= 1}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="px-6 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-black text-sm"
+          >
+            {isSubmitting ? 'Saving…' : editingRecipeId ? 'Update recipe' : 'Save recipe'}
+          </button>
+        </form>
+      ) : (
+        <form
+          onSubmit={onSubmitRefine}
+          className="space-y-6 bg-gray-900/40 border border-emerald-900/40 rounded-2xl p-4 md:p-6"
         >
-          {isSubmitting ? 'Saving…' : 'Save recipe'}
-        </button>
-      </form>
+          <h3 className="text-sm font-black uppercase tracking-wider text-gray-300 flex items-center gap-2">
+            <Layers className="h-4 w-4 text-emerald-400" aria-hidden />
+            Refine — combine materials → one item
+          </h3>
+          <p className="text-[11px] text-gray-500">
+            One output ({activeClass} tab + &quot;All&quot; items). In-game this still uses the same craft roll with a
+            single outcome (weight {REFINE_OUTCOME_WEIGHT}).
+          </p>
+          <div>
+            <label className="block text-xs font-bold text-gray-400 mb-1">Recipe name</label>
+            <input
+              className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+              value={refineRecipeName}
+              onChange={(e) => setRefineRecipeName(e.target.value)}
+              required
+              placeholder="Refine Iron Chunks"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-400 mb-1">Gold cost (coins)</label>
+            <input
+              type="number"
+              min={0}
+              className="w-full max-w-xs bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+              value={Number.isNaN(refineGoldCost) ? '' : refineGoldCost}
+              onChange={(e) => setRefineGoldCost(Math.max(0, Number(e.target.value) || 0))}
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-black uppercase tracking-wider text-gray-400">Materials to combine</span>
+              <button
+                type="button"
+                onClick={appendRefineIngredient}
+                className="text-xs font-bold text-emerald-400 hover:text-emerald-300"
+              >
+                + Add material
+              </button>
+            </div>
+            <div className="space-y-2">
+              {refineIngredients.map((row, index) => (
+                <div key={row.id} className="flex flex-wrap gap-2 items-end">
+                  <ItemSearchPicker
+                    options={materialOptions}
+                    value={row.materialItemId}
+                    placeholder="— Material —"
+                    showRarity={false}
+                    onChange={(v) => {
+                      setRefineIngredients((prev) => {
+                        const next = [...prev]
+                        next[index] = { ...next[index], materialItemId: v }
+                        return next
+                      })
+                    }}
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-24 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-sm"
+                    value={row.quantity}
+                    onChange={(e) => {
+                      const v = Math.max(1, Math.floor(Number(e.target.value) || 1))
+                      setRefineIngredients((prev) => {
+                        const next = [...prev]
+                        next[index] = { ...next[index], quantity: v }
+                        return next
+                      })
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeRefineIngredient(index)}
+                    className="text-xs text-red-400 font-bold px-2 py-2"
+                    disabled={refineIngredients.length <= 1}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <span className="text-xs font-black uppercase tracking-wider text-gray-400 mb-2 block">
+              Refined output ({activeClass})
+            </span>
+            <ItemSearchPicker
+              options={outcomeOptions}
+              value={refineOutputItemId}
+              placeholder="— Refined item —"
+              showRarity
+              onChange={setRefineOutputItemId}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="px-6 py-3 rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-black text-sm"
+          >
+            {isSubmitting ? 'Saving…' : editingRecipeId ? 'Update refine recipe' : 'Save refine recipe'}
+          </button>
+        </form>
+      )}
     </section>
   )
 }
