@@ -9,6 +9,45 @@ import { effectiveItemCategory } from '@/lib/item-category'
 const RPG_CLASSES = ['Assassin', 'Fighter', 'Mage', 'Tanker', 'Ranger', 'Healer'] as const
 type RpgClass = (typeof RPG_CLASSES)[number]
 
+interface AdminRecipeIngredientRow {
+  id: string
+  material_item_id: string
+  quantity_required: number
+}
+
+interface AdminRecipeOutcomeRow {
+  id: string
+  output_item_id: string
+  weight: number
+}
+
+interface AdminRecipeRow {
+  id: string
+  recipe_name: string
+  gold_cost: number
+  is_active: boolean
+  created_at?: string
+  recipe_ingredients?: AdminRecipeIngredientRow[] | null
+  recipe_outcomes?: AdminRecipeOutcomeRow[] | null
+}
+
+/** Same rule as mobile BlacksmithUI: recipe shows for a class if any outcome is All/unset or that class. */
+function recipeVisibleForClass(
+  recipe: AdminRecipeRow,
+  shopById: Map<string, ShopItemRow>,
+  cls: RpgClass,
+): boolean {
+  const outs = recipe.recipe_outcomes ?? []
+  if (outs.length === 0) return false
+  return outs.some((o) => {
+    const item = shopById.get(o.output_item_id)
+    if (!item) return false
+    const cr = item.class_req
+    if (!cr || cr === 'All') return true
+    return cr === cls
+  })
+}
+
 export interface ShopItemRow {
   id: string
   name: string
@@ -177,6 +216,37 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
   const [ingredients, setIngredients] = useState<IngredientRow[]>([newIngredientRow()])
   const [outcomes, setOutcomes] = useState<OutcomeRow[]>([newOutcomeRow()])
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [savedRecipes, setSavedRecipes] = useState<AdminRecipeRow[]>([])
+  const [recipesLoading, setRecipesLoading] = useState(true)
+
+  const shopById = useMemo(() => {
+    const m = new Map<string, ShopItemRow>()
+    for (const it of shopItems) m.set(it.id, it)
+    return m
+  }, [shopItems])
+
+  const loadSavedRecipes = useCallback(async () => {
+    setRecipesLoading(true)
+    try {
+      const res = await adminAuthorizedFetch('/api/admin/crafting/recipes')
+      const json = (await res.json().catch(() => ({}))) as { recipes?: AdminRecipeRow[]; error?: string }
+      if (!res.ok) {
+        console.error('Load recipes:', json.error)
+        setSavedRecipes([])
+        return
+      }
+      setSavedRecipes(Array.isArray(json.recipes) ? json.recipes : [])
+    } catch (e) {
+      console.error(e)
+      setSavedRecipes([])
+    } finally {
+      setRecipesLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadSavedRecipes()
+  }, [loadSavedRecipes])
 
   const materialOptions = useMemo(
     () =>
@@ -269,6 +339,7 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
       }
       adminToast.success(`Recipe created (${json.recipeId?.slice?.(0, 8) ?? 'ok'}…)`)
       resetForm()
+      void loadSavedRecipes()
     } catch (err) {
       console.error(err)
       adminToast.error('Network error')
@@ -305,6 +376,50 @@ export default function RecipeBuilderTab({ shopItems }: { shopItems: ShopItemRow
         <span className="text-amber-200/90">crafting_material</span> (set in Shop item form for consumable / other /
         misc slots).
       </p>
+
+      <div className="rounded-2xl border border-gray-800 bg-gray-950/40 p-4 md:p-5">
+        <h3 className="text-xs font-black uppercase tracking-wider text-gray-400 mb-1">
+          Saved recipes by class (in-game forge)
+        </h3>
+        <p className="text-[10px] text-gray-600 mb-3">
+          A recipe is listed under a class if at least one outcome item has class <span className="text-gray-400">All</span>{' '}
+          (or blank) or that exact class — same logic as the mobile forge class tabs.
+        </p>
+        {recipesLoading ? (
+          <p className="text-xs text-gray-500">Loading recipes…</p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {RPG_CLASSES.map((cls) => {
+              const list = savedRecipes.filter((r) => recipeVisibleForClass(r, shopById, cls))
+              return (
+                <div key={cls} className="rounded-xl border border-gray-800/80 bg-black/30 px-3 py-2.5">
+                  <div className="flex items-baseline justify-between gap-2 mb-2">
+                    <span className="text-xs font-bold text-amber-400">{cls}</span>
+                    <span className="text-[10px] text-gray-600">{list.length} recipe{list.length === 1 ? '' : 's'}</span>
+                  </div>
+                  <ul className="max-h-36 space-y-1 overflow-y-auto text-xs text-gray-300">
+                    {list.length === 0 ? (
+                      <li className="text-gray-600">—</li>
+                    ) : (
+                      list.map((r) => (
+                        <li key={r.id} className="truncate border-b border-gray-800/60 pb-1 last:border-0">
+                          <span className="text-gray-200">{r.recipe_name}</span>
+                          <span className="text-gray-600"> · {r.gold_cost}g</span>
+                          {!r.is_active ? (
+                            <span className="ml-1 rounded bg-red-950/80 px-1 text-[9px] font-bold text-red-300">
+                              inactive
+                            </span>
+                          ) : null}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       <form onSubmit={onSubmit} className="space-y-6 bg-gray-900/40 border border-gray-800 rounded-2xl p-4 md:p-6">
         <div>

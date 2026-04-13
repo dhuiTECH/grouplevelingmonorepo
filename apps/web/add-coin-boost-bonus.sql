@@ -1,1 +1,0 @@
-ALTER TABLE public.shop_items DROP CONSTRAINT IF EXISTS shop_items_bonus_type_check; ALTER TABLE public.shop_items ADD CONSTRAINT shop_items_bonus_type_check CHECK (bonus_type IN ('speed', 'endurance', 'defense', 'strength', 'intelligence', 'attack_damage', 'crit_percentage', 'crit_damage', 'xp_boost', 'coin_boost'));

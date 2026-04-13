@@ -12,6 +12,40 @@ interface OutcomePayload {
   weight: number
 }
 
+export async function GET(request: NextRequest) {
+  try {
+    const auth = await verifyAdminAuth(request)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error ?? 'Unauthorized' }, { status: auth.status ?? 401 })
+    }
+
+    const { data: recipes, error } = await supabaseAdmin
+      .from('crafting_recipes')
+      .select(
+        `
+        id,
+        recipe_name,
+        gold_cost,
+        is_active,
+        created_at,
+        recipe_ingredients ( id, material_item_id, quantity_required ),
+        recipe_outcomes ( id, output_item_id, weight )
+      `,
+      )
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('[GET /api/admin/crafting/recipes]', error)
+      return NextResponse.json({ error: error.message || 'Failed to load recipes' }, { status: 500 })
+    }
+
+    return NextResponse.json({ recipes: recipes ?? [] })
+  } catch (e) {
+    console.error('GET /api/admin/crafting/recipes', e)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await verifyAdminAuth(request)
