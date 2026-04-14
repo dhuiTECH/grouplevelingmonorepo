@@ -29,6 +29,9 @@ import { RewardModal } from '@/components/modals/RewardModal';
 import { supabase } from '@/lib/supabase';
 import { EncounterTransition } from '@/components/EncounterTransition';
 import { initializeGlobalAudioMode } from '@/utils/audio';
+import { useBootStore } from '@/store/useBootStore';
+import { checkForUpdates } from '@/utils/syncEngine';
+import BootScreen from '@/screens/BootScreen';
 
 import Toast from 'react-native-toast-message';
 
@@ -123,9 +126,11 @@ function NotificationWrapper() {
 
 export default function App(): React.ReactElement {
   const [isRewardModalVisible, setIsRewardModalVisible] = useState(false);
+  const bootStep = useBootStore((s) => s.bootStep);
 
   useEffect(() => {
     void initializeGlobalAudioMode();
+    void checkForUpdates();
   }, []);
 
   const [fontsLoaded] = useFonts({
@@ -146,6 +151,10 @@ export default function App(): React.ReactElement {
         <ActivityIndicator size="large" color="#00e5ff" />
       </View>
     );
+  }
+
+  if (bootStep !== 'READY') {
+    return <BootScreen />;
   }
 
   return (
