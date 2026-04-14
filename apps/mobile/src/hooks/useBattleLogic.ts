@@ -612,6 +612,9 @@ export const useBattleLogic = ({
                     metadata: encounterData.metadata ?? null,
                     level: resolveEncounterDisplayLevel(encounterData),
                 });
+            } else {
+                console.warn(`[BattleInit] Encounter ${encounterId} not found in local cache`);
+                Alert.alert("Error", "Encounter data not available. Please return to the map and try again.");
             }
         }
       } catch (e) {
