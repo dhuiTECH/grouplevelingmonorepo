@@ -145,16 +145,16 @@ export default function App(): React.ReactElement {
     'Lato-Black': Lato_900Black,
   });
 
+  if (bootStep !== 'READY') {
+    return <BootScreen />;
+  }
+
   if (!fontsLoaded) {
     return (
       <View style={{ flex: 1, backgroundColor: '#020617', justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#00e5ff" />
       </View>
     );
-  }
-
-  if (bootStep !== 'READY') {
-    return <BootScreen />;
   }
 
   return (

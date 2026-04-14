@@ -63,14 +63,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   title: {
-    fontFamily: 'Montserrat-Bold',
+    fontWeight: '700' as const,
     fontSize: 28,
     color: '#00e5ff',
     letterSpacing: 4,
     marginBottom: 24,
   },
   status: {
-    fontFamily: 'Lato-Regular',
+    fontWeight: '400' as const,
     fontSize: 14,
     color: '#94a3b8',
     marginBottom: 32,
@@ -92,13 +92,13 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   progressText: {
-    fontFamily: 'Lato-Regular',
+    fontWeight: '400' as const,
     fontSize: 12,
     color: '#64748b',
     marginTop: 8,
   },
   errorText: {
-    fontFamily: 'Lato-Regular',
+    fontWeight: '400' as const,
     fontSize: 14,
     color: '#f87171',
     textAlign: 'center',
@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
     borderColor: '#00e5ff',
   },
   retryText: {
-    fontFamily: 'Montserrat-Bold',
+    fontWeight: '700' as const,
     fontSize: 16,
     color: '#ffffff',
     letterSpacing: 2,
