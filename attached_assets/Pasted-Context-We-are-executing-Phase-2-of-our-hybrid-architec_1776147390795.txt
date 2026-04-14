@@ -1,0 +1,39 @@
+Context: We are executing Phase 2 of our hybrid architecture. The Boot Screen is ready. We must replace the mocked download delay with a real asset downloader using expo-file-system. We will download static game assets to the device's local storage so they load instantly in-game. CRITICAL: We must handle failures gracefully so one bad image doesn't lock the player out of the game.
+
+Task 1: The Asset Manager (assetManager.ts)
+
+Create apps/mobile/src/utils/assetManager.ts.
+
+Import * as FileSystem from expo-file-system.
+
+Define a local directory: const ASSET_DIR = FileSystem.documentDirectory + 'game_assets/';
+
+Write three functions:
+
+initAssetDirectory(): Checks if ASSET_DIR exists; creates it if not.
+
+getLocalAssetUri(url: string): A pure, synchronous function. It takes a remote URL, deterministically sanitizes/hashes the URL string to create a safe filename (e.g., using a simple string hash or encoding), and returns the expected file:// path inside ASSET_DIR.
+
+downloadAssetIfMissing(url: string): Derives the path using getLocalAssetUri. Uses FileSystem.getInfoAsync to check if the file already exists. If yes, return the path immediately. If no, use FileSystem.downloadAsync. Crucial: Wrap the download in a try/catch. If it fails, console.warn the error and return null (do NOT throw an error that breaks the boot sequence).
+
+Task 2: Wiring the Sync Engine (syncEngine.ts)
+
+Open syncEngine.ts.
+
+Remove the setTimeout mock.
+
+Create a mock array of 5 remote image URLs (e.g., placeholder items or mob sprites) to act as our manifest for testing.
+
+The Logic: Call initAssetDirectory(). Then, iterate through the manifest array. await downloadAssetIfMissing(url) for each. Crucial: Even if a file is already cached or fails to download, increment the completed count and update useBootStore.setProgress((completed / totalFiles) * 100). This ensures fast re-entries for returning players and graceful degradation for errors.
+
+Task 3: The <CachedImage /> Component
+
+Create apps/mobile/src/components/CachedImage.tsx.
+
+Dependency: You MUST use the Image component from expo-image, not React Native core.
+
+It should accept a source={{ uri: string }} prop (matching standard API).
+
+Behavior: Inside the component, pass the remote URI through the synchronous getLocalAssetUri() to get the local path. Pass this local file:// path into the expo-image source prop.
+
+Utilize expo-image's placeholder prop to show a generic fallback icon/color in case the local file doesn't exist (e.g., if the download failed during boot).

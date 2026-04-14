@@ -1,0 +1,42 @@
+Master Prompt: Phase 2 - The Cargo (Local Asset Caching)
+Role: Senior React Native & Expo Mobile Engineer
+
+Context: We are executing Phase 2 of our hybrid architecture. The Boot Screen (built in Phase 1) is ready. We now need to replace the "mocked" download delay with a real asset downloader using expo-file-system. We will download all static game assets (shop items, monster sprites) to the device's local storage so they load instantly in-game without network requests.
+
+Task 1: The Asset Manager (assetManager.ts)
+
+Create apps/mobile/src/utils/assetManager.ts.
+
+Import * as FileSystem from expo-file-system.
+
+Define a local directory: const ASSET_DIR = FileSystem.documentDirectory + 'game_assets/';
+
+Write three functions:
+
+initAssetDirectory(): Checks if ASSET_DIR exists, creates it if not.
+
+downloadAssetIfMissing(url): Takes a remote URL, hashes or sanitizes the filename, checks if it already exists in ASSET_DIR. If not, uses FileSystem.downloadAsync to grab it. Returns the local file:// URI.
+
+getLocalAssetUri(url): Synchronously derives the expected local file path for a given URL so the UI can render it.
+
+Task 2: Wiring the Sync Engine
+
+Open our existing syncEngine.ts.
+
+Remove the setTimeout mock.
+
+Create a mock array of 5 remote image URLs (e.g., placeholder items or mob sprites) to act as our manifest for testing.
+
+The Logic: Iterate through the manifest array. Await downloadAssetIfMissing for each URL. Update the Zustand useBootStore.setProgress incrementally after each file finishes (completed / totalFiles) * 100.
+
+Task 3: The <CachedImage /> Component
+
+Create a portable, reusable component: apps/mobile/src/components/CachedImage.tsx.
+
+It should accept a source={{ uri: string }} prop (just like a standard React Native Image).
+
+Inside the component, pass the remote URI through getLocalAssetUri() to get the local path.
+
+Render the standard <Image> (or Expo Image if installed) using the local file:// path.
+
+Add a subtle fallback or placeholder if the local file isn't found.
