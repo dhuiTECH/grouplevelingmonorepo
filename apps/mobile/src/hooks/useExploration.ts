@@ -1,11 +1,4 @@
-import {
-  useState,
-  useCallback,
-  useRef,
-  useEffect,
-  useMemo,
-  type MutableRefObject,
-} from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -23,12 +16,11 @@ const GRID_REFRESH_DISTANCE = 5;
 const VISIBLE_RADIUS_X = 30;
 const VISIBLE_RADIUS_Y = 32;
 
-// Large prefetch radii — minimize server round-trips during gameplay.
-// Client holds more data; server sync only when player stops.
-const PREFETCH_RADIUS_X = 48;
-const PREFETCH_RADIUS_Y = 48;
-const BOOTSTRAP_PREFETCH_RADIUS_X = 48;
-const BOOTSTRAP_PREFETCH_RADIUS_Y = 48;
+// Prefetch radii — balance server round-trips vs memory / initial fetch size.
+const PREFETCH_RADIUS_X = 24;
+const PREFETCH_RADIUS_Y = 24;
+const BOOTSTRAP_PREFETCH_RADIUS_X = 32;
+const BOOTSTRAP_PREFETCH_RADIUS_Y = 32;
 
 const EXPLORATION_CACHE_VERSION = 1;
 const DEBUG_WORLD_MAP_SYNC = __DEV__;
@@ -44,14 +36,6 @@ function logWorldMapSync(message: string, payload?: Record<string, unknown>) {
 
 function makeExplorationCacheKey(userId: string, mapId: string) {
   return `exploration_cache_v${EXPLORATION_CACHE_VERSION}:${userId}:${mapId}`;
-}
-
-function mapToObject(map: Map<string, any>) {
-  const out: Record<string, any> = {};
-  map.forEach((value, key) => {
-    out[key] = value;
-  });
-  return out;
 }
 
 function objectToMap(value: Record<string, any> | undefined) {
@@ -92,6 +76,9 @@ export const useExploration = (
   // Chunk cache
   const chunkCache = useRef<Map<string, any>>(new Map());
   const inFlightChunks = useRef<Set<string>>(new Set());
+  /** Chunk keys already written to AsyncStorage for this session (skip re-serializing whole cache). */
+  const persistedChunks = useRef<Set<string>>(new Set());
+  const currentMapIdRef = useRef(currentMapId);
 
   // Refs that let onTileEnter read fresh data without being in its dependency list
   const userRef = useRef(user);
@@ -138,6 +125,9 @@ export const useExploration = (
     userRef.current = user;
   }, [user]);
   useEffect(() => {
+    currentMapIdRef.current = currentMapId;
+  }, [currentMapId]);
+  useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
   useEffect(() => {
@@ -155,35 +145,101 @@ export const useExploration = (
 
     let cancelled = false;
     const cacheKey = makeExplorationCacheKey(userId, currentMapId);
+    const metaKey = `${cacheKey}:meta`;
+    const chunkPrefix = `${cacheKey}:chunk:`;
 
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(cacheKey);
-        if (!raw || cancelled) return;
-        const parsed = JSON.parse(raw);
+        const metaRawInitial = await AsyncStorage.getItem(metaKey);
+        const legacyRaw = metaRawInitial ? null : await AsyncStorage.getItem(cacheKey);
 
-        if (Array.isArray(parsed?.nodes)) {
-          nodesRef.current = parsed.nodes;
-          setNodes(parsed.nodes);
+        if (!metaRawInitial && !legacyRaw) {
+          chunkCache.current.clear();
+          persistedChunks.current.clear();
+          chunksVersionRef.current += 1;
+          setChunksVersion((v) => v + 1);
+          return;
+        }
+        if (cancelled) return;
+
+        chunkCache.current.clear();
+        persistedChunks.current.clear();
+
+        let parsed: Record<string, unknown> | null = null;
+        let migratedFromLegacy = false;
+
+        if (metaRawInitial) {
+          parsed = JSON.parse(metaRawInitial) as Record<string, unknown>;
+        } else if (legacyRaw) {
+          parsed = JSON.parse(legacyRaw) as Record<string, unknown>;
+          migratedFromLegacy = true;
+
+          if (parsed?.chunkCache && typeof parsed.chunkCache === "object") {
+            const legacyChunks = objectToMap(parsed.chunkCache as Record<string, any>);
+            for (const [ck, value] of legacyChunks) {
+              await AsyncStorage.setItem(`${chunkPrefix}${ck}`, JSON.stringify(value)).catch(
+                () => {},
+              );
+              chunkCache.current.set(ck, value);
+              persistedChunks.current.add(ck);
+            }
+          }
+
+          await AsyncStorage.setItem(
+            metaKey,
+            JSON.stringify({
+              nodes: parsed.nodes,
+              unlocked: parsed.unlocked,
+              gridCenter: parsed.gridCenter,
+            }),
+          ).catch(() => {});
+          await AsyncStorage.removeItem(cacheKey).catch(() => {});
         }
 
-        if (Array.isArray(parsed?.unlocked)) {
-          const unlockedSet = new Set<string>(parsed.unlocked);
+        if (!parsed || cancelled) return;
+
+        if (Array.isArray(parsed.nodes)) {
+          nodesRef.current = parsed.nodes as any[];
+          setNodes(parsed.nodes as any[]);
+        }
+
+        if (Array.isArray(parsed.unlocked)) {
+          const unlockedSet = new Set<string>(parsed.unlocked as string[]);
           unlockedRef.current = unlockedSet;
           setUnlocked(unlockedSet);
         }
 
-        if (parsed?.chunkCache && typeof parsed.chunkCache === "object") {
-          chunkCache.current = objectToMap(parsed.chunkCache);
-          chunksVersionRef.current += 1;
-          setChunksVersion((v) => v + 1);
+        if (
+          parsed.gridCenter &&
+          typeof (parsed.gridCenter as { x?: unknown }).x === "number" &&
+          typeof (parsed.gridCenter as { y?: unknown }).y === "number"
+        ) {
+          const gc = parsed.gridCenter as { x: number; y: number };
+          gridCenterRef.current = gc;
+          lastRefreshCenter.current = gc;
+          setGridCenter(gc);
         }
 
-        if (parsed?.gridCenter && typeof parsed.gridCenter.x === "number" && typeof parsed.gridCenter.y === "number") {
-          gridCenterRef.current = parsed.gridCenter;
-          lastRefreshCenter.current = parsed.gridCenter;
-          setGridCenter(parsed.gridCenter);
+        if (!migratedFromLegacy) {
+          const allKeys = await AsyncStorage.getAllKeys();
+          const chunkKeys = allKeys.filter((k) => k.startsWith(chunkPrefix));
+          if (chunkKeys.length > 0) {
+            const chunkPairs = await AsyncStorage.multiGet(chunkKeys);
+            chunkPairs.forEach(([k, v]) => {
+              if (!v) return;
+              const chunkKey = k.replace(chunkPrefix, "");
+              try {
+                chunkCache.current.set(chunkKey, JSON.parse(v));
+                persistedChunks.current.add(chunkKey);
+              } catch {
+                /* ignore corrupt chunk entry */
+              }
+            });
+          }
         }
+
+        chunksVersionRef.current += 1;
+        setChunksVersion((v) => v + 1);
       } catch (e) {
         console.warn("[useExploration] cache hydrate failed:", e);
       }
@@ -194,28 +250,28 @@ export const useExploration = (
     };
   }, [user?.id, currentMapId]);
 
-  // Persist exploration cache in small batches.
+  // Persist exploration meta only; chunks are written inline when first fetched.
   useEffect(() => {
     const userId = user?.id;
     if (!userId || !currentMapId || currentMapId === "undefined") return;
 
     const cacheKey = makeExplorationCacheKey(userId, currentMapId);
+    const metaKey = `${cacheKey}:meta`;
     const id = setTimeout(() => {
       AsyncStorage.setItem(
-        cacheKey,
+        metaKey,
         JSON.stringify({
           nodes: nodesRef.current,
           unlocked: Array.from(unlockedRef.current),
-          chunkCache: mapToObject(chunkCache.current),
           gridCenter: gridCenterRef.current,
         }),
       ).catch((e) => {
-        console.warn("[useExploration] cache persist failed:", e);
+        console.warn("[useExploration] meta persist failed:", e);
       });
-    }, 800);
+    }, 2000);
 
     return () => clearTimeout(id);
-  }, [user?.id, currentMapId, nodes, unlocked, chunksVersion]);
+  }, [user?.id, currentMapId, nodes, unlocked]);
 
   // Separate camera position for visionGrid that only updates when we actually
   // want the grid to recalculate (initial load, chunk fetch, teleport).
@@ -388,7 +444,7 @@ export const useExploration = (
         const minY = Math.min(...chunkCoords.map((c) => c.y));
         const maxY = Math.max(...chunkCoords.map((c) => c.y));
 
-        let wroteChunkTiles = false;
+        let newChunksWritten = 0;
         try {
           const { data, error } = await supabase
             .from("map_chunks")
@@ -405,6 +461,12 @@ export const useExploration = (
               fetchedMap.set(`${chunk.chunk_x},${chunk.chunk_y}`, chunk);
             });
 
+            newChunksWritten = missingChunks.filter((key) => fetchedMap.has(key)).length;
+
+            const mapId = currentMapIdRef.current;
+            const uid = userRef.current!.id;
+            const canPersist = Boolean(mapId && mapId !== "undefined" && uid);
+
             missingChunks.forEach((key) => {
               const chunkData = fetchedMap.get(key);
               const rawTiles = chunkData?.tile_data || [];
@@ -416,11 +478,19 @@ export const useExploration = (
                 key,
                 chunkData ? { ...chunkData, tile_data } : { tile_data: [] },
               );
-              wroteChunkTiles = true;
+
+              if (canPersist && !persistedChunks.current.has(key)) {
+                const storageBase = makeExplorationCacheKey(uid, mapId as string);
+                AsyncStorage.setItem(
+                  `${storageBase}:chunk:${key}`,
+                  JSON.stringify(chunkCache.current.get(key)),
+                ).catch(() => {});
+                persistedChunks.current.add(key);
+              }
             });
           }
 
-          if (wroteChunkTiles) {
+          if (newChunksWritten > 0) {
             chunksVersionRef.current += 1;
             setChunksVersion((v) => v + 1);
           }
@@ -428,7 +498,7 @@ export const useExploration = (
             cx,
             cy,
             fetchedChunks: missingChunks.length,
-            wroteChunkTiles,
+            newChunksWritten,
           });
           onComplete?.();
         } catch (e) {
@@ -483,7 +553,7 @@ export const useExploration = (
         );
       }
 
-      let wroteChunkTiles = false;
+      let newChunksWritten = 0;
 
       try {
         const results = await Promise.all(promises);
@@ -508,6 +578,12 @@ export const useExploration = (
               fetchedMap.set(`${chunk.chunk_x},${chunk.chunk_y}`, chunk);
             });
 
+            newChunksWritten = missingChunks.filter((key) => fetchedMap.has(key)).length;
+
+            const mapId = currentMapIdRef.current;
+            const uid = userRef.current.id;
+            const canPersist = Boolean(mapId && mapId !== "undefined" && uid);
+
             missingChunks.forEach((key) => {
               const chunkData = fetchedMap.get(key);
               const rawTiles = chunkData?.tile_data || [];
@@ -519,7 +595,15 @@ export const useExploration = (
                 key,
                 chunkData ? { ...chunkData, tile_data } : { tile_data: [] },
               );
-              wroteChunkTiles = true;
+
+              if (canPersist && !persistedChunks.current.has(key)) {
+                const storageBase = makeExplorationCacheKey(uid, mapId as string);
+                AsyncStorage.setItem(
+                  `${storageBase}:chunk:${key}`,
+                  JSON.stringify(chunkCache.current.get(key)),
+                ).catch(() => {});
+                persistedChunks.current.add(key);
+              }
             });
           }
         }
@@ -543,7 +627,7 @@ export const useExploration = (
         gridCenterRef.current = { x: cx, y: cy };
         hasPendingVisionRef.current = true;
 
-        if (wroteChunkTiles) {
+        if (newChunksWritten > 0) {
           chunksVersionRef.current += 1;
           setChunksVersion((v) => v + 1);
         }
@@ -552,7 +636,7 @@ export const useExploration = (
           cy,
           force,
           fetchedChunks: missingChunks.length,
-          wroteChunkTiles,
+          newChunksWritten,
           discoveries: unlockedRef.current.size,
           nodes: nodesRef.current.length,
         });
