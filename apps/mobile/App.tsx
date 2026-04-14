@@ -5,8 +5,6 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Modal, ActivityIndicator, View, Image } from 'react-native';
-import * as Asset from 'expo-asset';
 import { useFonts, Exo2_400Regular, Exo2_700Bold } from '@expo-google-fonts/exo-2';
 
 import {
