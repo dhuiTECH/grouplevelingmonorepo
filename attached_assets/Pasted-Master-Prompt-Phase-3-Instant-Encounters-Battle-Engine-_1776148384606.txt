@@ -1,0 +1,32 @@
+Master Prompt: Phase 3 - Instant Encounters & Battle Engine
+Role: Senior Performance Engineer (React Native & Supabase)
+
+Context: We are implementing Phase 3 of our "Genshin Hybrid Architecture". We need to rewrite our World Map Encounter system to completely eliminate network latency when starting a battle. We will use a "Stale-While-Revalidate" pattern powered by Zustand and AsyncStorage.
+
+Task 1: Local Encounter Persistence
+
+Audit our useBattleStore or useEncounterStore (whichever manages map encounters).
+
+Wrap this store in Zustand's persist middleware, saving the data to React Native's AsyncStorage.
+
+The Logic: The store must save the encounter pools for the maps. On app boot, it should instantly hydrate from disk so the map has immediate access to the monster list.
+
+Task 2: Stale-While-Revalidate Syncing
+
+Update the data-fetching hook or function that pulls encounters from Supabase.
+
+The Logic: When the map loads, it MUST immediately return the locally cached encounter data to the UI. Then, fire off the Supabase query in the background without blocking the UI. When Supabase returns fresh data, silently merge it into the Zustand store.
+
+Task 3: Instant Battle Transition
+
+Audit our World Map stepping/encounter logic.
+
+Remove ANY sequential await calls to Supabase that happen between the player taking a step and the Battle Screen opening.
+
+The encounter ID, monster stats, and mob image URL must be pulled synchronously from the local Zustand cache.
+
+CRITICAL: Ensure the monster's image renders using our newly built CachedImage component so the sprite loads from the hard drive instantly.
+
+Task 4: Secure Victory (Server-Authoritative)
+
+Ensure the end of the battle remains secure. The client handles the fight animations locally, but upon victory, it must fire a single Supabase RPC (e.g., process_battle_victory(p_player_id, p_encounter_id)) to validate the kill, calculate EXP, roll for loot, and update the database transactionally. Do not let the client dictate the loot drops.
