@@ -6,6 +6,7 @@ import {
   getSpriteFrameDimensionsFromMetadata,
 } from '@/utils/pet-sprites';
 import { BattleEnemySprite } from './BattleEnemySprite';
+import { getLocalAssetUri } from '@/utils/assetManager';
 
 /** Multiplier on source pixel size for `oneToOne` battle sprites (layout points per source pixel). */
 const ONE_TO_ONE_DISPLAY_SCALE = 0.4;
@@ -66,6 +67,11 @@ export function BattleEnemyAvatar({
     return legacyUrl || '';
   }, [petDetails]);
 
+  const resolvedImageUrl = useMemo(() => {
+    if (!imageUrl) return '';
+    return getLocalAssetUri(imageUrl);
+  }, [imageUrl]);
+
   const spriteConfig = useMemo(() => getPetSpriteConfig(petDetails), [petDetails]);
   const metaFrameDims = useMemo(
     () => getSpriteFrameDimensionsFromMetadata(petDetails),
@@ -78,22 +84,22 @@ export function BattleEnemyAvatar({
   useEffect(() => {
     setIntrinsicFrame(null);
     setIntrinsicFailed(false);
-  }, [imageUrl]);
+  }, [resolvedImageUrl]);
 
   useEffect(() => {
     if (pixelSizeMode !== 'oneToOne') return;
-    if (!imageUrl) return;
+    if (!resolvedImageUrl) return;
     if (spriteConfig || metaFrameDims) return;
 
     Image.getSize(
-      imageUrl,
+      resolvedImageUrl,
       (w, h) => {
         if (w > 0 && h > 0) setIntrinsicFrame({ w, h });
         else setIntrinsicFailed(true);
       },
       () => setIntrinsicFailed(true)
     );
-  }, [pixelSizeMode, imageUrl, spriteConfig, metaFrameDims]);
+  }, [pixelSizeMode, resolvedImageUrl, spriteConfig, metaFrameDims]);
 
   const { totalFrames, durationMs, frameWidth, frameHeight, idleIndex } = useMemo(() => {
     if (spriteConfig) {
@@ -147,7 +153,7 @@ export function BattleEnemyAvatar({
     !metaFrameDims &&
     !intrinsicFrame &&
     !intrinsicFailed &&
-    !!imageUrl;
+    !!resolvedImageUrl;
 
   const useNormalizedFallback =
     pixelSizeMode === 'normalized' ||
@@ -155,7 +161,7 @@ export function BattleEnemyAvatar({
       !spriteConfig &&
       !metaFrameDims &&
       !intrinsicFrame &&
-      (intrinsicFailed || !imageUrl));
+      (intrinsicFailed || !resolvedImageUrl));
 
   const maxDim = Math.max(frameWidth, frameHeight);
   const scale = useNormalizedFallback
@@ -179,7 +185,7 @@ export function BattleEnemyAvatar({
 
   const spriteAction: 'idle' | 'enter' = action === 'enter' ? 'enter' : 'idle';
 
-  if (!imageUrl) {
+  if (!resolvedImageUrl) {
     return <View style={[wrapperStyle, { backgroundColor: 'rgba(148, 163, 184, 0.12)' }]} />;
   }
 
@@ -208,7 +214,7 @@ export function BattleEnemyAvatar({
   return (
     <View style={wrapperStyle}>
       <BattleEnemySprite
-        imageUrl={imageUrl}
+        imageUrl={resolvedImageUrl}
         action={spriteAction}
         idleIndex={idleIndex}
         totalFrames={totalFrames}

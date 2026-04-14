@@ -424,6 +424,7 @@ export const useBattleLogic = ({
       try {
         let cachedEncounter: any = undefined;
         if (!isBoss && encounterId) {
+          await useEncounterPoolStore.getState().waitForHydration();
           const store = useEncounterPoolStore.getState();
           if (currentMapId) {
             cachedEncounter = store.getEncounterById(currentMapId, encounterId);
@@ -436,11 +437,6 @@ export const useBattleLogic = ({
             }
           }
         }
-
-        const encounterPoolPromise =
-          !isBoss && encounterId && !cachedEncounter
-            ? supabase.from('encounter_pool').select('*').eq('id', encounterId).single()
-            : Promise.resolve({ data: null as any, error: null });
 
         // 1. Fetch Player Data & Skills (always includes Basic Attack from useSkills)
         let playerAbilities = getBattleSkills();
@@ -604,8 +600,7 @@ export const useBattleLogic = ({
                 return () => supabase.removeChannel(channel);
             }
         } else if (encounterId) {
-            const encounterData =
-              cachedEncounter ?? (await encounterPoolPromise).data;
+            const encounterData = cachedEncounter;
             if (encounterData) {
                  setEnemy({
                     id: encounterData.id,
