@@ -33,7 +33,9 @@ export default function BootScreen() {
   const statusText =
     bootStep === 'DOWNLOADING'
       ? 'Updating game files...'
-      : 'Checking for updates...';
+      : bootStep === 'READY'
+        ? 'Loading resources...'
+        : 'Checking for updates...';
 
   return (
     <View style={styles.container}>
