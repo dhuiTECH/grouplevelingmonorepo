@@ -34,6 +34,7 @@ export async function checkForUpdates(): Promise<void> {
     for (const url of ASSET_MANIFEST) {
       if (currentRunId !== runId) return;
       await downloadAssetIfMissing(url);
+      if (currentRunId !== runId) return;
       completed++;
       useBootStore.getState().setProgress(Math.round((completed / totalFiles) * 100));
     }
