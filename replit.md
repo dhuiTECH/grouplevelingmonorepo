@@ -48,6 +48,10 @@ The workflow runs: `cd apps/web && node_modules/.bin/next dev -p 5000 -H 0.0.0.0
 - **Directional edge collision**: `EDGE_BLOCK_LAYER=-3`, `edgeBlocks` bitmask (N=1,E=2,S=4,W=8), two-sided check in `useExploration.ts`
 - **Movement**: `useExploration.ts` → `move(dir)` — handles walkability, edge collision, Supabase sync
 - **Encounter system**: Weight-based random encounters via `spawn_weight` on each tile enter (no probability gate — every tile step picks a weighted-random encounter from the pool). Selection algorithm: sum weights → random in [0,total) → cumulative walk. Jeffrey is now a normal pool entry.
+- **Genshin-style boot/cache architecture**: Three-phase system — Phase 1 (bootloader splash with Zustand state machine), Phase 2 (local asset caching via `assetManager.ts` with dual-hash filenames), Phase 3 (instant encounter transitions from persisted Zustand store). Boot gate in `App.tsx` blocks NavigationContainer until `bootStep === 'READY'`.
+- **SWR map loading**: `useMapData` hydrates from AsyncStorage cache immediately (no loading delay), then Supabase fetch runs in background to refresh stale data. Encounter pool fetched async (doesn't block map interactivity).
+- **Vision flush on bootstrap**: `useExploration.refreshVision(force=true)` immediately commits discoveries/nodes/gridCenter to React state on initial load instead of deferring to blur/background.
+- **Encounter pool persistence**: `useEncounterPoolStore` uses Zustand `persist` + AsyncStorage. `_hasHydrated` flag + `waitForHydration()` prevent race conditions. `useExploration` subscribes to hydration state to populate encounter pool ref before first tile step.
 - **Pre-battle dialogue**: `encounter_pool.pre_battle_dialogue` JSONB column (enabled, scene.npc_name/sprite/bg, script[]) — when enabled, `DialogueScene` overlay plays before battle transition. Admin toggle + script editor in MobsTab.
 
 ## Deployment

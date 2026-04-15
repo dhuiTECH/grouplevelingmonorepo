@@ -1,10 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 import { useEncounterPoolStore } from "@/store/useEncounterPoolStore";
 
 const MAP_DATA_CACHE_KEY = "world_map_bootstrap_v1";
-const MAP_LOAD_MIN_MS = 2000;
 
 function normalizeMapSettings(settings: any) {
   if (!settings) return null;
@@ -37,6 +36,7 @@ export function useMapData(userId: string | undefined) {
   const [loadingMap, setLoadingMap] = useState(true);
   const [mapError, setMapError] = useState<string | null>(null);
   const [allShopItems, setAllShopItems] = useState<any[]>([]);
+  const bgFetchStarted = useRef(false);
 
   const hydrateFromCache = useCallback(async () => {
     try {
@@ -64,76 +64,83 @@ export function useMapData(userId: string | undefined) {
     [],
   );
 
+  const fetchEncountersAsync = useCallback((mapId: string) => {
+    supabase
+      .from("encounter_pool")
+      .select("*")
+      .or(`map_id.eq.${mapId},map_id.is.null`)
+      .then(({ data }) => {
+        if (data) {
+          useEncounterPoolStore.getState().setPoolForMap(mapId, data);
+        }
+      })
+      .catch((err) => {
+        console.warn("[useMapData] encounter pool background fetch failed:", err);
+      });
+  }, []);
+
+  const fetchCoreData = useCallback(async () => {
+    const mapPromise = supabase
+      .from("maps")
+      .select("id")
+      .eq("is_active", true)
+      .single();
+    const settingsPromise = supabase
+      .from("world_map_settings")
+      .select("*")
+      .eq("id", 1)
+      .single();
+    const shopPromise = supabase.from("shop_items").select("*");
+
+    const [mapRes, settingsRes, shopRes] = await Promise.all([
+      mapPromise,
+      settingsPromise,
+      shopPromise,
+    ]);
+
+    const nextActiveMapId = mapRes.data?.id ?? null;
+    const nextMapSettings = normalizeMapSettings(settingsRes.data);
+    const nextShopItems = shopRes.data ?? [];
+
+    if (nextActiveMapId) setActiveMapId(nextActiveMapId);
+    if (nextMapSettings) setMapSettings(nextMapSettings);
+    setAllShopItems(nextShopItems);
+
+    if (nextActiveMapId) {
+      fetchEncountersAsync(nextActiveMapId);
+    }
+
+    await persistCache({
+      activeMapId: nextActiveMapId,
+      mapSettings: nextMapSettings,
+      allShopItems: nextShopItems,
+    });
+  }, [persistCache, fetchEncountersAsync]);
+
   const loadData = useCallback(async () => {
     setMapError(null);
     setLoadingMap(true);
+    bgFetchStarted.current = false;
 
     const hydrated = await hydrateFromCache();
 
-    const minDisplay = new Promise<void>((resolve) =>
-      setTimeout(resolve, MAP_LOAD_MIN_MS),
-    );
-
-    const fetchWork = async () => {
+    if (hydrated) {
+      setLoadingMap(false);
+      bgFetchStarted.current = true;
+      fetchCoreData().catch((err) => {
+        console.warn("[useMapData] background refresh failed:", err);
+      });
+    } else {
       try {
-        const mapPromise = supabase
-          .from("maps")
-          .select("id")
-          .eq("is_active", true)
-          .single();
-        const settingsPromise = supabase
-          .from("world_map_settings")
-          .select("*")
-          .eq("id", 1)
-          .single();
-        const shopPromise = supabase.from("shop_items").select("*");
-        const encounterPromise = mapPromise.then(async (mapRes) => {
-          const id = mapRes.data?.id;
-          if (!id) return [] as any[];
-          const { data } = await supabase
-            .from("encounter_pool")
-            .select("*")
-            .or(`map_id.eq.${id},map_id.is.null`);
-          return data ?? [];
-        });
-
-        const [mapRes, settingsRes, shopRes, encounterRows] = await Promise.all([
-          mapPromise,
-          settingsPromise,
-          shopPromise,
-          encounterPromise,
-        ]);
-
-        const nextActiveMapId = mapRes.data?.id ?? null;
-        const nextMapSettings = normalizeMapSettings(settingsRes.data);
-        const nextShopItems = shopRes.data ?? [];
-
-        if (nextActiveMapId) {
-          useEncounterPoolStore
-            .getState()
-            .setPoolForMap(nextActiveMapId, encounterRows);
-        }
-
-        if (nextActiveMapId) setActiveMapId(nextActiveMapId);
-        if (nextMapSettings) setMapSettings(nextMapSettings);
-        setAllShopItems(nextShopItems);
-
-        await persistCache({
-          activeMapId: nextActiveMapId,
-          mapSettings: nextMapSettings,
-          allShopItems: nextShopItems,
-        });
+        await fetchCoreData();
       } catch (err) {
         console.error("Error loading world data:", err);
-        if (!hydrated) {
-          setMapError("Failed to load world data. Check connection.");
-        }
+        setMapError("Failed to load world data. Check connection.");
+      } finally {
+        setLoadingMap(false);
       }
-    };
-
-    await Promise.all([fetchWork(), minDisplay]);
-    setLoadingMap(false);
-  }, [hydrateFromCache, persistCache]);
+    }
+  }, [hydrateFromCache, fetchCoreData]);
 
   useEffect(() => {
     void loadData();

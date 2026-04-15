@@ -104,11 +104,20 @@ export const useExploration = (
   const nodeLookupRef = useRef<Map<string, any>>(new Map());
 
   const encounterPoolRef = useRef<any[]>([]);
+  const storeHydrated = useEncounterPoolStore((s) => s._hasHydrated);
   const encounterPoolForMap = useEncounterPoolStore((s) => {
     if (!currentMapId || currentMapId === "undefined") return EMPTY_ENCOUNTER_POOL;
     return s.encountersByMap[currentMapId] ?? EMPTY_ENCOUNTER_POOL;
   });
   encounterPoolRef.current = encounterPoolForMap;
+
+  useEffect(() => {
+    if (!storeHydrated || !currentMapId || currentMapId === "undefined") return;
+    const pool = useEncounterPoolStore.getState().encountersByMap[currentMapId];
+    if (pool && pool.length > 0) {
+      encounterPoolRef.current = pool;
+    }
+  }, [storeHydrated, currentMapId]);
 
   // Deferred vision state — discoveries/nodes are written to refs during refreshVision,
   // then applied to React state by flushPendingVision (called on blur/background).
@@ -625,7 +634,15 @@ export const useExploration = (
 
         lastRefreshCenter.current = { x: cx, y: cy };
         gridCenterRef.current = { x: cx, y: cy };
-        hasPendingVisionRef.current = true;
+
+        if (force) {
+          setUnlocked(unlockedRef.current);
+          setNodes(nodesRef.current);
+          setGridCenter({ x: cx, y: cy });
+          hasPendingVisionRef.current = false;
+        } else {
+          hasPendingVisionRef.current = true;
+        }
 
         if (newChunksWritten > 0) {
           chunksVersionRef.current += 1;
