@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 import { useEncounterPoolStore } from "@/store/useEncounterPoolStore";
@@ -36,7 +36,6 @@ export function useMapData(userId: string | undefined) {
   const [loadingMap, setLoadingMap] = useState(true);
   const [mapError, setMapError] = useState<string | null>(null);
   const [allShopItems, setAllShopItems] = useState<any[]>([]);
-  const bgFetchStarted = useRef(false);
 
   const hydrateFromCache = useCallback(async () => {
     try {
@@ -120,13 +119,11 @@ export function useMapData(userId: string | undefined) {
   const loadData = useCallback(async () => {
     setMapError(null);
     setLoadingMap(true);
-    bgFetchStarted.current = false;
 
     const hydrated = await hydrateFromCache();
 
     if (hydrated) {
       setLoadingMap(false);
-      bgFetchStarted.current = true;
       fetchCoreData().catch((err) => {
         console.warn("[useMapData] background refresh failed:", err);
       });
