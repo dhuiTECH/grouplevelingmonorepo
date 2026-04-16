@@ -29,7 +29,8 @@ function getHashedFilename(url: string): string {
 }
 
 export function getLocalAssetUri(url: string): string {
-  return ASSET_DIR + getHashedFilename(url);
+  const clean = url.split('?')[0];
+  return ASSET_DIR + getHashedFilename(clean);
 }
 
 let dirInitialized = false;
@@ -41,7 +42,8 @@ export async function initAssetDirectory(): Promise<void> {
 }
 
 export async function downloadAssetIfMissing(url: string): Promise<string | null> {
-  const localUri = getLocalAssetUri(url);
+  const clean = url.split('?')[0];
+  const localUri = getLocalAssetUri(clean);
 
   try {
     const info = await FileSystem.getInfoAsync(localUri);

@@ -1,13 +1,8 @@
 import { useBootStore } from '@/store/useBootStore';
 import { initAssetDirectory, downloadAssetIfMissing } from '@/utils/assetManager';
+import { buildAssetManifest } from '@/utils/assetManifest';
 
-const ASSET_MANIFEST: string[] = [
-  'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png',
-  'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/1.png',
-  'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/4.png',
-  'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/7.png',
-  'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/150.png',
-];
+const CONCURRENT_DOWNLOADS = 6;
 
 let currentRunId = 0;
 
@@ -24,22 +19,56 @@ export async function checkForUpdates(): Promise<void> {
 
     useBootStore.getState().setBootStep('CHECKING_VERSION');
 
+    let manifest: string[];
+    try {
+      manifest = await buildAssetManifest();
+    } catch (err) {
+      console.warn('[SyncEngine] Failed to build manifest, skipping asset download:', err);
+      manifest = [];
+    }
     if (currentRunId !== runId) return;
 
     useBootStore.getState().setBootStep('DOWNLOADING');
 
-    const totalFiles = ASSET_MANIFEST.length;
-    let completed = 0;
-
-    for (const url of ASSET_MANIFEST) {
-      if (currentRunId !== runId) return;
-      await downloadAssetIfMissing(url);
-      if (currentRunId !== runId) return;
-      completed++;
-      useBootStore.getState().setProgress(Math.round((completed / totalFiles) * 100));
+    if (manifest.length === 0) {
+      useBootStore.getState().setProgress(100);
+      useBootStore.getState().setBootStep('READY');
+      return;
     }
 
+    const totalFiles = manifest.length;
+    let completed = 0;
+    let failed = 0;
+
+    const queue = [...manifest];
+    const runWorker = async () => {
+      while (queue.length > 0) {
+        if (currentRunId !== runId) return;
+        const url = queue.shift()!;
+        try {
+          const result = await downloadAssetIfMissing(url);
+          if (!result) failed++;
+        } catch {
+          failed++;
+        }
+        completed++;
+        if (currentRunId !== runId) return;
+        useBootStore.getState().setProgress(Math.round((completed / totalFiles) * 100));
+      }
+    };
+
+    const workers = Array.from(
+      { length: Math.min(CONCURRENT_DOWNLOADS, manifest.length) },
+      () => runWorker(),
+    );
+    await Promise.all(workers);
+
     if (currentRunId !== runId) return;
+
+    if (failed > 0) {
+      console.warn(`[SyncEngine] ${failed}/${totalFiles} assets failed to download`);
+    }
+
     useBootStore.getState().setBootStep('READY');
   } catch (err: unknown) {
     if (currentRunId !== runId) return;

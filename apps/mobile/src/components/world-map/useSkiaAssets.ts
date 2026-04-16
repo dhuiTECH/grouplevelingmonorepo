@@ -1,14 +1,37 @@
 import { useState, useEffect, useRef } from 'react';
 import { Skia, SkImage } from '@shopify/react-native-skia';
+import * as FileSystem from 'expo-file-system/legacy';
+import { getLocalAssetUri } from '@/utils/assetManager';
 
-// Global cache to avoid reloading across unmounts/remounts
 export const globalImageCache = new Map<string, SkImage>();
+
+async function loadFromLocalOrNetwork(url: string): Promise<ArrayBuffer> {
+  const cleanUrl = url.split('?')[0];
+  const localPath = getLocalAssetUri(cleanUrl);
+
+  try {
+    const info = await FileSystem.getInfoAsync(localPath);
+    if (info.exists && info.size && info.size > 0) {
+      const base64 = await FileSystem.readAsStringAsync(localPath, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const binaryStr = atob(base64);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+  } catch {}
+
+  const response = await fetch(url);
+  return response.arrayBuffer();
+}
 
 export const useSkiaAssets = (urls: string[]) => {
   const [images, setImages] = useState<Map<string, SkImage>>(new Map(globalImageCache));
   const fetchingUrls = useRef(new Set<string>());
 
-  // Stringify to prevent referential equality checks from firing the effect
   const urlsString = [...urls].sort().join(',');
 
   useEffect(() => {
@@ -17,7 +40,6 @@ export const useSkiaAssets = (urls: string[]) => {
 
     const loadImages = async () => {
       let changed = false;
-      // Merge from global cache so url-list churn never drops already-decoded images (empty tiles).
       const newImages = new Map(globalImageCache);
 
       const promises = urlList.map(async (url) => {
@@ -28,8 +50,7 @@ export const useSkiaAssets = (urls: string[]) => {
 
         fetchingUrls.current.add(cleanUrl);
         try {
-          const response = await fetch(url);
-          const arrayBuffer = await response.arrayBuffer();
+          const arrayBuffer = await loadFromLocalOrNetwork(url);
           const data = Skia.Data.fromBytes(new Uint8Array(arrayBuffer));
           const img = Skia.Image.MakeImageFromEncoded(data);
 
