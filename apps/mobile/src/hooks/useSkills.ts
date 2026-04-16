@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { SKILL_DATA, SkillNode, getStarterSkillIdForClass, normalizeClassKey } from '@/utils/skillTreeData';
+import { useGameDataStore } from '@/store/useGameDataStore';
+import { useUserGameDataStore } from '@/store/useUserGameDataStore';
 
 export interface UserSkill {
   id: string;
@@ -17,7 +19,6 @@ const padLoadoutToFour = (arr: string[]): string[] => {
   return out.slice(0, 4);
 };
 
-/** No duplicate skill ids: keep first occurrence of each, clear repeats. */
 const dedupeLoadout = (arr: string[]): string[] => {
   const seen = new Set<string>();
   return arr.map((id) => {
@@ -28,7 +29,6 @@ const dedupeLoadout = (arr: string[]): string[] => {
   });
 };
 
-/** Remove duplicate abilities by id (keep first). Prevents duplicate attacks on battle screen. */
 const dedupeAbilitiesById = <T extends { id: string }>(abilities: T[]): T[] => {
   const seen = new Set<string>();
   return abilities.filter((a) => {
@@ -38,7 +38,6 @@ const dedupeAbilitiesById = <T extends { id: string }>(abilities: T[]): T[] => {
   });
 };
 
-/** Remove duplicate abilities by display name (keep first). Prevents two "Quick Slash" etc. when DB has duplicate-named skills. */
 const dedupeAbilitiesByName = <T extends { name?: string }>(abilities: T[]): T[] => {
   const seen = new Set<string>();
   return abilities.filter((a) => {
@@ -49,23 +48,19 @@ const dedupeAbilitiesByName = <T extends { name?: string }>(abilities: T[]): T[]
   });
 };
 
-/** Basic Attack skill id by class. Format [class]_basic (lowercase). Fighter uses warrior_basic. */
 export const getBasicAttackId = (className: string | undefined): string => {
   if (!className) return 'warrior_basic';
   const c = className.toLowerCase();
   return c === 'fighter' ? 'warrior_basic' : `${c}_basic`;
 };
 
-/** Normalize a class string for comparison (e.g. "assassin" -> "Assassin"). */
 function normalizeClassStr(s: string): string {
   const t = String(s ?? '').trim();
   if (!t) return t;
   return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
 }
 
-/** Row matches class tree. Supports: allowed_classes (array), or class_key / class / character_class (single). */
 function rowMatchesClass(row: Record<string, unknown>, dbClassKey: string): boolean {
-  // Your table uses allowed_classes: string[] (e.g. ["Assassin"])
   const allowed = row.allowed_classes;
   if (Array.isArray(allowed)) {
     const match = (c: string) => {
@@ -74,7 +69,6 @@ function rowMatchesClass(row: Record<string, unknown>, dbClassKey: string): bool
     };
     if ((allowed as string[]).some(match)) return true;
   }
-  // Fallback: single class column
   const v = row.class_key ?? row.class ?? row.character_class;
   const rowClass = normalizeClassStr(String(v ?? ''));
   if (rowClass === dbClassKey) return true;
@@ -82,7 +76,6 @@ function rowMatchesClass(row: Record<string, unknown>, dbClassKey: string): bool
   return false;
 }
 
-/** Map a raw skills table row (any column naming) to SkillNode. */
 function mapSkillRowToNode(row: Record<string, unknown>): SkillNode {
   const id = String(row.id ?? '');
   const name = String(row.name ?? row.display_name ?? id);
@@ -120,7 +113,6 @@ function mapSkillRowToNode(row: Record<string, unknown>): SkillNode {
   };
 }
 
-/** True if row is a starter skill (level 1, no prerequisites). */
 function isStarterSkillRow(row: Record<string, unknown>): boolean {
   const level = Number(row.required_level ?? row.requiredLevel ?? 1);
   const rawConn = row.connected_to ?? row.connectedTo ?? row.prerequisites ?? row.prerequisite_ids;
@@ -131,7 +123,6 @@ function isStarterSkillRow(row: Record<string, unknown>): boolean {
   return level === 1 && !hasPrereqs;
 }
 
-/** Read battle-related fields from a skill row (flexible column names). */
 function getBattleFieldsFromRow(row: Record<string, unknown> | null | undefined) {
   if (!row) return { name: '', cost: 1, basePower: 50, type: 'damage', element: 'Physical', cooldown: 0, description: '', target_type: 'enemy' };
   const rawType = String(row.skill_type ?? row.skillType ?? row.type ?? 'damage').toLowerCase();
@@ -166,16 +157,40 @@ export const useSkills = (userId?: string) => {
   const { user } = useAuth();
   const effectiveUserId = userId || user?.id;
 
-  const [unlockedSkills, setUnlockedSkills] = useState<UserSkill[]>([]);
-  const [loadout, setLoadout] = useState<string[]>([]);
-  const [skillDefinitions, setSkillDefinitions] = useState<any[]>([]);
+  const storeSkills = useGameDataStore((s) => s.skills);
+  const storeHydrated = useGameDataStore((s) => s._hasHydrated);
+  const userStoreHydrated = useUserGameDataStore((s) => s._hasHydrated);
+  const cachedUserSkills = useUserGameDataStore((s) => effectiveUserId ? s.userSkills[effectiveUserId] : undefined);
+  const cachedLoadout = useUserGameDataStore((s) => effectiveUserId ? s.skillLoadout[effectiveUserId] : undefined);
+
+  const [unlockedSkills, setUnlockedSkills] = useState<UserSkill[]>(cachedUserSkills ?? []);
+  const [loadout, setLoadout] = useState<string[]>(
+    cachedLoadout ? padLoadoutToFour(dedupeLoadout(cachedLoadout)) : [],
+  );
+  const [skillDefinitions, setSkillDefinitions] = useState<any[]>(
+    storeHydrated && storeSkills.length > 0 ? storeSkills : [],
+  );
   const [loading, setLoading] = useState(true);
 
-  /** DB row shape for skills table */
+  useEffect(() => {
+    if (storeHydrated && storeSkills.length > 0 && skillDefinitions.length === 0) {
+      setSkillDefinitions(storeSkills);
+    }
+  }, [storeHydrated, storeSkills]);
+
+  useEffect(() => {
+    if (!userStoreHydrated || !effectiveUserId) return;
+    if (cachedUserSkills && cachedUserSkills.length > 0 && unlockedSkills.length === 0) {
+      setUnlockedSkills(cachedUserSkills);
+    }
+    if (cachedLoadout && cachedLoadout.length > 0 && loadout.every(l => !l)) {
+      setLoadout(padLoadoutToFour(dedupeLoadout(cachedLoadout)));
+    }
+  }, [userStoreHydrated, effectiveUserId]);
+
   const getClassKeyForDb = (classKey: string) =>
     classKey === 'Fighter' ? 'Warrior' : classKey;
 
-  /** Build SkillNode[] for the skill tree from DB (skills table); works with any column names. */
   const getSkillTreeForClass = useCallback((classKey: string): SkillNode[] => {
     const dbKey = getClassKeyForDb(classKey);
     const rows = (skillDefinitions as Record<string, unknown>[]).filter((row) =>
@@ -185,7 +200,6 @@ export const useSkills = (userId?: string) => {
     return rows.map(mapSkillRowToNode).sort((a, b) => a.y - b.y || a.x - b.x);
   }, [skillDefinitions]);
 
-  // Helper: Get skill definition from DB first (using flexible mapper), then static data
   const getSkillNode = (skillId: string): SkillNode | undefined => {
     const def = (skillDefinitions as Record<string, unknown>[]).find(
       (r) => String(r?.id ?? '') === skillId
@@ -204,8 +218,19 @@ export const useSkills = (userId?: string) => {
       return;
     }
 
+    const hasCachedData = storeHydrated && storeSkills.length > 0
+      && userStoreHydrated && cachedUserSkills && cachedUserSkills.length > 0;
+
+    if (hasCachedData) {
+      setSkillDefinitions(storeSkills);
+      setUnlockedSkills(cachedUserSkills!);
+      if (cachedLoadout) setLoadout(padLoadoutToFour(dedupeLoadout(cachedLoadout)));
+      else if (Array.isArray(user?.skill_loadout)) setLoadout(padLoadoutToFour(dedupeLoadout(user.skill_loadout)));
+      setLoading(false);
+    }
+
     const fetchData = async () => {
-      setLoading(true);
+      if (!hasCachedData) setLoading(true);
       try {
         const [skillsResult, userSkillsResult, profileResult] = await Promise.all([
           supabase.from('skills').select('*'),
@@ -214,7 +239,10 @@ export const useSkills = (userId?: string) => {
         ]);
 
         const allSkills = skillsResult.data;
-        if (!skillsResult.error) setSkillDefinitions(allSkills || []);
+        if (!skillsResult.error && allSkills) {
+          setSkillDefinitions(allSkills);
+          useGameDataStore.getState().setAll({ skills: allSkills });
+        }
 
         if (userSkillsResult.error) throw userSkillsResult.error;
         let finalUserSkills = userSkillsResult.data || [];
@@ -241,10 +269,13 @@ export const useSkills = (userId?: string) => {
           }
         }
         setUnlockedSkills(finalUserSkills);
+        useUserGameDataStore.getState().setUserSkills(effectiveUserId, finalUserSkills);
 
         if (profileResult.error) throw profileResult.error;
         const raw = profileResult.data?.skill_loadout ?? [];
-        setLoadout(padLoadoutToFour(dedupeLoadout(raw)));
+        const finalLoadout = padLoadoutToFour(dedupeLoadout(raw));
+        setLoadout(finalLoadout);
+        useUserGameDataStore.getState().setSkillLoadout(effectiveUserId, raw);
       } catch (err) {
         console.error('Error fetching skills data:', err);
         if (Array.isArray(user?.skill_loadout)) {
@@ -258,11 +289,9 @@ export const useSkills = (userId?: string) => {
     fetchData();
   }, [effectiveUserId, user?.level, user?.current_class, user?.skill_loadout]);
 
-  // Helper to construct battle-ready ability objects. Source: profiles.skill_loadout; only includes skills in user_skills (owned).
   const getBattleSkills = () => {
     if (!effectiveUserId) return [];
     const basicAttackId = getBasicAttackId(user?.current_class);
-    // Only consider loadout IDs that the user actually owns (in user_skills). Dedupe by id so same skill isn't shown twice.
     const seenLoadoutIds = new Set<string>();
     const activeLoadout = loadout.filter((id): id is string => {
       if (!id || !unlockedSkills.some(s => s.skill_id === id)) return false;
@@ -301,7 +330,6 @@ export const useSkills = (userId?: string) => {
       };
     }).filter(Boolean) as any[];
 
-    /** Loadout skills only (basic removed) so we can always prepend basic once → up to 5 abilities in battle. */
     const loadoutSansBasic = fromLoadout.filter((a: any) => a.id !== basicAttackId);
 
     const def = (skillDefinitions as Record<string, unknown>[]).find((s) => String(s?.id ?? '') === basicAttackId);
@@ -336,6 +364,7 @@ export const useSkills = (userId?: string) => {
     if (!effectiveUserId) return;
     const padded = padLoadoutToFour(dedupeLoadout(newLoadout));
     setLoadout(padded);
+    useUserGameDataStore.getState().setSkillLoadout(effectiveUserId, padded);
     const { error } = await supabase
       .from('profiles')
       .update({ skill_loadout: padded })
@@ -343,7 +372,6 @@ export const useSkills = (userId?: string) => {
 
     if (error) {
       console.error('Failed to update loadout:', error);
-      // Revert on error? For now just log it.
     }
   };
 
@@ -364,7 +392,11 @@ export const useSkills = (userId?: string) => {
       if (error) throw error;
 
       if (data) {
-        setUnlockedSkills(prev => [...prev, data]);
+        setUnlockedSkills(prev => {
+          const updated = [...prev, data];
+          useUserGameDataStore.getState().setUserSkills(effectiveUserId, updated);
+          return updated;
+        });
       }
       return { success: true };
     } catch (err) {
@@ -392,7 +424,11 @@ export const useSkills = (userId?: string) => {
       if (error) throw error;
 
       if (data) {
-        setUnlockedSkills(prev => prev.map(s => s.id === data.id ? data : s));
+        setUnlockedSkills(prev => {
+          const updated = prev.map(s => s.id === data.id ? data : s);
+          useUserGameDataStore.getState().setUserSkills(effectiveUserId, updated);
+          return updated;
+        });
       }
       return { success: true };
     } catch (err) {

@@ -2,16 +2,28 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { UserPet } from '@/types/pet';
+import { useUserGameDataStore } from '@/store/useUserGameDataStore';
 
 export function usePets() {
   const { user } = useAuth();
-  const [pets, setPets] = useState<UserPet[]>([]);
-  const [loading, setLoading] = useState(true);
+  const storeHydrated = useUserGameDataStore((s) => s._hasHydrated);
+  const storePets = useUserGameDataStore((s) => (user ? s.pets[user.id] : undefined));
+
+  const [pets, setPets] = useState<UserPet[]>(storePets ?? []);
+  const [loading, setLoading] = useState(!storePets || storePets.length === 0);
+
+  useEffect(() => {
+    if (storeHydrated && storePets && storePets.length > 0 && pets.length === 0) {
+      setPets(storePets);
+      setLoading(false);
+    }
+  }, [storeHydrated, storePets]);
 
   const fetchPets = useCallback(async () => {
     if (!user) return;
     try {
-      setLoading(true);
+      const hasCache = pets.length > 0;
+      if (!hasCache) setLoading(true);
       const { data, error } = await supabase
         .from('user_pets')
         .select(`
@@ -21,13 +33,15 @@ export function usePets() {
         .eq('user_id', user.id);
 
       if (error) throw error;
-      setPets((data as any[]) || []);
+      const result = (data as any[]) || [];
+      setPets(result);
+      useUserGameDataStore.getState().setPets(user.id, result);
     } catch (error) {
       console.error('Error fetching pets:', error);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, pets.length]);
 
   const addPet = async (petId: string, nickname: string) => {
     if (!user) return;
@@ -61,7 +75,11 @@ export function usePets() {
         .eq('id', petId);
 
       if (error) throw error;
-      await fetchPets();
+      setPets(prev => {
+        const updated = prev.map(p => p.id === petId ? { ...p, level: newLevel, experience: newExp } : p);
+        if (user) useUserGameDataStore.getState().setPets(user.id, updated);
+        return updated;
+      });
     } catch (error) {
       console.error('Error leveling up pet:', error);
       throw error;
@@ -86,7 +104,11 @@ export function usePets() {
         if (data.nickname !== newName) {
             console.warn('Rename mismatch: requested', newName, 'got', data.nickname);
         }
-        setPets(prev => prev.map(p => p.id === petId ? { ...p, nickname: data.nickname } : p));
+        setPets(prev => {
+          const updated = prev.map(p => p.id === petId ? { ...p, nickname: data.nickname } : p);
+          if (user) useUserGameDataStore.getState().setPets(user.id, updated);
+          return updated;
+        });
       } else {
         throw new Error("Pet not found or permission denied.");
       }
@@ -104,7 +126,11 @@ export function usePets() {
         .eq('id', petId);
 
       if (error) throw error;
-      setPets(prev => prev.map(p => p.id === petId ? { ...p, metadata } : p));
+      setPets(prev => {
+        const updated = prev.map(p => p.id === petId ? { ...p, metadata } : p);
+        if (user) useUserGameDataStore.getState().setPets(user.id, updated);
+        return updated;
+      });
     } catch (error) {
       console.error('Error updating pet metadata:', error);
       throw error;
@@ -112,8 +138,15 @@ export function usePets() {
   };
 
   useEffect(() => {
-    fetchPets();
-  }, [fetchPets]);
+    if (!user) return;
+    if (storeHydrated && storePets && storePets.length > 0) {
+      setPets(storePets);
+      setLoading(false);
+      fetchPets().catch(() => {});
+    } else {
+      fetchPets();
+    }
+  }, [user?.id]);
 
   return { pets, loading, fetchPets, addPet, levelUpPet, renamePet, updatePetMetadata };
 }

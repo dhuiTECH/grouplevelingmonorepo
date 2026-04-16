@@ -36,6 +36,7 @@ import {
 import type { UserCosmetic } from '@/types/user';
 import { COLORS, BATTLE_TAP_TO_CONFIRM_KEY, MELEE_IMPACT_ENTRY_DELAY_MS } from '@/components/battle/battleTheme';
 import { effectiveItemCategory } from '@/utils/itemCategory';
+import { useGameDataStore } from '@/store/useGameDataStore';
 import { DEATH_DISINTEGRATION_MS } from '@/components/battle/battleDeathOutro';
 import { battleScreenStyles as styles } from '@/components/battle/battleScreenStyles';
 import { BattleFieldHud } from '@/components/battle/BattleFieldHud';
@@ -165,7 +166,7 @@ export default function BattleScreen() {
   const [showWarning, setShowWarning] = useState(isBoss);
   const [petCaptureState, setPetCaptureState] = useState<'idle' | 'prompt' | 'saving' | 'done' | 'skipped'>('idle');
   const [petNickname, setPetNickname] = useState('');
-  const [allShopItems, setAllShopItems] = useState<any[]>([]);
+  const allShopItems = useGameDataStore((s) => s.shopItems);
   const [petCaptureError, setPetCaptureError] = useState<string | null>(null);
   /** True when the player used a capture item during battle (item already consumed; victory screen is for naming only). */
   const [capturedDuringBattle, setCapturedDuringBattle] = useState(false);
@@ -186,16 +187,17 @@ export default function BattleScreen() {
     }
   }, [currentPhase]);
 
-  // Hand-grip cosmetics: load after first paint so battle init isn’t competing with a full-table fetch
+
   useEffect(() => {
+    if (allShopItems.length > 0) return;
     const task = InteractionManager.runAfterInteractions(() => {
       void (async () => {
         const { data, error } = await supabase.from('shop_items').select('*');
-        if (!error && data) setAllShopItems(data);
+        if (!error && data) useGameDataStore.getState().setAll({ shopItems: data });
       })();
     });
     return () => task.cancel?.();
-  }, []);
+  }, [allShopItems.length]);
 
   const partyOpacity = useRef(new Animated.Value(0)).current;
 

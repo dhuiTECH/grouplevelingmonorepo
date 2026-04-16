@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEncounterPoolStore } from "@/store/useEncounterPoolStore";
+import { useGameDataStore } from "@/store/useGameDataStore";
 import * as Haptics from "expo-haptics";
 // Keep chunk size the same
 const CHUNK_SIZE = 16;
@@ -530,10 +531,15 @@ export const useExploration = (
       );
 
       const cachedNodes = nodesRef.current;
+      const storeNodes = useGameDataStore.getState().worldMapNodes;
       if (force || (cachedNodes || []).length === 0) {
-        promises.push(
-          Promise.resolve(supabase.from("world_map_nodes").select("*")),
-        );
+        if (!force && storeNodes.length > 0) {
+          promises.push(Promise.resolve({ data: storeNodes }));
+        } else {
+          promises.push(
+            Promise.resolve(supabase.from("world_map_nodes").select("*")),
+          );
+        }
       }
 
       if (missingChunks.length > 0) {
@@ -574,6 +580,9 @@ export const useExploration = (
         let resultIndex = 1;
         if (force || (cachedNodes || []).length === 0) {
           nodesRes = results[resultIndex++];
+          if (nodesRes?.data && Array.isArray(nodesRes.data) && nodesRes.data.length > 0) {
+            useGameDataStore.getState().setAll({ worldMapNodes: nodesRes.data });
+          }
         } else {
           nodesRes = { data: cachedNodes || [] };
         }

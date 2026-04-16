@@ -4,6 +4,7 @@ import { Utensils, X, Flame, Plus, Star } from 'lucide-react-native';
 import { api } from '@/api/nutrition';
 import { supabase } from '@/lib/supabase';
 import { useNotification } from '@/contexts/NotificationContext';
+import { useGameDataStore } from '@/store/useGameDataStore';
 
 interface AddFoodFormProps {
   day: string;
@@ -34,17 +35,24 @@ export default function AddFoodForm({ day, user, onCancel, onConfirm }: AddFoodF
   const [commonFoods, setCommonFoods] = useState<any[]>([]);
 
   // Load Data
+  const storeCommonFoods = useGameDataStore((s) => s.commonFoods);
+
   useEffect(() => {
     async function loadQuickAddData() {
       setIsLoadingData(true);
-      // 1. Fetch user templates
       const { data: templates } = await api.getMealTemplates(user.id);
-      
-      // 2. Fetch common foods
-      const { data: common } = await supabase.from('common_foods').select('*').order('name');
-      
       if (templates) setMyTemplates(templates);
-      if (common) setCommonFoods(common);
+
+      if (storeCommonFoods.length > 0) {
+        const sorted = [...storeCommonFoods].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+        setCommonFoods(sorted);
+      } else {
+        const { data: common } = await supabase.from('common_foods').select('*').order('name');
+        if (common) {
+          setCommonFoods(common);
+          useGameDataStore.getState().setAll({ commonFoods: common });
+        }
+      }
       setIsLoadingData(false);
     }
     if (user?.id) loadQuickAddData();

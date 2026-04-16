@@ -1,6 +1,19 @@
 import { supabase } from '@/lib/supabase';
 import { stripUrlParams } from '@/utils/assetManager';
 
+export interface GameDataPayload {
+  encounterPool: any[];
+  customTiles: any[];
+  skills: any[];
+  skillAnimations: any[];
+  shopItems: any[];
+  worldMapNodes: any[];
+  worldMapSettings: any | null;
+  commonFoods: any[];
+  classes: any[];
+  activeMapId: string | null;
+}
+
 function extractUrls(rows: any[], ...keys: string[]): string[] {
   const urls: string[] = [];
   for (const row of rows) {
@@ -23,6 +36,19 @@ function extractJsonbUrls(rows: any[], path: (obj: any) => unknown): string[] {
   return urls;
 }
 
+function dedupeUrls(allUrls: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const url of allUrls) {
+    const clean = stripUrlParams(url);
+    if (!seen.has(clean)) {
+      seen.add(clean);
+      deduped.push(url);
+    }
+  }
+  return deduped;
+}
+
 export async function fetchManifestVersion(): Promise<string | null> {
   try {
     const { data, error } = await supabase.rpc('get_asset_manifest_version');
@@ -37,9 +63,7 @@ export async function fetchManifestVersion(): Promise<string | null> {
   }
 }
 
-export async function buildAssetManifest(): Promise<string[]> {
-  const allUrls: string[] = [];
-
+export async function buildFullManifest(): Promise<{ urls: string[]; gameData: GameDataPayload }> {
   const [
     encounterRes,
     settingsRes,
@@ -48,17 +72,26 @@ export async function buildAssetManifest(): Promise<string[]> {
     skillsRes,
     classesRes,
     skillAnimRes,
+    tilesRes,
+    foodsRes,
+    mapsRes,
   ] = await Promise.all([
-    supabase.from('encounter_pool').select('icon_url, metadata'),
-    supabase.from('world_map_settings').select('autotile_sheet_url, dirt_sheet_url, dirtv2_sheet_url, water_sheet_url, waterv2_sheet_url, foam_sheet_url').eq('id', 1).single(),
-    supabase.from('shop_items').select('image_url, thumbnail_url'),
-    supabase.from('world_map_nodes').select('icon_url'),
-    supabase.from('skills').select('icon_url'),
-    supabase.from('classes').select('icon_url'),
-    supabase.from('skill_animations').select('sprite_url').then(
+    supabase.from('encounter_pool').select('*'),
+    supabase.from('world_map_settings').select('*').eq('id', 1).single(),
+    supabase.from('shop_items').select('*'),
+    supabase.from('world_map_nodes').select('*'),
+    supabase.from('skills').select('*'),
+    supabase.from('classes').select('*'),
+    supabase.from('skill_animations').select('*').then(
       (res) => res,
       () => ({ data: null, error: null }),
     ),
+    supabase.from('custom_tiles').select('*'),
+    supabase.from('common_foods').select('*').then(
+      (res) => res,
+      () => ({ data: null, error: null }),
+    ),
+    supabase.from('maps').select('id').eq('is_active', true).single(),
   ]);
 
   if (encounterRes.error) console.warn('[AssetManifest] encounter_pool query failed:', encounterRes.error.message);
@@ -68,6 +101,24 @@ export async function buildAssetManifest(): Promise<string[]> {
   if (skillsRes.error) console.warn('[AssetManifest] skills query failed:', skillsRes.error.message);
   if (classesRes.error) console.warn('[AssetManifest] classes query failed:', classesRes.error.message);
   if (skillAnimRes.error) console.warn('[AssetManifest] skill_animations query failed:', skillAnimRes.error);
+  if (tilesRes.error) console.warn('[AssetManifest] custom_tiles query failed:', tilesRes.error.message);
+  if (foodsRes.error) console.warn('[AssetManifest] common_foods query failed:', foodsRes.error);
+  if (mapsRes.error) console.warn('[AssetManifest] maps query failed:', mapsRes.error.message);
+
+  const gameData: GameDataPayload = {
+    encounterPool: encounterRes.data ?? [],
+    customTiles: tilesRes.data ?? [],
+    skills: skillsRes.data ?? [],
+    skillAnimations: skillAnimRes.data ?? [],
+    shopItems: shopRes.data ?? [],
+    worldMapNodes: nodesRes.data ?? [],
+    worldMapSettings: settingsRes.data ?? null,
+    commonFoods: foodsRes.data ?? [],
+    classes: classesRes.data ?? [],
+    activeMapId: mapsRes.data?.id ?? null,
+  };
+
+  const allUrls: string[] = [];
 
   if (encounterRes.data) {
     allUrls.push(...extractUrls(encounterRes.data, 'icon_url'));
@@ -109,17 +160,12 @@ export async function buildAssetManifest(): Promise<string[]> {
     allUrls.push(...extractUrls(skillAnimRes.data, 'sprite_url'));
   }
 
-  const seen = new Set<string>();
-  const deduped: string[] = [];
-  for (const url of allUrls) {
-    const clean = stripUrlParams(url);
-    if (!seen.has(clean)) {
-      seen.add(clean);
-      deduped.push(url);
-    }
-  }
+  return { urls: dedupeUrls(allUrls), gameData };
+}
 
-  return deduped;
+export async function buildAssetManifest(): Promise<string[]> {
+  const { urls } = await buildFullManifest();
+  return urls;
 }
 
 export function computeManifestFingerprint(urls: string[]): string {

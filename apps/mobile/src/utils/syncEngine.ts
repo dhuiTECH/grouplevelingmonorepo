@@ -1,11 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useBootStore } from '@/store/useBootStore';
+import { useGameDataStore } from '@/store/useGameDataStore';
+import { useEncounterPoolStore } from '@/store/useEncounterPoolStore';
 import { initAssetDirectory, downloadAssetIfMissing, stripUrlParams, cleanupOrphanedAssets } from '@/utils/assetManager';
 import {
   fetchManifestVersion,
-  buildAssetManifest,
+  buildFullManifest,
   computeManifestFingerprint,
 } from '@/utils/assetManifest';
+import type { GameDataPayload } from '@/utils/assetManifest';
 
 const CONCURRENT_DOWNLOADS = 6;
 const MANIFEST_FINGERPRINT_KEY = 'asset_manifest_fingerprint';
@@ -92,6 +95,36 @@ function diffManifests(oldUrls: string[], newUrls: string[]): string[] {
   return newUrls.filter((u) => !oldSet.has(stripUrlParams(u)));
 }
 
+function populateGameDataStores(gameData: GameDataPayload): void {
+  useGameDataStore.getState().setAll({
+    encounterPool: gameData.encounterPool,
+    customTiles: gameData.customTiles,
+    skills: gameData.skills,
+    skillAnimations: gameData.skillAnimations,
+    shopItems: gameData.shopItems,
+    worldMapNodes: gameData.worldMapNodes,
+    worldMapSettings: gameData.worldMapSettings,
+    commonFoods: gameData.commonFoods,
+    classes: gameData.classes,
+    activeMapId: gameData.activeMapId,
+  });
+
+  if (gameData.activeMapId && gameData.encounterPool.length > 0) {
+    const mapId = gameData.activeMapId;
+    const forMap = gameData.encounterPool.filter(
+      (e: any) => e.map_id === mapId || e.map_id === null || e.map_id === undefined,
+    );
+    useEncounterPoolStore.getState().setPoolForMap(mapId, forMap);
+  }
+
+  console.log(
+    `[SyncEngine] Game data cached: ${gameData.encounterPool.length} encounters, ` +
+    `${gameData.skills.length} skills, ${gameData.shopItems.length} shop items, ` +
+    `${gameData.customTiles.length} tiles, ${gameData.worldMapNodes.length} nodes, ` +
+    `${gameData.skillAnimations.length} anims, ${gameData.commonFoods.length} foods`,
+  );
+}
+
 export async function checkForUpdates(): Promise<void> {
   const runId = ++currentRunId;
 
@@ -121,13 +154,21 @@ export async function checkForUpdates(): Promise<void> {
     }
 
     let manifest: string[];
+    let gameData: GameDataPayload | null = null;
     try {
-      manifest = await buildAssetManifest();
+      const result = await buildFullManifest();
+      manifest = result.urls;
+      gameData = result.gameData;
     } catch (err) {
       console.warn('[SyncEngine] Failed to build manifest, skipping asset download:', err);
       manifest = [];
     }
     if (currentRunId !== runId) return;
+
+    if (gameData) {
+      await useGameDataStore.getState().waitForHydration();
+      populateGameDataStores(gameData);
+    }
 
     if (manifest.length === 0) {
       useBootStore.getState().setProgress(100);

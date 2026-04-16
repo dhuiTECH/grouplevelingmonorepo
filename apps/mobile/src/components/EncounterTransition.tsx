@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Dimensions, View, Text } from 'react-native';
 import {
   Canvas,
@@ -18,10 +18,10 @@ import Animated, {
   Extrapolation,
 } from 'react-native-reanimated';
 import { useTransition } from '@/context/TransitionContext';
+import { useGameDataStore } from '@/store/useGameDataStore';
 import LayeredAvatar from '@/components/LayeredAvatar';
 import { OptimizedPetAvatar } from '@/components/OptimizedPetAvatar';
 import type { PartyPreviewItem } from '@/context/TransitionContext';
-import { supabase } from '@/lib/supabase';
 
 const { width, height } = Dimensions.get('window');
 
@@ -158,29 +158,7 @@ export const EncounterTransition = () => {
 
   // If the partyPreview was built before allShopItems loaded (race condition),
   // fetch them here so walk-in avatars always render with clothing.
-  const [resolvedShopItems, setResolvedShopItems] = useState<any[]>([]);
-  const shopFetchedRef = useRef(false);
-  useEffect(() => {
-    if (!isTransitioning) {
-      shopFetchedRef.current = false;
-      setResolvedShopItems([]);
-      return;
-    }
-    if (shopFetchedRef.current) return;
-    const playerItem = party.find((p) => p.type === 'player') as any | undefined;
-    const cached: any[] = playerItem?.allShopItems ?? [];
-    if (cached.length > 0) {
-      shopFetchedRef.current = true;
-      setResolvedShopItems(cached);
-      return;
-    }
-    shopFetchedRef.current = true;
-    void (async () => {
-      const { data, error } = await supabase.from('shop_items').select('*');
-      if (!error && data?.length) setResolvedShopItems(data);
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTransitioning]);
+  const resolvedShopItems = useGameDataStore((s) => s.shopItems);
 
   const progress = useSharedValue(0);
   const walkProgress = useSharedValue(0);
