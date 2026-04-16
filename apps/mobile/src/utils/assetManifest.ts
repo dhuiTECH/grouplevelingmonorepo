@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { stripUrlParams } from '@/utils/assetManager';
 
 function extractUrls(rows: any[], ...keys: string[]): string[] {
   const urls: string[] = [];
@@ -20,6 +21,20 @@ function extractJsonbUrls(rows: any[], path: (obj: any) => unknown): string[] {
     } catch {}
   }
   return urls;
+}
+
+export async function fetchManifestVersion(): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_asset_manifest_version');
+    if (error) {
+      console.warn('[AssetManifest] get_asset_manifest_version RPC failed:', error.message);
+      return null;
+    }
+    return typeof data === 'string' ? data : null;
+  } catch (err) {
+    console.warn('[AssetManifest] get_asset_manifest_version RPC unavailable:', err);
+    return null;
+  }
 }
 
 export async function buildAssetManifest(): Promise<string[]> {
@@ -97,7 +112,7 @@ export async function buildAssetManifest(): Promise<string[]> {
   const seen = new Set<string>();
   const deduped: string[] = [];
   for (const url of allUrls) {
-    const clean = url.split('?')[0];
+    const clean = stripUrlParams(url);
     if (!seen.has(clean)) {
       seen.add(clean);
       deduped.push(url);
@@ -105,4 +120,20 @@ export async function buildAssetManifest(): Promise<string[]> {
   }
 
   return deduped;
+}
+
+export function computeManifestFingerprint(urls: string[]): string {
+  const normalized = urls.map((u) => stripUrlParams(u));
+  normalized.sort();
+  const joined = normalized.join('\n');
+  let h1 = 0x811c9dc5;
+  for (let i = 0; i < joined.length; i++) {
+    h1 ^= joined.charCodeAt(i);
+    h1 = (h1 * 0x01000193) | 0;
+  }
+  let h2 = 0;
+  for (let i = 0; i < joined.length; i++) {
+    h2 = ((h2 << 5) - h2 + joined.charCodeAt(i)) | 0;
+  }
+  return (h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0');
 }

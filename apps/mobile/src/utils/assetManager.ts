@@ -28,8 +28,12 @@ function getHashedFilename(url: string): string {
   return filename;
 }
 
+export function stripUrlParams(url: string): string {
+  return url.split('?')[0];
+}
+
 export function getLocalAssetUri(url: string): string {
-  const clean = url.split('?')[0];
+  const clean = stripUrlParams(url);
   return ASSET_DIR + getHashedFilename(clean);
 }
 
