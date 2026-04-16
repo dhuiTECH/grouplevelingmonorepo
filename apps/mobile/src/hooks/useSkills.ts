@@ -218,13 +218,13 @@ export const useSkills = (userId?: string) => {
       return;
     }
 
-    const hasCachedData = storeHydrated && storeSkills.length > 0
-      && userStoreHydrated && cachedUserSkills && cachedUserSkills.length > 0;
+    const hasGameData = storeHydrated && storeSkills.length > 0;
+    const hasUserData = userStoreHydrated && cachedUserSkills !== undefined;
 
-    if (hasCachedData) {
+    if (hasGameData && hasUserData) {
       setSkillDefinitions(storeSkills);
-      setUnlockedSkills(cachedUserSkills!);
-      if (cachedLoadout) setLoadout(padLoadoutToFour(dedupeLoadout(cachedLoadout)));
+      setUnlockedSkills(cachedUserSkills ?? []);
+      if (cachedLoadout !== undefined) setLoadout(padLoadoutToFour(dedupeLoadout(cachedLoadout)));
       else if (Array.isArray(user?.skill_loadout)) setLoadout(padLoadoutToFour(dedupeLoadout(user.skill_loadout)));
       setLoading(false);
       return;

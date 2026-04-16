@@ -139,8 +139,8 @@ export function usePets() {
 
   useEffect(() => {
     if (!user) return;
-    if (storeHydrated && storePets && storePets.length > 0) {
-      setPets(storePets);
+    if (storeHydrated && storePets !== undefined) {
+      setPets(storePets ?? []);
       setLoading(false);
     } else {
       fetchPets();

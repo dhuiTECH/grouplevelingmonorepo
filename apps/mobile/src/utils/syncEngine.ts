@@ -127,6 +127,19 @@ function populateGameDataStores(gameData: GameDataPayload): void {
   );
 }
 
+async function finishBoot(): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id) {
+      await syncUserGameData(session.user.id);
+    }
+  } catch (err) {
+    console.warn('[SyncEngine] User data boot sync failed (non-blocking):', err);
+  }
+  useBootStore.getState().setProgress(100);
+  useBootStore.getState().setBootStep('READY');
+}
+
 export async function checkForUpdates(): Promise<void> {
   const runId = ++currentRunId;
 
@@ -152,8 +165,7 @@ export async function checkForUpdates(): Promise<void> {
       );
       await useGameDataStore.getState().waitForHydration();
       await useUserGameDataStore.getState().waitForHydration();
-      useBootStore.getState().setProgress(100);
-      useBootStore.getState().setBootStep('READY');
+      await finishBoot();
       return;
     }
 
@@ -175,8 +187,7 @@ export async function checkForUpdates(): Promise<void> {
     }
 
     if (manifest.length === 0) {
-      useBootStore.getState().setProgress(100);
-      useBootStore.getState().setBootStep('READY');
+      await finishBoot();
       return;
     }
 
@@ -186,8 +197,7 @@ export async function checkForUpdates(): Promise<void> {
     if (cached && cached.fingerprint === newFingerprint) {
       console.log('[SyncEngine] Manifest fingerprint unchanged, skipping asset downloads');
       await saveCachedManifest(newFingerprint, manifest, versionToStore);
-      useBootStore.getState().setProgress(100);
-      useBootStore.getState().setBootStep('READY');
+      await finishBoot();
       return;
     }
 
@@ -206,8 +216,7 @@ export async function checkForUpdates(): Promise<void> {
 
     if (downloadQueue.length === 0) {
       await saveCachedManifest(newFingerprint, manifest, versionToStore);
-      useBootStore.getState().setProgress(100);
-      useBootStore.getState().setBootStep('READY');
+      await finishBoot();
       return;
     }
 
@@ -225,7 +234,7 @@ export async function checkForUpdates(): Promise<void> {
       console.warn('[SyncEngine] Asset cleanup failed:', err);
     });
 
-    useBootStore.getState().setBootStep('READY');
+    await finishBoot();
   } catch (err: unknown) {
     if (currentRunId !== runId) return;
     const message =
@@ -235,16 +244,18 @@ export async function checkForUpdates(): Promise<void> {
   }
 }
 
-export async function syncUserGameData(userId: string): Promise<void> {
-  const store = useUserGameDataStore.getState();
+export async function syncUserGameData(userId: string, force = false): Promise<void> {
   await useUserGameDataStore.getState().waitForHydration();
+  const store = useUserGameDataStore.getState();
 
-  const existingPets = store.pets[userId];
-  const existingSkills = store.userSkills[userId];
-  const existingLoadout = store.skillLoadout[userId];
-  if (existingPets?.length && existingSkills?.length && existingLoadout?.length) {
-    console.log('[SyncEngine] User game data already cached for', userId);
-    return;
+  if (!force) {
+    const hasPets = store.pets[userId] !== undefined;
+    const hasSkills = store.userSkills[userId] !== undefined;
+    const hasLoadout = store.skillLoadout[userId] !== undefined;
+    if (hasPets && hasSkills && hasLoadout) {
+      console.log('[SyncEngine] User game data already cached for', userId);
+      return;
+    }
   }
 
   console.log('[SyncEngine] Fetching user game data for', userId);
@@ -264,8 +275,11 @@ export async function syncUserGameData(userId: string): Promise<void> {
     if (skillsRes.data) {
       useUserGameDataStore.getState().setUserSkills(userId, skillsRes.data);
     }
-    if (profileRes.data?.skill_loadout) {
-      useUserGameDataStore.getState().setSkillLoadout(userId, profileRes.data.skill_loadout);
+    if (profileRes.data) {
+      useUserGameDataStore.getState().setSkillLoadout(
+        userId,
+        profileRes.data.skill_loadout ?? [],
+      );
     }
 
     console.log(
