@@ -160,13 +160,22 @@ export async function checkForUpdates(): Promise<void> {
     if (currentRunId !== runId) return;
 
     if (cached && remoteVersion && cached.version === remoteVersion) {
-      console.log(
-        `[SyncEngine] Server manifest version unchanged (${remoteVersion}), skipping manifest query`,
-      );
       await useGameDataStore.getState().waitForHydration();
       await useUserGameDataStore.getState().waitForHydration();
-      await finishBoot();
-      return;
+
+      const store = useGameDataStore.getState();
+      const storeHasData = store.skills.length > 0 && store.encounterPool.length > 0;
+      if (!storeHasData) {
+        console.log(
+          `[SyncEngine] Version unchanged but game-data store is empty (upgrade?), fetching full manifest`,
+        );
+      } else {
+        console.log(
+          `[SyncEngine] Server manifest version unchanged (${remoteVersion}), skipping manifest query`,
+        );
+        await finishBoot();
+        return;
+      }
     }
 
     let manifest: string[];
