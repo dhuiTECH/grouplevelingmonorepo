@@ -164,7 +164,12 @@ export async function checkForUpdates(): Promise<void> {
       await useUserGameDataStore.getState().waitForHydration();
 
       const store = useGameDataStore.getState();
-      const storeHasData = store.skills.length > 0 && store.encounterPool.length > 0;
+      const storeHasData = store.skills.length > 0
+        && store.encounterPool.length > 0
+        && store.shopItems.length > 0
+        && store.worldMapNodes.length > 0
+        && store.worldMapSettings !== null
+        && store.customTiles.length > 0;
       if (!storeHasData) {
         console.log(
           `[SyncEngine] Version unchanged but game-data store is empty (upgrade?), fetching full manifest`,

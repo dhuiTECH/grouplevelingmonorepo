@@ -533,7 +533,7 @@ export const useExploration = (
       const cachedNodes = nodesRef.current;
       const storeNodes = useGameDataStore.getState().worldMapNodes;
       if (force || (cachedNodes || []).length === 0) {
-        if (!force && storeNodes.length > 0) {
+        if (storeNodes.length > 0) {
           promises.push(Promise.resolve({ data: storeNodes }));
         } else {
           promises.push(
