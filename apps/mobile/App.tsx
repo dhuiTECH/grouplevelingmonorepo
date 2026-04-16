@@ -28,7 +28,7 @@ import { supabase } from '@/lib/supabase';
 import { EncounterTransition } from '@/components/EncounterTransition';
 import { initializeGlobalAudioMode } from '@/utils/audio';
 import { useBootStore } from '@/store/useBootStore';
-import { checkForUpdates } from '@/utils/syncEngine';
+import { checkForUpdates, syncUserGameData } from '@/utils/syncEngine';
 import BootScreen from '@/screens/BootScreen';
 
 import Toast from 'react-native-toast-message';
@@ -108,6 +108,16 @@ function TutorialRewardFlow({ onRewardModalVisibilityChange }: { onRewardModalVi
   );
 }
 
+function UserDataSync() {
+  const { user } = useAuth();
+  useEffect(() => {
+    if (user?.id) {
+      void syncUserGameData(user.id);
+    }
+  }, [user?.id]);
+  return null;
+}
+
 function NotificationWrapper() {
   const { notification, hideNotification } = useNotification();
 
@@ -160,6 +170,7 @@ export default function App(): React.ReactElement {
               <TutorialRewardFlow onRewardModalVisibilityChange={setIsRewardModalVisible} />
             </TutorialProvider>
           </NavigationContainer>
+          <UserDataSync />
           <NotificationWrapper />
           <Toast />
         </AppProviders>

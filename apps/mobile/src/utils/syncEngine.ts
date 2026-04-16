@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useBootStore } from '@/store/useBootStore';
 import { useGameDataStore } from '@/store/useGameDataStore';
+import { useUserGameDataStore } from '@/store/useUserGameDataStore';
 import { useEncounterPoolStore } from '@/store/useEncounterPoolStore';
+import { supabase } from '@/lib/supabase';
 import { initAssetDirectory, downloadAssetIfMissing, stripUrlParams, cleanupOrphanedAssets } from '@/utils/assetManager';
 import {
   fetchManifestVersion,
@@ -148,6 +150,8 @@ export async function checkForUpdates(): Promise<void> {
       console.log(
         `[SyncEngine] Server manifest version unchanged (${remoteVersion}), skipping manifest query`,
       );
+      await useGameDataStore.getState().waitForHydration();
+      await useUserGameDataStore.getState().waitForHydration();
       useBootStore.getState().setProgress(100);
       useBootStore.getState().setBootStep('READY');
       return;
@@ -228,5 +232,47 @@ export async function checkForUpdates(): Promise<void> {
       err instanceof Error ? err.message : 'An unexpected error occurred during update.';
     useBootStore.getState().setErrorMessage(message);
     useBootStore.getState().setBootStep('ERROR');
+  }
+}
+
+export async function syncUserGameData(userId: string): Promise<void> {
+  const store = useUserGameDataStore.getState();
+  await useUserGameDataStore.getState().waitForHydration();
+
+  const existingPets = store.pets[userId];
+  const existingSkills = store.userSkills[userId];
+  const existingLoadout = store.skillLoadout[userId];
+  if (existingPets?.length && existingSkills?.length && existingLoadout?.length) {
+    console.log('[SyncEngine] User game data already cached for', userId);
+    return;
+  }
+
+  console.log('[SyncEngine] Fetching user game data for', userId);
+  try {
+    const [petsRes, skillsRes, profileRes] = await Promise.all([
+      supabase
+        .from('user_pets')
+        .select('*, pet_details:encounter_pool(*)')
+        .eq('user_id', userId),
+      supabase.from('user_skills').select('*').eq('user_id', userId),
+      supabase.from('profiles').select('skill_loadout').eq('id', userId).single(),
+    ]);
+
+    if (petsRes.data) {
+      useUserGameDataStore.getState().setPets(userId, petsRes.data);
+    }
+    if (skillsRes.data) {
+      useUserGameDataStore.getState().setUserSkills(userId, skillsRes.data);
+    }
+    if (profileRes.data?.skill_loadout) {
+      useUserGameDataStore.getState().setSkillLoadout(userId, profileRes.data.skill_loadout);
+    }
+
+    console.log(
+      `[SyncEngine] User data cached: ${petsRes.data?.length ?? 0} pets, ` +
+      `${skillsRes.data?.length ?? 0} skills, loadout=${!!profileRes.data?.skill_loadout}`,
+    );
+  } catch (err) {
+    console.warn('[SyncEngine] Failed to sync user game data:', err);
   }
 }
