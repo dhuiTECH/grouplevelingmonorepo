@@ -169,7 +169,9 @@ export async function checkForUpdates(): Promise<void> {
         && store.shopItems.length > 0
         && store.worldMapNodes.length > 0
         && store.worldMapSettings !== null
-        && store.customTiles.length > 0;
+        && store.customTiles.length > 0
+        && store.classes.length > 0
+        && store.activeMapId !== null;
       if (!storeHasData) {
         console.log(
           `[SyncEngine] Version unchanged but game-data store is empty (upgrade?), fetching full manifest`,
