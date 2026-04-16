@@ -62,6 +62,7 @@ export function useSkillAnimations(): SkillAnimationsResult {
   }, [storeHydrated, storeAnims, storeSkills]);
 
   useEffect(() => {
+    if (storeHydrated && storeAnims.length > 0) return;
     let cancelled = false;
     (async () => {
       const { data, error } = await supabase

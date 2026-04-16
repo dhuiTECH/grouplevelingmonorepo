@@ -73,16 +73,18 @@ export function useMapData(userId: string | undefined) {
       });
 
       if (nextActiveMapId) {
-        supabase
-          .from("encounter_pool")
-          .select("*")
-          .or(`map_id.eq.${nextActiveMapId},map_id.is.null`)
+        Promise.resolve(
+          supabase
+            .from("encounter_pool")
+            .select("*")
+            .or(`map_id.eq.${nextActiveMapId},map_id.is.null`),
+        )
           .then(({ data }) => {
             if (data) {
               useEncounterPoolStore.getState().setPoolForMap(nextActiveMapId, data);
             }
           })
-          .catch((err) => {
+          .catch((err: any) => {
             console.warn("[useMapData] encounter pool background refresh failed:", err);
           });
       }
@@ -99,7 +101,6 @@ export function useMapData(userId: string | undefined) {
       setMapSettings(normalizeMapSettings(storeMapSettings));
       setAllShopItems(storeShopItems);
       setLoadingMap(false);
-      backgroundRefresh().catch(() => {});
     } else {
       setLoadingMap(true);
       try {

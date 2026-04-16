@@ -142,7 +142,6 @@ export function usePets() {
     if (storeHydrated && storePets && storePets.length > 0) {
       setPets(storePets);
       setLoading(false);
-      fetchPets().catch(() => {});
     } else {
       fetchPets();
     }

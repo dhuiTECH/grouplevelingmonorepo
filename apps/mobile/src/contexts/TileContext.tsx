@@ -80,10 +80,9 @@ export const TileProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     if (storeHydrated && storeCustomTiles.length > 0) {
-      refreshLibrary().catch(() => {});
-    } else {
-      refreshLibrary();
+      return;
     }
+    refreshLibrary();
   }, []);
 
   const getTileMetadata = useCallback((imageUrl: string) => {

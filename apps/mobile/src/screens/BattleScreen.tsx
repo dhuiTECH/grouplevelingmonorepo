@@ -188,17 +188,6 @@ export default function BattleScreen() {
   }, [currentPhase]);
 
 
-  useEffect(() => {
-    if (allShopItems.length > 0) return;
-    const task = InteractionManager.runAfterInteractions(() => {
-      void (async () => {
-        const { data, error } = await supabase.from('shop_items').select('*');
-        if (!error && data) useGameDataStore.getState().setAll({ shopItems: data });
-      })();
-    });
-    return () => task.cancel?.();
-  }, [allShopItems.length]);
-
   const partyOpacity = useRef(new Animated.Value(0)).current;
 
   // Use the new hook for battle music

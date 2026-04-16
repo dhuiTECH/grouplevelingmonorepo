@@ -227,10 +227,11 @@ export const useSkills = (userId?: string) => {
       if (cachedLoadout) setLoadout(padLoadoutToFour(dedupeLoadout(cachedLoadout)));
       else if (Array.isArray(user?.skill_loadout)) setLoadout(padLoadoutToFour(dedupeLoadout(user.skill_loadout)));
       setLoading(false);
+      return;
     }
 
     const fetchData = async () => {
-      if (!hasCachedData) setLoading(true);
+      setLoading(true);
       try {
         const [skillsResult, userSkillsResult, profileResult] = await Promise.all([
           supabase.from('skills').select('*'),

@@ -28,9 +28,6 @@ export async function fetchRandomSceneEvent(
   } else {
     const { data } = await supabase.from('world_map_nodes').select('*').eq('is_random_event', true);
     nodes = data;
-    if (data && data.length > 0) {
-      useGameDataStore.getState().setAll({ worldMapNodes: data });
-    }
   }
   if (!nodes?.length) return null;
   const node = nodes[Math.floor(Math.random() * nodes.length)] as Record<string, unknown>;
