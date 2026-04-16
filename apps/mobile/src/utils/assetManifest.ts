@@ -46,6 +46,14 @@ export async function buildAssetManifest(): Promise<string[]> {
     ),
   ]);
 
+  if (encounterRes.error) console.warn('[AssetManifest] encounter_pool query failed:', encounterRes.error.message);
+  if (settingsRes.error) console.warn('[AssetManifest] world_map_settings query failed:', settingsRes.error.message);
+  if (shopRes.error) console.warn('[AssetManifest] shop_items query failed:', shopRes.error.message);
+  if (nodesRes.error) console.warn('[AssetManifest] world_map_nodes query failed:', nodesRes.error.message);
+  if (skillsRes.error) console.warn('[AssetManifest] skills query failed:', skillsRes.error.message);
+  if (classesRes.error) console.warn('[AssetManifest] classes query failed:', classesRes.error.message);
+  if (skillAnimRes.error) console.warn('[AssetManifest] skill_animations query failed:', skillAnimRes.error);
+
   if (encounterRes.data) {
     allUrls.push(...extractUrls(encounterRes.data, 'icon_url'));
     allUrls.push(...extractJsonbUrls(encounterRes.data, (r) => r.metadata?.visuals?.monster_url));
