@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useBootStore } from '@/store/useBootStore';
-import { initAssetDirectory, downloadAssetIfMissing, stripUrlParams } from '@/utils/assetManager';
+import { initAssetDirectory, downloadAssetIfMissing, stripUrlParams, cleanupOrphanedAssets } from '@/utils/assetManager';
 import {
   fetchManifestVersion,
   buildAssetManifest,
@@ -175,6 +175,10 @@ export async function checkForUpdates(): Promise<void> {
     } else {
       await saveCachedManifest(newFingerprint, manifest, versionToStore);
     }
+
+    cleanupOrphanedAssets(manifest).catch((err) => {
+      console.warn('[SyncEngine] Asset cleanup failed:', err);
+    });
 
     useBootStore.getState().setBootStep('READY');
   } catch (err: unknown) {

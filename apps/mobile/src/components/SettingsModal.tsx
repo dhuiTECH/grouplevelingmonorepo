@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   View, 
   Text, 
@@ -14,6 +14,7 @@ import { SystemGlass } from './ui/SystemGlass';
 import { GlowText } from './ui/GlowText';
 import { TechButton } from './ui/TechButton';
 import { playHunterSound } from '../utils/audio';
+import { getCacheSizeBytes, formatCacheSize } from '../utils/assetManager';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -28,6 +29,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onLogout,
   onChat
 }) => {
+  const [cacheSize, setCacheSize] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (visible) {
+      getCacheSizeBytes().then((bytes) => setCacheSize(formatCacheSize(bytes)));
+    }
+  }, [visible]);
+
   if (!visible) return null;
 
   return (
@@ -91,6 +100,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <Text style={[styles.arrow, styles.logoutText]}>→</Text>
                   </TouchableOpacity>
                 </View>
+
+                {cacheSize !== null && (
+                  <View style={styles.cacheInfo}>
+                    <Text style={styles.cacheLabel}>ASSET CACHE</Text>
+                    <Text style={styles.cacheValue}>{cacheSize}</Text>
+                  </View>
+                )}
 
                 <View style={styles.footer}>
                   <TechButton 
@@ -195,6 +211,27 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.3)',
     fontSize: 18,
     fontFamily: 'Rajdhani-Medium',
+  },
+  cacheInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  cacheLabel: {
+    color: 'rgba(255, 255, 255, 0.4)',
+    fontSize: 10,
+    fontFamily: 'Rajdhani-Medium',
+    letterSpacing: 2,
+  },
+  cacheValue: {
+    color: 'rgba(0, 232, 255, 0.7)',
+    fontSize: 12,
+    fontFamily: 'Rajdhani-Medium',
+    letterSpacing: 1,
   },
   footer: {
     padding: 16,
